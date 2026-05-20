@@ -89,7 +89,7 @@ VITE_API_URL="http://localhost:4000"
 VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFilm%20beta%20event"
 ```
 
-`VITE_BOOKING_SMS_URL` powers the public booking CTA. Replace the placeholder number with the phone number that should receive beta booking texts. If it is omitted, the app opens a prefilled text message without a recipient.
+`VITE_BOOKING_SMS_URL` is optional. The app defaults to the beta booking number in code; set this only if the booking number or prefilled text should change.
 
 ## Local Setup
 
@@ -205,7 +205,7 @@ VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFi
 
 `VITE_API_URL` must point at the deployed API base URL and should not include a
 trailing path such as `/api`.
-`VITE_BOOKING_SMS_URL` should use the real beta booking phone number before sharing the live site with prospects.
+`VITE_BOOKING_SMS_URL` is optional and only needed if changing the booking number or prefilled text.
 
 ## Railway Backend Deployment
 

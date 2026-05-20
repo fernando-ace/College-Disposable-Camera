@@ -11,7 +11,10 @@ if (!API_URL) {
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
 const DEFAULT_BOOKING_TEXT = "I want to book an EventFilm beta event";
-const BOOKING_SMS_URL = import.meta.env.VITE_BOOKING_SMS_URL || `sms:?&body=${encodeURIComponent(DEFAULT_BOOKING_TEXT)}`;
+const BOOKING_PHONE_NUMBER = "2053041104";
+const BOOKING_PHONE_DISPLAY = "205-304-1104";
+const DEFAULT_BOOKING_SMS_URL = `sms:+12053041104?&body=${encodeURIComponent(DEFAULT_BOOKING_TEXT)}`;
+const BOOKING_SMS_URL = import.meta.env.VITE_BOOKING_SMS_URL || DEFAULT_BOOKING_SMS_URL;
 
 type User = { id: string; email: string };
 type AuthContextValue = {
@@ -122,18 +125,27 @@ function downloadDataUrl(dataUrl: string, filename: string) {
 
 async function copyText(text: string) {
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text);
-    return;
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall back for desktop browsers that block clipboard writes without focus.
+    }
   }
 
   const textarea = document.createElement("textarea");
   textarea.value = text;
   textarea.setAttribute("readonly", "");
   textarea.style.position = "fixed";
-  textarea.style.left = "-9999px";
-  textarea.style.opacity = "0";
+  textarea.style.top = "0";
+  textarea.style.left = "0";
+  textarea.style.width = "1px";
+  textarea.style.height = "1px";
+  textarea.style.opacity = "0.01";
   document.body.appendChild(textarea);
+  textarea.focus();
   textarea.select();
+  textarea.setSelectionRange(0, text.length);
 
   try {
     const copied = document.execCommand("copy");
@@ -170,6 +182,78 @@ function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return <textarea className="w-full rounded-lg border border-stone-300 bg-white px-3 py-3 text-base outline-none focus:border-orange-700" {...props} />;
 }
 
+function isDesktopBookingDevice() {
+  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+}
+
+function BookingModal({ onClose }: { onClose: () => void }) {
+  const [copyStatus, setCopyStatus] = useState("");
+  const modalRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    modalRef.current?.focus();
+  }, []);
+
+  async function copyBookingText(label: string, text: string) {
+    try {
+      await copyText(text);
+      setCopyStatus(`${label} copied`);
+    } catch (err) {
+      setCopyStatus((err as Error).message);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title">
+      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl outline-none" ref={modalRef} tabIndex={-1}>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h2 className="text-xl font-bold" id="booking-modal-title">Text to book your beta event</h2>
+            <p className="mt-2 text-sm text-stone-600">Use this number and message to book your EventFilm setup.</p>
+          </div>
+          <button className="rounded-lg px-2 py-1 text-xl leading-none text-stone-500" type="button" onClick={onClose} aria-label="Dismiss booking modal">×</button>
+        </div>
+
+        <div className="mt-5 grid gap-3">
+          <div className="rounded-lg bg-stone-50 p-3">
+            <p className="text-xs font-bold uppercase text-stone-500">Number</p>
+            <p className="mt-1 text-lg font-bold">{BOOKING_PHONE_DISPLAY}</p>
+          </div>
+          <div className="rounded-lg bg-stone-50 p-3">
+            <p className="text-xs font-bold uppercase text-stone-500">Message</p>
+            <p className="mt-1 font-semibold">{DEFAULT_BOOKING_TEXT}</p>
+          </div>
+        </div>
+
+        {copyStatus && <p className="mt-4 rounded-lg bg-orange-50 p-3 text-sm font-semibold text-orange-700">{copyStatus}</p>}
+
+        <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          <button className="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold" type="button" onClick={() => copyBookingText("Number", BOOKING_PHONE_NUMBER)}>Copy number</button>
+          <button className="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold" type="button" onClick={() => copyBookingText("Message", DEFAULT_BOOKING_TEXT)}>Copy message</button>
+          <button className="rounded-lg bg-orange-700 px-3 py-2 text-sm font-semibold text-white" type="button" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function BookingLink({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const [showModal, setShowModal] = useState(false);
+
+  function handleBookingClick(event: React.MouseEvent<HTMLAnchorElement>) {
+    if (!isDesktopBookingDevice()) return;
+    event.preventDefault();
+    setShowModal(true);
+  }
+
+  return (
+    <>
+      <a className={className} href={BOOKING_SMS_URL} onClick={handleBookingClick}>{children}</a>
+      {showModal && <BookingModal onClose={() => setShowModal(false)} />}
+    </>
+  );
+}
+
 function Shell({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   return (
@@ -186,7 +270,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 <Link className="rounded-lg px-3 py-2 font-semibold" to="/login">Host login</Link>
-                <a className="rounded-lg bg-orange-700 px-3 py-2 font-semibold text-white" href={BOOKING_SMS_URL}>Book beta</a>
+                <BookingLink className="rounded-lg bg-orange-700 px-3 py-2 font-semibold text-white">Book beta</BookingLink>
               </>
             )}
           </nav>
@@ -205,7 +289,7 @@ function Landing() {
         <h1 className="max-w-2xl text-4xl font-black tracking-tight sm:text-5xl">Disposable camera albums for parties and summer events.</h1>
         <p className="mt-4 max-w-2xl text-lg text-stone-700">I set up your event link and QR code for you. Guests scan and upload with no app download, then you get the album and download after the event.</p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <a className="rounded-lg bg-orange-700 px-5 py-3 text-center font-semibold text-white" href={BOOKING_SMS_URL}>Text to book beta</a>
+          <BookingLink className="rounded-lg bg-orange-700 px-5 py-3 text-center font-semibold text-white">Text to book beta</BookingLink>
           <Link className="rounded-lg border border-stone-300 bg-white px-5 py-3 text-center font-semibold" to="/login">Host login</Link>
         </div>
         <Link className="mt-4 inline-block text-sm font-semibold text-stone-600 underline" to="/signup">Already invited to host? Create account</Link>
