@@ -4,14 +4,19 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
-const fs = require("fs");
 const { ZipArchive } = require("archiver");
 const QRCode = require("qrcode");
 const rateLimit = require("express-rate-limit");
 const prisma = require("./prisma");
 const { signToken, requireAuth } = require("./auth");
-const { port, clientUrl, serverUrl, uploadDir, maxFileSizeBytes, maxFileSizeMb } = require("./config");
-const { ensureUploadDir, createStoredFilename, getPhotoUrl, removeFileIfExists } = require("./storage");
+const { port, clientUrl, serverUrl, maxFileSizeBytes, maxFileSizeMb } = require("./config");
+const {
+  createPhotoObjectKey,
+  getPhotoUrl,
+  uploadPhotoObject,
+  removePhotoObject,
+  createPhotoReadStream,
+} = require("./storage");
 
 const app = express();
 
@@ -38,13 +43,7 @@ const uploadLimiter = rateLimit({
 });
 
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: async (_req, _file, cb) => {
-      await ensureUploadDir();
-      cb(null, uploadDir);
-    },
-    filename: (_req, file, cb) => cb(null, createStoredFilename(file.originalname)),
-  }),
+  storage: multer.memoryStorage(),
   limits: { fileSize: maxFileSizeBytes },
   fileFilter: (_req, file, cb) => {
     if (!file.mimetype.startsWith("image/")) {
@@ -187,8 +186,8 @@ app.delete("/api/host/events/:eventId/photos/:photoId", requireAuth, async (req,
   });
   if (!photo) return res.status(404).json({ error: "Photo not found" });
 
+  await removePhotoObject(photo.filePath);
   await prisma.photo.update({ where: { id: photo.id }, data: { deletedAt: new Date() } });
-  await removeFileIfExists(photo.filePath);
   res.json({ ok: true });
 });
 
@@ -207,11 +206,10 @@ app.get("/api/host/events/:eventId/download", requireAuth, async (req, res) => {
   archive.pipe(res);
 
   for (const [index, photo] of event.photos.entries()) {
-    if (fs.existsSync(photo.filePath)) {
-      const ext = path.extname(photo.originalFilename) || path.extname(photo.filePath);
-      const nickname = (photo.guest?.nickname || "guest").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
-      archive.file(photo.filePath, { name: `${String(index + 1).padStart(3, "0")}-${nickname}${ext}` });
-    }
+    const ext = path.extname(photo.originalFilename) || path.extname(photo.filePath);
+    const nickname = (photo.guest?.nickname || "guest").replace(/[^a-z0-9]+/gi, "-").toLowerCase();
+    const stream = await createPhotoReadStream(photo.filePath);
+    archive.append(stream, { name: `${String(index + 1).padStart(3, "0")}-${nickname}${ext}` });
   }
   archive.finalize();
 });
@@ -255,17 +253,17 @@ app.get("/api/events/:slug/guest-status", async (req, res) => {
 });
 
 app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), async (req, res) => {
+  let uploadedObjectKey;
+
   try {
     const { nickname, clientId } = req.body;
     if (!nickname || !clientId) {
-      if (req.file) await removeFileIfExists(req.file.path);
       return res.status(400).json({ error: "Nickname and clientId are required" });
     }
     if (!req.file) return res.status(400).json({ error: "Photo file is required" });
 
     const event = await prisma.event.findUnique({ where: { slug: req.params.slug } });
     if (!event) {
-      await removeFileIfExists(req.file.path);
       return res.status(404).json({ error: "Event not found" });
     }
 
@@ -277,21 +275,29 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
 
     const used = await prisma.photo.count({ where: { eventId: event.id, guestId: guest.id, deletedAt: null } });
     if (used >= event.photoLimitPerGuest) {
-      await removeFileIfExists(req.file.path);
       return res.status(403).json({ error: "You have used all uploads for this event" });
     }
+
+    const objectKey = createPhotoObjectKey(event.id, req.file.originalname);
+    await uploadPhotoObject({
+      objectKey,
+      buffer: req.file.buffer,
+      mimeType: req.file.mimetype,
+    });
+    uploadedObjectKey = objectKey;
 
     const photo = await prisma.photo.create({
       data: {
         eventId: event.id,
         guestId: guest.id,
-        filePath: req.file.path,
+        filePath: objectKey,
         originalFilename: req.file.originalname,
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
       },
       include: { guest: true },
     });
+    uploadedObjectKey = null;
 
     res.status(201).json({
       photo: photoPayload(photo),
@@ -299,7 +305,9 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
       remainingUploads: Math.max(event.photoLimitPerGuest - used - 1, 0),
     });
   } catch (error) {
-    if (req.file) await removeFileIfExists(req.file.path);
+    if (uploadedObjectKey) {
+      await removePhotoObject(uploadedObjectKey).catch(() => {});
+    }
     res.status(400).json({ error: error.message || "Upload failed" });
   }
 });
@@ -320,7 +328,9 @@ app.get("/api/photos/:photoId/file", async (req, res) => {
   const photo = await prisma.photo.findFirst({ where: { id: req.params.photoId, deletedAt: null } });
   if (!photo) return res.status(404).json({ error: "Photo not found" });
   res.type(photo.mimeType);
-  res.sendFile(path.resolve(photo.filePath));
+  const stream = await createPhotoReadStream(photo.filePath);
+  stream.on("error", () => res.status(404).end());
+  stream.pipe(res);
 });
 
 app.use((error, _req, res, _next) => {
@@ -330,13 +340,6 @@ app.use((error, _req, res, _next) => {
   res.status(400).json({ error: error.message || "Request failed" });
 });
 
-ensureUploadDir()
-  .then(() => {
-    app.listen(port, () => {
-      console.log(`EventFilm API running on http://localhost:${port}`);
-    });
-  })
-  .catch((error) => {
-    console.error("Could not start server", error);
-    process.exit(1);
-  });
+app.listen(port, () => {
+  console.log(`EventFilm API running on http://localhost:${port}`);
+});

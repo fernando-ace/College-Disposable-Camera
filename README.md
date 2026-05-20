@@ -16,7 +16,7 @@ Mobile-first MVP for QR-based disposable camera albums at college events.
 - Host photo viewing before and after reveal
 - Host photo deletion
 - Host download of all event photos as a `.zip`
-- Local development photo storage with a small storage helper layer
+- Supabase Storage-backed photo files with a small storage helper layer
 
 ## Project Structure
 
@@ -27,13 +27,14 @@ Mobile-first MVP for QR-based disposable camera albums at college events.
 /server
   Express API
   Prisma schema
-  Local uploads folder for development
+  Supabase Storage helper for image files
 ```
 
 ## Requirements
 
 - Node.js 20+
 - PostgreSQL
+- Supabase project with a private Storage bucket
 - npm
 
 On Windows, PostgreSQL can be installed with:
@@ -57,10 +58,15 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/eventfilm?schema=pub
 JWT_SECRET="replace-with-a-long-random-secret"
 CLIENT_URL="http://localhost:5173"
 SERVER_URL="http://localhost:4000"
-UPLOAD_DIR="./uploads"
+SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="replace-with-your-service-role-key"
+SUPABASE_STORAGE_BUCKET="event-photos"
 MAX_FILE_SIZE_MB="10"
 PORT="4000"
 ```
+
+`SUPABASE_SERVICE_ROLE_KEY` must stay server-side only. Do not expose it in the
+client app or commit a real key.
 
 Frontend: copy `client/.env.example` to `client/.env`.
 
@@ -87,28 +93,35 @@ $env:PGPASSWORD="postgres"
 & "C:\Program Files\PostgreSQL\17\bin\createdb.exe" -h localhost -U postgres eventfilm
 ```
 
-3. From the repo root, configure environment files.
+3. Create a Supabase Storage bucket for uploaded photos.
+
+In Supabase, create a private bucket named `event-photos`, or set
+`SUPABASE_STORAGE_BUCKET` to the bucket name you choose. The server uses the
+service role key to upload, fetch, and remove objects while continuing to serve
+photos through the existing API routes.
+
+4. From the repo root, configure environment files.
 
 ```powershell
 copy server\.env.example server\.env
 copy client\.env.example client\.env
 ```
 
-4. Run Prisma migration.
+5. Run Prisma migration.
 
 ```bash
 cd server
 npm run prisma:migrate
 ```
 
-5. Start the backend.
+6. Start the backend.
 
 ```bash
 cd server
 npm run dev
 ```
 
-6. Start the frontend in another terminal.
+7. Start the frontend in another terminal.
 
 ```bash
 cd client
@@ -141,15 +154,22 @@ Guest:
 
 ## Known Limitations
 
-- Local file storage is for development only. Move the storage helper to S3, Cloudflare R2, or Supabase Storage before production.
-- Deleted photos are soft-deleted in the database and removed from disk.
+- Deleted photos are soft-deleted in the database and removed from Supabase Storage.
 - Payment is manual for MVP testing. The landing page includes pricing, but Stripe is intentionally not implemented.
 - There is no email verification or password reset yet.
-- The public image file endpoint uses hard-to-guess photo IDs. For production, add signed URLs or authenticated object storage access.
+- The public image file endpoint uses hard-to-guess photo IDs and proxies private Supabase objects through the API.
+
+## Private Beta Deployment Notes
+
+- Provision a hosted PostgreSQL database and run Prisma migrations before starting the server.
+- Create the private Supabase Storage bucket named by `SUPABASE_STORAGE_BUCKET`.
+- Configure backend environment variables on the deployment host: `DATABASE_URL`, `JWT_SECRET`, `CLIENT_URL`, `SERVER_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `MAX_FILE_SIZE_MB`, and `PORT`.
+- Configure the frontend deployment with `VITE_API_URL` pointing at the deployed API.
+- Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
+- Verify the private beta flow after deployment: host signup/login, event creation, guest upload, host list, guest reveal list, host delete, direct photo view, and zip download.
 
 ## Next Steps
 
-- Add hosted object storage.
 - Add image thumbnail generation for faster album loading.
 - Add a simple host password reset flow.
 - Add deployment configuration for the chosen hosting provider.
