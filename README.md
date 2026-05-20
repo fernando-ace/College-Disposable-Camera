@@ -168,6 +168,25 @@ Guest:
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
 - Verify the private beta flow after deployment: host signup/login, event creation, guest upload, host list, guest reveal list, host delete, direct photo view, and zip download.
 
+## Vercel Frontend Deployment
+
+Use the `/client` directory as the Vercel project root.
+
+```text
+Root directory: client
+Build command: npm run build
+Output directory: dist
+```
+
+Required frontend environment variables:
+
+```env
+VITE_API_URL="https://your-deployed-api-domain"
+```
+
+`VITE_API_URL` must point at the deployed API base URL and should not include a
+trailing path such as `/api`.
+
 ## Railway Backend Deployment
 
 Use the `/server` directory as the Railway service root.
