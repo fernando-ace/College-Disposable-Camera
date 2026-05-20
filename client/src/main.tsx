@@ -681,12 +681,21 @@ function GuestEvent() {
           <form className="mt-5 rounded-lg border border-stone-200 bg-white p-5" onSubmit={uploadPhoto}>
             <h2 className="text-xl font-bold">Upload a photo</h2>
             <label className="mt-4 block text-sm font-semibold">Name or nickname</label>
-            <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="Aubie" required />
+            <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
             <p className="mt-3 text-sm text-stone-600">
               {remaining === null ? "Checking uploads..." : `${remaining} uploads left`}
             </p>
             <label className="mt-4 block text-sm font-semibold">Photo</label>
-            <input className="mt-1 w-full rounded-lg border border-stone-300 bg-white px-3 py-3" type="file" accept="image/*" capture="environment" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+            <div className="mt-2 grid gap-3 sm:grid-cols-2">
+              <label className="block rounded-lg border border-orange-700 bg-orange-700 px-3 py-3 text-center text-sm font-semibold text-white">
+                Take photo
+                <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+              </label>
+              <label className="block rounded-lg border border-stone-300 bg-white px-3 py-3 text-center text-sm font-semibold text-stone-800">
+                Choose from library
+                <input className="sr-only" type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+              </label>
+            </div>
             {message && <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
             {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
             <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Uploading..." : "Upload photo"}</Button>
