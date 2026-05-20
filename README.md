@@ -1,12 +1,20 @@
-# Auburn Disposable Camera / EventFilm
+# EventFilm
 
-Mobile-first private beta for QR-based disposable camera albums at college events.
+Mobile-first private beta for QR-based disposable camera albums at parties, summer events, and campus events.
 
 ## Live Private Beta
 
 Frontend: https://eventfilm.vercel.app
 
-This is an MVP/private beta for testing QR-based disposable camera albums at real events. The app is functional, but still under active development.
+This is an MVP/private beta for testing QR-based disposable camera albums at real events. The app is functional, but still under active development. The current go-to-market focus is summer events first, then campus events again in the fall.
+
+## June Revenue Sprint
+
+Goal: get 10 paid events scheduled by June 30, 2026. A paid event means the host has paid the $5 beta price and has an event link or QR code created.
+
+Do not add new product surface until the goal is reached. Only fix blockers that prevent a real event from working: QR/link issues, uploads, host download, mobile flow blockers, or production setup issues.
+
+See `docs/june-revenue-sprint.md` for the free beta checklist, manual sales routine, pricing offer, and outreach scripts.
 
 ## What Works
 
@@ -78,7 +86,10 @@ Frontend: copy `client/.env.example` to `client/.env`.
 
 ```env
 VITE_API_URL="http://localhost:4000"
+VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFilm%20beta%20event"
 ```
+
+`VITE_BOOKING_SMS_URL` powers the public booking CTA. Replace the placeholder number with the phone number that should receive beta booking texts. If it is omitted, the app opens a prefilled text message without a recipient.
 
 ## Local Setup
 
@@ -164,6 +175,7 @@ Guest:
 - Payment is manual for MVP testing. The landing page includes pricing, but Stripe is intentionally not implemented.
 - There is no email verification or password reset yet.
 - The public image file endpoint uses hard-to-guess photo IDs and proxies private Supabase objects through the API.
+- Before 10 paid summer events are scheduled, do not add Stripe, password reset, pricing tiers, admin dashboards, custom branding, or advanced album features.
 
 ## Private Beta Deployment Notes
 
@@ -188,10 +200,12 @@ Required frontend environment variables:
 
 ```env
 VITE_API_URL="https://your-deployed-api-domain"
+VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFilm%20beta%20event"
 ```
 
 `VITE_API_URL` must point at the deployed API base URL and should not include a
 trailing path such as `/api`.
+`VITE_BOOKING_SMS_URL` should use the real beta booking phone number before sharing the live site with prospects.
 
 ## Railway Backend Deployment
 
@@ -233,6 +247,7 @@ falls back to `4000`.
 
 ## Next Steps
 
-- Add image thumbnail generation for faster album loading.
-- Add a simple host password reset flow.
-- Add basic event capacity limits based on selected pricing tier.
+- Run one privately offered free beta with at least 10 guests.
+- Send 20 outreach messages per day until June 30, 2026.
+- Personally create event links and QR codes for interested hosts.
+- Fix only event-flow blockers until 10 paid events are scheduled.

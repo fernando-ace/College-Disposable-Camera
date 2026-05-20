@@ -10,6 +10,8 @@ if (!API_URL) {
 }
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
+const DEFAULT_BOOKING_TEXT = "I want to book an EventFilm beta event";
+const BOOKING_SMS_URL = import.meta.env.VITE_BOOKING_SMS_URL || `sms:?&body=${encodeURIComponent(DEFAULT_BOOKING_TEXT)}`;
 
 type User = { id: string; email: string };
 type AuthContextValue = {
@@ -184,7 +186,7 @@ function Shell({ children }: { children: React.ReactNode }) {
             ) : (
               <>
                 <Link className="rounded-lg px-3 py-2 font-semibold" to="/login">Host login</Link>
-                <Link className="rounded-lg bg-orange-700 px-3 py-2 font-semibold text-white" to="/signup">Create event</Link>
+                <a className="rounded-lg bg-orange-700 px-3 py-2 font-semibold text-white" href={BOOKING_SMS_URL}>Book beta</a>
               </>
             )}
           </nav>
@@ -199,16 +201,18 @@ function Landing() {
   return (
     <Shell>
       <section className="py-8">
-        <h1 className="max-w-2xl text-4xl font-black tracking-tight sm:text-5xl">Disposable camera albums for Auburn events.</h1>
-        <p className="mt-4 max-w-2xl text-lg text-stone-700">Create an event, share a QR code, let guests upload photos, and reveal the album after the event.</p>
+        <p className="mb-3 text-sm font-bold uppercase text-orange-700">Summer private beta</p>
+        <h1 className="max-w-2xl text-4xl font-black tracking-tight sm:text-5xl">Disposable camera albums for parties and summer events.</h1>
+        <p className="mt-4 max-w-2xl text-lg text-stone-700">I set up your event link and QR code for you. Guests scan and upload with no app download, then you get the album and download after the event.</p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <Link className="rounded-lg bg-orange-700 px-5 py-3 text-center font-semibold text-white" to="/signup">Create an event</Link>
+          <a className="rounded-lg bg-orange-700 px-5 py-3 text-center font-semibold text-white" href={BOOKING_SMS_URL}>Text to book beta</a>
           <Link className="rounded-lg border border-stone-300 bg-white px-5 py-3 text-center font-semibold" to="/login">Host login</Link>
         </div>
+        <Link className="mt-4 inline-block text-sm font-semibold text-stone-600 underline" to="/signup">Already invited to host? Create account</Link>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-4">
-        {["Create your event", "Share the QR code", "Guests take photos", "Album unlocks later"].map((step, index) => (
+        {["Text to book", "I set up the QR", "Guests upload photos", "Download the album"].map((step, index) => (
           <div className="rounded-lg border border-stone-200 bg-white p-4" key={step}>
             <div className="text-sm font-bold text-orange-700">Step {index + 1}</div>
             <div className="mt-2 font-semibold">{step}</div>
@@ -217,10 +221,29 @@ function Landing() {
       </section>
 
       <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
-        <h2 className="text-xl font-bold">Simple event pricing</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-4">
-          {["Free test event: up to 25 photos", "Small event: $5, up to 100 photos", "Standard event: $15, up to 500 photos", "Large event: $30, high photo limit"].map((plan) => (
+        <h2 className="text-xl font-bold">Simple summer beta pricing</h2>
+        <p className="mt-2 text-sm text-stone-600">Manual payment for the beta. No account needed for guests.</p>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {["$5 beta event", "Setup included", "Limited to first 10 paid summer events"].map((plan) => (
             <p className="rounded-lg bg-stone-50 p-3 text-sm text-stone-700" key={plan}>{plan}</p>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
+        <h2 className="text-xl font-bold">Beta setup included</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {["I create your event link and QR code", "Guests scan and upload without an app", "You get the album and photo download"].map((item) => (
+            <p className="rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-700" key={item}>{item}</p>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
+        <h2 className="text-xl font-bold">Great for</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          {["Birthday parties", "Graduation parties", "Lake and beach trips", "Wedding showers", "Small receptions", "Club socials"].map((eventType) => (
+            <p className="rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-700" key={eventType}>{eventType}</p>
           ))}
         </div>
       </section>
