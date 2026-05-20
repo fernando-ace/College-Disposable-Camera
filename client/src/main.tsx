@@ -9,6 +9,8 @@ if (!API_URL) {
   throw new Error("VITE_API_URL is required. Set it to the deployed API base URL.");
 }
 
+const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
+
 type User = { id: string; email: string };
 type AuthContextValue = {
   token: string | null;
@@ -92,7 +94,7 @@ async function api<T>(path: string, options: RequestInit & { token?: string | nu
   if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
   if (options.token) headers.set("Authorization", `Bearer ${options.token}`);
 
-  const response = await fetch(`${API_URL}${path}`, { ...options, headers });
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
   const data = contentType.includes("application/json") ? await response.json() : null;
 
@@ -427,7 +429,7 @@ function ManageEvent() {
   }
 
   async function downloadZip() {
-    const response = await fetch(`${API_URL}/api/host/events/${eventId}/download`, {
+    const response = await fetch(`${API_BASE_URL}/api/host/events/${eventId}/download`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     });
     if (!response.ok) throw new Error("Download failed");

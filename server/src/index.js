@@ -20,15 +20,19 @@ const {
 
 const app = express();
 
+function normalizeOrigin(value) {
+  return value.replace(/\/+$/, "");
+}
+
 const allowedOrigins = new Set([
-  clientUrl,
-  clientUrl.replace("localhost", "127.0.0.1"),
-  clientUrl.replace("127.0.0.1", "localhost"),
+  normalizeOrigin(clientUrl),
+  normalizeOrigin(clientUrl.replace("localhost", "127.0.0.1")),
+  normalizeOrigin(clientUrl.replace("127.0.0.1", "localhost")),
 ]);
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+    if (!origin || allowedOrigins.has(normalizeOrigin(origin))) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
