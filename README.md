@@ -168,9 +168,46 @@ Guest:
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
 - Verify the private beta flow after deployment: host signup/login, event creation, guest upload, host list, guest reveal list, host delete, direct photo view, and zip download.
 
+## Railway Backend Deployment
+
+Use the `/server` directory as the Railway service root.
+
+```text
+Root directory: server
+Build command: npm run build
+Start command: npm start
+```
+
+The build command runs `prisma generate`. The `prestart` script also runs
+`prisma generate` before `node src/index.js`, so Prisma Client is available
+when Railway starts the API.
+
+Run production migrations against the Railway database before first use and
+whenever new migrations are added:
+
+```bash
+npm run prisma:deploy
+```
+
+Required backend environment variables:
+
+```env
+DATABASE_URL="postgresql://..."
+JWT_SECRET="long-random-secret"
+CLIENT_URL="https://your-frontend-domain"
+SERVER_URL="https://your-railway-api-domain"
+SUPABASE_URL="https://your-project.supabase.co"
+SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+SUPABASE_STORAGE_BUCKET="event-photos"
+MAX_FILE_SIZE_MB="10"
+PORT="4000"
+```
+
+Railway normally provides `PORT` automatically. If it is not set, the server
+falls back to `4000`.
+
 ## Next Steps
 
 - Add image thumbnail generation for faster album loading.
 - Add a simple host password reset flow.
-- Add deployment configuration for the chosen hosting provider.
 - Add basic event capacity limits based on selected pricing tier.
