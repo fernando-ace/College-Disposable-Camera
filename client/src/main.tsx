@@ -612,6 +612,7 @@ function GuestEvent() {
   const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [file, setFile] = useState<File | null>(null);
+  const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -631,6 +632,18 @@ function GuestEvent() {
   useEffect(() => {
     load().catch((err) => setError((err as Error).message));
   }, [slug]);
+
+  useEffect(() => {
+    if (!file) {
+      setPhotoPreviewUrl("");
+      return;
+    }
+
+    const nextPreviewUrl = URL.createObjectURL(file);
+    setPhotoPreviewUrl(nextPreviewUrl);
+
+    return () => URL.revokeObjectURL(nextPreviewUrl);
+  }, [file]);
 
   function saveNickname(nextNickname: string) {
     setNickname(nextNickname);
@@ -687,15 +700,24 @@ function GuestEvent() {
             </p>
             <label className="mt-4 block text-sm font-semibold">Photo</label>
             <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <label className="block rounded-lg border border-orange-700 bg-orange-700 px-3 py-3 text-center text-sm font-semibold text-white">
+              <label className="block cursor-pointer rounded-lg border border-orange-700 bg-orange-700 px-3 py-3 text-center text-sm font-semibold text-white">
                 Take photo
                 <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => setFile(event.target.files?.[0] || null)} />
               </label>
-              <label className="block rounded-lg border border-stone-300 bg-white px-3 py-3 text-center text-sm font-semibold text-stone-800">
+              <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-3 py-3 text-center text-sm font-semibold text-stone-800">
                 Choose from library
                 <input className="sr-only" type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} />
               </label>
             </div>
+            {file && photoPreviewUrl && (
+              <div className="mt-4 flex items-center gap-4 rounded-lg border border-stone-200 bg-stone-50 p-3">
+                <img className="h-24 w-24 rounded-lg object-cover" src={photoPreviewUrl} alt="Selected photo preview" />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-stone-900">{file.name || "Selected photo"}</p>
+                  <p className="mt-1 text-sm text-stone-600">Ready to upload</p>
+                </div>
+              </div>
+            )}
             {message && <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
             {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
             <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Uploading..." : "Upload photo"}</Button>
