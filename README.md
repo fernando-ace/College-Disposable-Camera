@@ -1,6 +1,12 @@
 # Auburn Disposable Camera / EventFilm
 
-Mobile-first MVP for QR-based disposable camera albums at college events.
+Mobile-first private beta for QR-based disposable camera albums at college events.
+
+## Live Private Beta
+
+Frontend: https://eventfilm.vercel.app
+
+This is an MVP/private beta for testing QR-based disposable camera albums at real events. The app is functional, but still under active development.
 
 ## What Works
 
