@@ -254,6 +254,24 @@ function BookingLink({ children, className = "" }: { children: React.ReactNode; 
   );
 }
 
+const demoScreens = [
+  {
+    src: "/demo/guest-upload-start.webp",
+    alt: "Phone screen showing the Summer Party Demo event upload page",
+    label: "Open event link",
+  },
+  {
+    src: "/demo/guest-upload-preview.webp",
+    alt: "Phone screen showing a selected photo preview before upload",
+    label: "Choose a photo",
+  },
+  {
+    src: "/demo/guest-upload-success.webp",
+    alt: "Phone screen showing the photo uploaded confirmation",
+    label: "Photo uploaded",
+  },
+];
+
 function Shell({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   return (
@@ -301,6 +319,39 @@ function Landing() {
             <div className="text-sm font-bold text-orange-700">Step {index + 1}</div>
             <div className="mt-2 font-semibold">{step}</div>
           </div>
+        ))}
+      </section>
+
+      <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center">
+        <div>
+          <p className="text-sm font-bold uppercase text-orange-700">Guest demo</p>
+          <h2 className="mt-2 text-2xl font-black">No app download for guests.</h2>
+          <p className="mt-3 text-stone-700">Guests open the event link, add a name, choose a photo, and upload from their phone.</p>
+        </div>
+        <div className="mx-auto w-full max-w-[310px] rounded-[2rem] border border-stone-300 bg-stone-950 p-2 shadow-xl">
+          <div className="overflow-hidden rounded-[1.5rem] bg-stone-100">
+            <video
+              className="aspect-[390/844] w-full object-cover"
+              autoPlay
+              muted
+              loop
+              playsInline
+              poster="/demo/guest-upload-start.webp"
+              aria-label="Guest upload walkthrough demo"
+            >
+              <source src="/demo/guest-upload-demo.webm" type="video/webm" />
+              <source src="/demo/guest-upload-demo.mp4" type="video/mp4" />
+            </video>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-5 grid gap-3 sm:grid-cols-3" aria-label="Guest upload demo screenshots">
+        {demoScreens.map((screen) => (
+          <figure className="overflow-hidden rounded-lg border border-stone-200 bg-white" key={screen.src}>
+            <img className="aspect-[390/844] w-full object-cover" src={screen.src} alt={screen.alt} loading="lazy" />
+            <figcaption className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-700">{screen.label}</figcaption>
+          </figure>
         ))}
       </section>
 
