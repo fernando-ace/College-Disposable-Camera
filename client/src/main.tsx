@@ -292,11 +292,10 @@ function Landing() {
           <BookingLink className="rounded-lg bg-orange-700 px-5 py-3 text-center font-semibold text-white">Text to book beta</BookingLink>
           <Link className="rounded-lg border border-stone-300 bg-white px-5 py-3 text-center font-semibold" to="/login">Host login</Link>
         </div>
-        <Link className="mt-4 inline-block text-sm font-semibold text-stone-600 underline" to="/signup">Already invited to host? Create account</Link>
       </section>
 
       <section className="grid gap-3 sm:grid-cols-4">
-        {["Text to book", "I set up the QR", "Guests upload photos", "Download the album"].map((step, index) => (
+        {["Text to book", "We set up the QR", "Guests upload photos", "Download the album"].map((step, index) => (
           <div className="rounded-lg border border-stone-200 bg-white p-4" key={step}>
             <div className="text-sm font-bold text-orange-700">Step {index + 1}</div>
             <div className="mt-2 font-semibold">{step}</div>
