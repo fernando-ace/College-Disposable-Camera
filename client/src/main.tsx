@@ -10,7 +10,7 @@ if (!API_URL) {
 }
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
-const DEFAULT_BOOKING_TEXT = "I want to book an EventFilm beta event";
+const DEFAULT_BOOKING_TEXT = "Please help me book an EventFilm beta event";
 const BOOKING_PHONE_NUMBER = "2053041104";
 const BOOKING_PHONE_DISPLAY = "205-304-1104";
 const DEFAULT_BOOKING_SMS_URL = `sms:+12053041104?&body=${encodeURIComponent(DEFAULT_BOOKING_TEXT)}`;
@@ -254,24 +254,6 @@ function BookingLink({ children, className = "" }: { children: React.ReactNode; 
   );
 }
 
-const demoScreens = [
-  {
-    src: "/demo/guest-upload-start.webp",
-    alt: "Phone screen showing the Summer Party Demo event upload page",
-    label: "Open event link",
-  },
-  {
-    src: "/demo/guest-upload-preview.webp",
-    alt: "Phone screen showing a selected photo preview before upload",
-    label: "Choose a photo",
-  },
-  {
-    src: "/demo/guest-upload-success.webp",
-    alt: "Phone screen showing the photo uploaded confirmation",
-    label: "Photo uploaded",
-  },
-];
-
 function Shell({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   return (
@@ -305,7 +287,7 @@ function Landing() {
       <section className="py-8">
         <p className="mb-3 text-sm font-bold uppercase text-orange-700">Summer private beta</p>
         <h1 className="max-w-2xl text-4xl font-black tracking-tight sm:text-5xl">Disposable camera albums for parties and summer events.</h1>
-        <p className="mt-4 max-w-2xl text-lg text-stone-700">I set up your event link and QR code for you. Guests scan and upload with no app download, then you get the album and download after the event.</p>
+        <p className="mt-4 max-w-2xl text-lg text-stone-700">We set up your event link and QR code for you. Guests scan and upload with no app download, then you get the album and download after the event.</p>
         <div className="mt-6 flex flex-col gap-3 sm:flex-row">
           <BookingLink className="rounded-lg bg-orange-700 px-5 py-3 text-center font-semibold text-white">Text to book beta</BookingLink>
           <Link className="rounded-lg border border-stone-300 bg-white px-5 py-3 text-center font-semibold" to="/login">Host login</Link>
@@ -328,31 +310,22 @@ function Landing() {
           <h2 className="mt-2 text-2xl font-black">No app download for guests.</h2>
           <p className="mt-3 text-stone-700">Guests open the event link, add a name, choose a photo, and upload from their phone.</p>
         </div>
-        <div className="mx-auto w-full max-w-[310px] rounded-[2rem] border border-stone-300 bg-stone-950 p-2 shadow-xl">
-          <div className="overflow-hidden rounded-[1.5rem] bg-stone-100">
+        <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
+          <div className="bg-stone-100">
             <video
               className="aspect-[390/844] w-full object-cover"
               autoPlay
               muted
               loop
               playsInline
-              poster="/demo/guest-upload-start.webp"
+              poster="/demo/guest-upload-poster.webp?v=2"
               aria-label="Guest upload walkthrough demo"
             >
-              <source src="/demo/guest-upload-demo.webm" type="video/webm" />
-              <source src="/demo/guest-upload-demo.mp4" type="video/mp4" />
+              <source src="/demo/guest-upload-demo.webm?v=2" type="video/webm" />
+              <source src="/demo/guest-upload-demo.mp4?v=2" type="video/mp4" />
             </video>
           </div>
         </div>
-      </section>
-
-      <section className="mt-5 grid gap-3 sm:grid-cols-3" aria-label="Guest upload demo screenshots">
-        {demoScreens.map((screen) => (
-          <figure className="overflow-hidden rounded-lg border border-stone-200 bg-white" key={screen.src}>
-            <img className="aspect-[390/844] w-full object-cover" src={screen.src} alt={screen.alt} loading="lazy" />
-            <figcaption className="border-t border-stone-200 px-3 py-2 text-sm font-semibold text-stone-700">{screen.label}</figcaption>
-          </figure>
-        ))}
       </section>
 
       <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
@@ -368,7 +341,7 @@ function Landing() {
       <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
         <h2 className="text-xl font-bold">Beta setup included</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {["I create your event link and QR code", "Guests scan and upload without an app", "You get the album and photo download"].map((item) => (
+          {["We create your event link and QR code", "Guests scan and upload without an app", "You get the album and photo download"].map((item) => (
             <p className="rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-700" key={item}>{item}</p>
           ))}
         </div>
