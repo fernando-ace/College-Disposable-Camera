@@ -117,13 +117,23 @@ app.get("/api/host/events", requireAuth, async (req, res) => {
   const events = await prisma.event.findMany({
     where: { hostId: req.user.userId },
     orderBy: { createdAt: "desc" },
-    include: { _count: { select: { photos: { where: { deletedAt: null } } } } },
+    include: {
+      photos: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        take: 6,
+        include: { guest: true },
+      },
+      _count: { select: { photos: { where: { deletedAt: null } } } },
+    },
   });
   res.json({
     events: events.map((event) => ({
       ...event,
       eventLink: publicEventUrl(event.slug),
       photoCount: event._count.photos,
+      previewPhotos: event.photos.map(photoPayload),
+      photos: undefined,
       _count: undefined,
     })),
   });

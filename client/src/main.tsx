@@ -11,6 +11,12 @@ if (!API_URL) {
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
 const DEMO_STORAGE_KEY = "eventfilm_demo_uploads";
+const DEFAULT_DEMO_PHOTOS = [
+  { id: "demo-album-1", name: "Mia", dataUrl: "/demo/demo-album-1.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
+  { id: "demo-album-2", name: "Alex", dataUrl: "/demo/demo-album-2.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
+  { id: "demo-album-3", name: "Jordan", dataUrl: "/demo/demo-album-3.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
+  { id: "demo-album-4", name: "Taylor", dataUrl: "/demo/demo-album-4.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
+];
 
 type User = { id: string; email: string };
 type AuthContextValue = {
@@ -30,6 +36,7 @@ type EventSummary = {
   eventLink: string;
   qrCodeDataUrl?: string;
   photoCount: number;
+  previewPhotos?: Photo[];
 };
 type Photo = {
   id: string;
@@ -315,6 +322,7 @@ function DemoUploader() {
   });
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const albumPhotos = [...photos, ...DEFAULT_DEMO_PHOTOS].slice(0, 6);
 
   useEffect(() => {
     if (!file) {
@@ -403,16 +411,10 @@ function DemoUploader() {
           <Link className="rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" to="/signup">Create real event</Link>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-3">
-          {photos.map((photo) => (
+          {albumPhotos.map((photo) => (
             <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={photo.id}>
               <img className="aspect-square w-full rounded-2xl object-cover" src={photo.dataUrl} alt={`Demo upload by ${photo.name}`} />
               <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">Uploaded by {photo.name}</p>
-            </div>
-          ))}
-          {!photos.length && ["Table toast", "Dance floor", "Last hug", "Group selfie"].map((label, index) => (
-            <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={label}>
-              <div className={cx("aspect-square rounded-2xl", index % 2 ? "bg-gradient-to-br from-stone-200 via-amber-100 to-orange-200" : "bg-gradient-to-br from-amber-200 via-white to-stone-200")} />
-              <p className="mt-2 truncate px-1 text-xs font-bold text-stone-500">{label}</p>
             </div>
           ))}
         </div>
@@ -536,6 +538,11 @@ function AuthForm({ mode }: { mode: "signup" | "login" }) {
         <TextInput autoComplete={mode === "signup" ? "new-password" : "current-password"} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} />
         {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <Button className="mt-5 w-full" disabled={loading}>{loading ? "Working..." : mode === "signup" ? "Sign up" : "Log in"}</Button>
+        {mode === "signup" && (
+          <Link className="mt-4 block text-center text-sm font-bold text-stone-700 underline decoration-amber-500 underline-offset-4 transition hover:text-stone-950" to="/login">
+            Already have an account? Sign in &rarr;
+          </Link>
+        )}
       </form>
     </Shell>
   );
@@ -545,6 +552,30 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   if (!auth.token) return <Navigate to="/login" replace />;
   return children;
+}
+
+function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: string }) {
+  if (!photos.length) {
+    return <div className="h-36 bg-gradient-to-br from-amber-200 via-white to-[#ffdbd1]" />;
+  }
+
+  return (
+    <div className="relative h-36 overflow-hidden bg-stone-100">
+      {photos.map((photo, index) => (
+        <img
+          className={cx(
+            "absolute inset-0 h-full w-full object-cover",
+            photos.length > 1 ? "animate-event-photo-cycle opacity-0" : "opacity-100",
+          )}
+          src={photo.url}
+          alt={`${eventName} upload preview ${index + 1}`}
+          key={photo.id}
+          style={photos.length > 1 ? { animationDelay: `${index * 4}s`, animationDuration: `${photos.length * 4}s` } : undefined}
+        />
+      ))}
+      <div className="absolute inset-0 bg-gradient-to-t from-stone-950/35 via-transparent to-transparent" />
+    </div>
+  );
 }
 
 function Dashboard() {
@@ -593,7 +624,7 @@ function Dashboard() {
         <div className="grid gap-5 lg:grid-cols-2">
           {events.map((event) => (
             <Link className="group overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-[0_24px_70px_rgba(28,25,23,0.07)] transition hover:-translate-y-1 hover:shadow-[0_30px_80px_rgba(245,158,11,0.14)]" to={`/dashboard/events/${event.id}`} key={event.id}>
-              <div className="h-36 bg-gradient-to-br from-amber-200 via-white to-[#ffdbd1]" />
+              <EventPhotoBanner photos={event.previewPhotos || []} eventName={event.name} />
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
