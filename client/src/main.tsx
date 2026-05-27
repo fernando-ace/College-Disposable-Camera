@@ -10,11 +10,7 @@ if (!API_URL) {
 }
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
-const DEFAULT_BOOKING_TEXT = "Please help me book an EventFilm beta event";
-const BOOKING_PHONE_NUMBER = "2053041104";
-const BOOKING_PHONE_DISPLAY = "205-304-1104";
-const DEFAULT_BOOKING_SMS_URL = `sms:+12053041104?&body=${encodeURIComponent(DEFAULT_BOOKING_TEXT)}`;
-const BOOKING_SMS_URL = import.meta.env.VITE_BOOKING_SMS_URL || DEFAULT_BOOKING_SMS_URL;
+const DEMO_STORAGE_KEY = "eventfilm_demo_uploads";
 
 type User = { id: string; email: string };
 type AuthContextValue = {
@@ -54,6 +50,12 @@ type PublicEvent = {
   photoLimitPerGuest: number;
   isRevealed: boolean;
   photoCount: number | null;
+};
+type DemoPhoto = {
+  id: string;
+  name: string;
+  dataUrl: string;
+  createdAt: string;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -155,6 +157,15 @@ async function copyText(text: string) {
   }
 }
 
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read the selected photo"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function getGuestSession(slug: string) {
   const key = `eventfilm_guest_${slug}`;
   const saved = localStorage.getItem(key);
@@ -163,10 +174,17 @@ function getGuestSession(slug: string) {
   return { key, session: { clientId, nickname: "" } };
 }
 
+function cx(...classes: Array<string | false | null | undefined>) {
+  return classes.filter(Boolean).join(" ");
+}
+
 function Button({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
-      className={`rounded-lg bg-orange-700 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-stone-300 ${className}`}
+      className={cx(
+        "inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-[0_16px_36px_rgba(245,158,11,0.16)] transition hover:-translate-y-0.5 hover:bg-amber-400 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none",
+        className,
+      )}
       {...props}
     >
       {children}
@@ -174,184 +192,307 @@ function Button({ children, className = "", ...props }: React.ButtonHTMLAttribut
   );
 }
 
-function TextInput(props: React.InputHTMLAttributes<HTMLInputElement>) {
-  return <input className="w-full rounded-lg border border-stone-300 bg-white px-3 py-3 text-base outline-none focus:border-orange-700" {...props} />;
-}
-
-function TextArea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className="w-full rounded-lg border border-stone-300 bg-white px-3 py-3 text-base outline-none focus:border-orange-700" {...props} />;
-}
-
-function isDesktopBookingDevice() {
-  return window.matchMedia("(hover: hover) and (pointer: fine)").matches;
-}
-
-function BookingModal({ onClose }: { onClose: () => void }) {
-  const [copyStatus, setCopyStatus] = useState("");
-  const modalRef = React.useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    modalRef.current?.focus();
-  }, []);
-
-  async function copyBookingText(label: string, text: string) {
-    try {
-      await copyText(text);
-      setCopyStatus(`${label} copied`);
-    } catch (err) {
-      setCopyStatus((err as Error).message);
-    }
-  }
-
+function SecondaryButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 px-4" role="dialog" aria-modal="true" aria-labelledby="booking-modal-title">
-      <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl outline-none" ref={modalRef} tabIndex={-1}>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold" id="booking-modal-title">Text to book your beta event</h2>
-            <p className="mt-2 text-sm text-stone-600">Use this number and message to book your EventFilm setup.</p>
-          </div>
-          <button className="rounded-lg px-2 py-1 text-xl leading-none text-stone-500" type="button" onClick={onClose} aria-label="Dismiss booking modal">×</button>
-        </div>
-
-        <div className="mt-5 grid gap-3">
-          <div className="rounded-lg bg-stone-50 p-3">
-            <p className="text-xs font-bold uppercase text-stone-500">Number</p>
-            <p className="mt-1 text-lg font-bold">{BOOKING_PHONE_DISPLAY}</p>
-          </div>
-          <div className="rounded-lg bg-stone-50 p-3">
-            <p className="text-xs font-bold uppercase text-stone-500">Message</p>
-            <p className="mt-1 font-semibold">{DEFAULT_BOOKING_TEXT}</p>
-          </div>
-        </div>
-
-        {copyStatus && <p className="mt-4 rounded-lg bg-orange-50 p-3 text-sm font-semibold text-orange-700">{copyStatus}</p>}
-
-        <div className="mt-5 grid gap-2 sm:grid-cols-3">
-          <button className="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold" type="button" onClick={() => copyBookingText("Number", BOOKING_PHONE_NUMBER)}>Copy number</button>
-          <button className="rounded-lg border border-stone-300 bg-stone-50 px-3 py-2 text-sm font-semibold" type="button" onClick={() => copyBookingText("Message", DEFAULT_BOOKING_TEXT)}>Copy message</button>
-          <button className="rounded-lg bg-orange-700 px-3 py-2 text-sm font-semibold text-white" type="button" onClick={onClose}>Close</button>
-        </div>
-      </div>
-    </div>
+    <button
+      className={cx(
+        "inline-flex min-h-12 items-center justify-center rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900 transition hover:-translate-y-0.5 hover:border-amber-500 hover:bg-amber-50 disabled:translate-y-0 disabled:cursor-not-allowed disabled:text-stone-400",
+        className,
+      )}
+      {...props}
+    >
+      {children}
+    </button>
   );
 }
 
-function BookingLink({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  const [showModal, setShowModal] = useState(false);
-
-  function handleBookingClick(event: React.MouseEvent<HTMLAnchorElement>) {
-    if (!isDesktopBookingDevice()) return;
-    event.preventDefault();
-    setShowModal(true);
-  }
-
+function TextInput({ className = "", ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
   return (
-    <>
-      <a className={className} href={BOOKING_SMS_URL} onClick={handleBookingClick}>{children}</a>
-      {showModal && <BookingModal onClose={() => setShowModal(false)} />}
-    </>
+    <input
+      className={cx(
+        "w-full rounded-2xl border border-transparent bg-stone-100 px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
+        className,
+      )}
+      {...props}
+    />
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function TextArea({ className = "", ...props }: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return (
+    <textarea
+      className={cx(
+        "w-full rounded-2xl border border-transparent bg-stone-100 px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
+        className,
+      )}
+      {...props}
+    />
+  );
+}
+
+function Icon({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const icon = String(children);
+  const common = {
+    className: cx("h-5 w-5 shrink-0", className),
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeWidth: 2,
+    viewBox: "0 0 24 24",
+    "aria-hidden": true,
+  };
+  const paths: Record<string, React.ReactNode> = {
+    arrow_forward: <><path d="M5 12h14" /><path d="m13 6 6 6-6 6" /></>,
+    close: <><path d="M18 6 6 18" /><path d="m6 6 12 12" /></>,
+    photo_camera: <><path d="M14.5 5 13 3H8L6.5 5H4a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z" /><circle cx="12" cy="12.5" r="3.5" /></>,
+    photo_library: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m7 15 3-3 2 2 3-4 3 5" /></>,
+    calendar_today: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M8 2v4" /><path d="M16 2v4" /><path d="M3 10h18" /></>,
+    qr_code_2: <><path d="M4 4h6v6H4z" /><path d="M14 4h6v6h-6z" /><path d="M4 14h6v6H4z" /><path d="M14 14h2v2h-2z" /><path d="M18 14h2v6h-6v-2h4z" /></>,
+    lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
+  };
+
+  return <svg {...common}>{paths[icon] || <circle cx="12" cy="12" r="8" />}</svg>;
+}
+
+function StatusPill({ children, tone = "amber" }: { children: React.ReactNode; tone?: "amber" | "green" | "stone" | "red" }) {
+  const tones = {
+    amber: "bg-amber-100 text-amber-900",
+    green: "bg-emerald-100 text-emerald-800",
+    stone: "bg-stone-100 text-stone-700",
+    red: "bg-red-100 text-red-800",
+  };
+  return <span className={cx("inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide", tones[tone])}>{children}</span>;
+}
+
+function LiveDemoPill() {
+  return (
+    <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-900">
+      <span className="h-2 w-2 rounded-full bg-emerald-500 motion-safe:animate-[live-pulse_1.4s_ease-in-out_infinite]" aria-hidden="true" />
+      Live demo
+    </span>
+  );
+}
+
+function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return <div className={cx("rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)]", className)}>{children}</div>;
+}
+
+function Shell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   const auth = useAuth();
   return (
-    <div className="min-h-screen bg-stone-50 text-stone-950">
-      <header className="border-b border-stone-200 bg-white">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4">
-          <Link to="/" className="text-lg font-bold">EventFilm</Link>
+    <div className="min-h-screen bg-[#f9f9f9] text-stone-950">
+      <header className="sticky top-0 z-40 border-b border-white/70 bg-[#f9f9f9]/85 backdrop-blur-xl">
+        <div className={cx("mx-auto flex items-center justify-between px-5 py-4", wide ? "max-w-7xl lg:px-10" : "max-w-6xl")}>
+          <Link to="/" className="font-display text-xl font-bold tracking-tight text-[#653e00] sm:text-2xl">EventFilm</Link>
           <nav className="flex items-center gap-2 text-sm">
             {auth.token ? (
               <>
-                <Link className="rounded-lg px-3 py-2 font-semibold" to="/dashboard">Dashboard</Link>
-                <button className="rounded-lg px-3 py-2 font-semibold" onClick={auth.logout}>Log out</button>
+                <Link className="rounded-full px-3 py-2 font-bold text-stone-700 hover:bg-white" to="/dashboard">Dashboard</Link>
+                <button className="rounded-full px-3 py-2 font-bold text-stone-700 hover:bg-white" onClick={auth.logout}>Log out</button>
               </>
             ) : (
               <>
-                <Link className="rounded-lg px-3 py-2 font-semibold" to="/login">Host login</Link>
-                <BookingLink className="rounded-lg bg-orange-700 px-3 py-2 font-semibold text-white">Book beta</BookingLink>
+                <Link className="rounded-full px-3 py-2 font-bold text-stone-700 hover:bg-white" to="/login">Host login</Link>
+                <Link className="rounded-full bg-amber-500 px-4 py-2 font-bold text-stone-950 shadow-sm transition hover:bg-amber-400" to="/signup">Start free</Link>
               </>
             )}
           </nav>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-6">{children}</main>
+      <main className={cx("mx-auto px-5 py-8", wide ? "max-w-7xl lg:px-10" : "max-w-6xl")}>{children}</main>
     </div>
+  );
+}
+
+function DemoUploader() {
+  const [name, setName] = useState("Guest");
+  const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState("");
+  const [photos, setPhotos] = useState<DemoPhoto[]>(() => {
+    const saved = sessionStorage.getItem(DEMO_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  function savePhotos(nextPhotos: DemoPhoto[]) {
+    setPhotos(nextPhotos);
+    try {
+      sessionStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(nextPhotos.slice(0, 6)));
+    } catch {
+      setMessage("Saved for this page view. Your browser skipped session storage for this large photo.");
+    }
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    if (!file) return setError("Choose a photo to try the demo");
+    if (!file.type.startsWith("image/")) return setError("Choose an image file");
+    if (!name.trim()) return setError("Add a name first");
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      const nextPhoto = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`, name: name.trim(), dataUrl, createdAt: new Date().toISOString() };
+      savePhotos([nextPhoto, ...photos].slice(0, 6));
+      setFile(null);
+      setMessage("Demo photo added locally");
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  return (
+    <Card className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:p-8">
+      <div>
+        <LiveDemoPill />
+        <h3 className="mt-4 font-display text-3xl font-bold leading-tight text-stone-950">Mia's Graduation Cookout</h3>
+        <p className="mt-3 text-stone-600">Preview the guest upload flow. Choose a photo, add a name, and EventFilm temporarily saves it in this browser session only.</p>
+        <form className="mt-6 grid gap-4" onSubmit={submit}>
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Your name
+            <TextInput value={name} onChange={(event) => setName(event.target.value)} placeholder="Mia" />
+          </label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400">
+              <Icon>photo_camera</Icon>
+              Take photo
+              <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+            </label>
+            <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900 transition hover:border-amber-500 hover:bg-amber-50">
+              <Icon>photo_library</Icon>
+              Choose photo
+              <input className="sr-only" type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+            </label>
+          </div>
+          {file && previewUrl && (
+            <div className="flex items-center gap-4 rounded-2xl bg-stone-50 p-3">
+              <img className="h-20 w-20 rounded-2xl object-cover" src={previewUrl} alt="Selected demo preview" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-bold">{file.name || "Selected photo"}</p>
+                <p className="text-sm text-stone-600">Ready for local demo upload</p>
+              </div>
+            </div>
+          )}
+          {message && <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{message}</p>}
+          {error && <p className="rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
+          <Button type="submit" className="w-full justify-between rounded-2xl px-5">
+            <span>Add to demo album</span>
+            <Icon>arrow_forward</Icon>
+          </Button>
+        </form>
+      </div>
+      <div className="rounded-[2rem] bg-stone-50 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-wide text-stone-500">Guest preview</p>
+            <h4 className="font-display text-xl font-bold">Demo album</h4>
+          </div>
+          <Link className="rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" to="/signup">Create real event</Link>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          {photos.map((photo) => (
+            <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={photo.id}>
+              <img className="aspect-square w-full rounded-2xl object-cover" src={photo.dataUrl} alt={`Demo upload by ${photo.name}`} />
+              <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">Uploaded by {photo.name}</p>
+            </div>
+          ))}
+          {!photos.length && ["Table toast", "Dance floor", "Last hug", "Group selfie"].map((label, index) => (
+            <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={label}>
+              <div className={cx("aspect-square rounded-2xl", index % 2 ? "bg-gradient-to-br from-stone-200 via-amber-100 to-orange-200" : "bg-gradient-to-br from-amber-200 via-white to-stone-200")} />
+              <p className="mt-2 truncate px-1 text-xs font-bold text-stone-500">{label}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </Card>
   );
 }
 
 function Landing() {
   return (
-    <Shell>
-      <section className="py-8">
-        <p className="mb-3 text-sm font-bold uppercase text-orange-700">Summer private beta</p>
-        <h1 className="max-w-2xl text-4xl font-black tracking-tight sm:text-5xl">Disposable camera albums for parties and summer events.</h1>
-        <p className="mt-4 max-w-2xl text-lg text-stone-700">We set up your event link and QR code for you. Guests scan and upload with no app download, then you get the album and download after the event.</p>
-        <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-          <BookingLink className="rounded-lg bg-orange-700 px-5 py-3 text-center font-semibold text-white">Text to book beta</BookingLink>
-          <Link className="rounded-lg border border-stone-300 bg-white px-5 py-3 text-center font-semibold" to="/login">Host login</Link>
-        </div>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-4">
-        {["Text to book", "We set up the QR", "Guests upload photos", "Download the album"].map((step, index) => (
-          <div className="rounded-lg border border-stone-200 bg-white p-4" key={step}>
-            <div className="text-sm font-bold text-orange-700">Step {index + 1}</div>
-            <div className="mt-2 font-semibold">{step}</div>
+    <Shell wide>
+      <section className="grid items-center gap-8 py-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16 lg:py-20">
+        <div className="text-center lg:text-left">
+          <h1 className="font-display text-4xl font-bold leading-[1.05] tracking-tight text-stone-950 sm:text-6xl">
+            Stop chasing <span className="text-[#653e00]">event photos.</span>
+          </h1>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg lg:mx-0">
+            Create one event link, share the QR code, and let guests upload photos from any phone. After the event, you get one clean private album.
+          </p>
+          <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
+            <Link className="inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-[0_16px_36px_rgba(101,62,0,0.18)] transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup">
+              Create a free beta event
+              <Icon>arrow_forward</Icon>
+            </Link>
+            <a className="inline-flex min-h-13 items-center justify-center rounded-2xl border border-[#d5c4b2] bg-white px-7 py-4 text-sm font-bold text-[#653e00] transition hover:-translate-y-0.5 hover:border-[#653e00] hover:bg-amber-50" href="#demo">
+              Try the demo first
+            </a>
           </div>
-        ))}
-      </section>
-
-      <section className="mt-8 grid gap-5 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)] lg:items-center">
-        <div>
-          <p className="text-sm font-bold uppercase text-orange-700">Guest demo</p>
-          <h2 className="mt-2 text-2xl font-black">No app download for guests.</h2>
-          <p className="mt-3 text-stone-700">Guests open the event link, add a name, choose a photo, and upload from their phone.</p>
         </div>
-        <div className="mx-auto w-full max-w-[360px] overflow-hidden rounded-2xl border border-stone-200 bg-white shadow-xl">
-          <div className="bg-stone-100">
-            <video
-              className="aspect-[390/844] w-full object-cover"
-              autoPlay
-              muted
-              loop
-              playsInline
-              poster="/demo/guest-upload-poster.webp?v=2"
-              aria-label="Guest upload walkthrough demo"
-            >
+        <div className="relative mx-auto w-full max-w-[390px]">
+          <div className="absolute -left-8 bottom-8 h-32 w-32 rounded-full bg-[#ffdbd1] blur-2xl" />
+          <div className="relative overflow-hidden rounded-[2rem] shadow-[0_30px_90px_rgba(245,158,11,0.14)]">
+            <video className="aspect-[390/844] w-full object-cover" autoPlay muted loop playsInline poster="/demo/guest-upload-poster.webp?v=2" aria-label="Guest upload walkthrough demo">
               <source src="/demo/guest-upload-demo.webm?v=2" type="video/webm" />
               <source src="/demo/guest-upload-demo.mp4?v=2" type="video/mp4" />
             </video>
+            <div className="absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-white/50 bg-white/85 px-5 py-3 text-sm font-bold text-stone-900 shadow-lg backdrop-blur">
+              <Icon className="text-[#653e00]">qr_code_2</Icon>
+              Scan to join
+            </div>
           </div>
         </div>
       </section>
 
-      <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
-        <h2 className="text-xl font-bold">Simple summer beta pricing</h2>
-        <p className="mt-2 text-sm text-stone-600">Manual payment for the beta. No account needed for guests.</p>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {["$5 beta event", "Setup included", "Limited to first 10 paid summer events"].map((plan) => (
-            <p className="rounded-lg bg-stone-50 p-3 text-sm text-stone-700" key={plan}>{plan}</p>
-          ))}
+      <section className="border-t border-stone-200 px-0 py-16" id="demo">
+        <div className="mx-auto mb-10 max-w-2xl text-center">
+          <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">See it in action</h2>
+          <p className="mt-3 text-stone-600">Experience the simplicity from both sides. Upload locally in this demo, then create a real event when you are ready.</p>
+        </div>
+        <DemoUploader />
+      </section>
+
+      <section className="py-16 text-center">
+        <div className="mx-auto mb-12 max-w-2xl">
+          <h2 className="font-display text-3xl font-bold">Effortless memory collection</h2>
+          <p className="mt-3 text-stone-600">Three simple steps to gather every angle of your special day.</p>
+        </div>
+        <div className="grid gap-10 md:grid-cols-3">
+        {[
+          ["Create", "Set up your event in seconds. EventFilm generates a shareable link and QR code for your celebration."],
+          ["Share", "Display the QR code at the venue. Guests scan and upload instantly with no app download required."],
+          ["Get", "Watch your private album grow, then download the full collection when the event is over."],
+        ].map(([title, body], index) => (
+          <div className="text-center" key={title}>
+            <div className={cx("mx-auto grid h-20 w-20 place-items-center rounded-full font-display text-2xl font-bold shadow-sm", index === 0 ? "bg-[#ffddb8] text-[#2a1700]" : index === 1 ? "bg-[#e5e2e1] text-stone-800" : "bg-[#ffdbd1] text-[#7b2e17]")}>{index + 1}</div>
+            <h3 className="mt-7 font-display text-2xl font-bold text-stone-950">{title}</h3>
+            <p className="mt-3 text-stone-600">{body}</p>
+          </div>
+        ))}
         </div>
       </section>
 
-      <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
-        <h2 className="text-xl font-bold">Beta setup included</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {["We create your event link and QR code", "Guests scan and upload without an app", "You get the album and photo download"].map((item) => (
-            <p className="rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-700" key={item}>{item}</p>
-          ))}
+      <section className="grid items-center gap-8 rounded-t-[3rem] bg-stone-200 p-8 text-center sm:p-12 lg:grid-cols-[1fr_0.8fr] lg:text-left">
+        <div>
+          <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">Ready to collect the moments that matter?</h2>
+          <p className="mt-4 max-w-2xl text-stone-600">Stop relying on messy group chats and compressed social media posts. Give your memories a beautiful home.</p>
         </div>
-      </section>
-
-      <section className="mt-8 rounded-lg border border-stone-200 bg-white p-5">
-        <h2 className="text-xl font-bold">Great for</h2>
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          {["Birthday parties", "Graduation parties", "Lake and beach trips", "Wedding showers", "Small receptions", "Club socials"].map((eventType) => (
-            <p className="rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-700" key={eventType}>{eventType}</p>
-          ))}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+          <Link className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup">Create a free beta event</Link>
+          <p className="rounded-2xl bg-white/60 p-4 text-sm text-stone-600">Disposable camera mode is still available as an optional reveal-style setting for events that want the surprise.</p>
         </div>
       </section>
     </Shell>
@@ -386,13 +527,14 @@ function AuthForm({ mode }: { mode: "signup" | "login" }) {
 
   return (
     <Shell>
-      <form className="mx-auto max-w-md rounded-lg border border-stone-200 bg-white p-5" onSubmit={submit}>
-        <h1 className="text-2xl font-bold">{mode === "signup" ? "Create host account" : "Host login"}</h1>
-        <label className="mt-5 block text-sm font-semibold">Email</label>
+      <form className="mx-auto max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_24px_70px_rgba(28,25,23,0.07)]" onSubmit={submit}>
+        <h1 className="font-display text-3xl font-bold">{mode === "signup" ? "Create host account" : "Host login"}</h1>
+        <p className="mt-2 text-sm text-stone-600">Manage your private albums, QR links, and downloads.</p>
+        <label className="mt-6 block text-sm font-bold text-stone-700">Email</label>
         <TextInput autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-        <label className="mt-4 block text-sm font-semibold">Password</label>
+        <label className="mt-4 block text-sm font-bold text-stone-700">Password</label>
         <TextInput autoComplete={mode === "signup" ? "new-password" : "current-password"} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} />
-        {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <Button className="mt-5 w-full" disabled={loading}>{loading ? "Working..." : mode === "signup" ? "Sign up" : "Log in"}</Button>
       </form>
     </Shell>
@@ -416,31 +558,67 @@ function Dashboard() {
       .catch((err) => setError((err as Error).message));
   }, [auth.token]);
 
+  const liveEvents = events.filter((event) => new Date(event.revealAt).getTime() > Date.now()).length;
+  const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
+
   return (
-    <Shell>
-      <div className="flex items-center justify-between gap-4">
+    <Shell wide>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Host dashboard</h1>
-          <p className="text-sm text-stone-600">{auth.user?.email}</p>
+          <h1 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">Welcome back</h1>
+          <p className="mt-2 text-stone-600">{auth.user?.email}</p>
         </div>
-        <Link className="rounded-lg bg-orange-700 px-4 py-3 text-sm font-semibold text-white" to="/dashboard/events/new">New event</Link>
+        <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
       </div>
-      {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      <div className="mt-5 grid gap-4">
-        {events.map((event) => (
-          <Link className="rounded-lg border border-stone-200 bg-white p-4" to={`/dashboard/events/${event.id}`} key={event.id}>
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-bold">{event.name}</h2>
-                <p className="text-sm text-stone-600">Event: {formatDateTime(event.eventDate)}</p>
-                <p className="text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
+      {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+      <div className="mt-8 grid gap-5 sm:grid-cols-3">
+        <Card>
+          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Live events</p>
+          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{liveEvents}</p>
+        </Card>
+        <Card>
+          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Total photos</p>
+          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{totalPhotos}</p>
+        </Card>
+        <Card>
+          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Guest flow</p>
+          <p className="mt-3 text-lg font-bold">No app. No account.</p>
+        </Card>
+      </div>
+      <section className="mt-8">
+        <div className="mb-4 flex items-center justify-between gap-4">
+          <h2 className="font-display text-2xl font-bold">Your events</h2>
+          <span className="text-sm font-semibold text-stone-500">{events.length} total</span>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
+          {events.map((event) => (
+            <Link className="group overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-[0_24px_70px_rgba(28,25,23,0.07)] transition hover:-translate-y-1 hover:shadow-[0_30px_80px_rgba(245,158,11,0.14)]" to={`/dashboard/events/${event.id}`} key={event.id}>
+              <div className="h-36 bg-gradient-to-br from-amber-200 via-white to-[#ffdbd1]" />
+              <div className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <StatusPill tone={new Date(event.revealAt).getTime() > Date.now() ? "green" : "stone"}>{new Date(event.revealAt).getTime() > Date.now() ? "Live" : "Revealed"}</StatusPill>
+                    <h3 className="mt-3 font-display text-xl font-bold text-stone-950">{event.name}</h3>
+                    <p className="mt-1 text-sm text-stone-600">Event: {formatDateTime(event.eventDate)}</p>
+                    <p className="text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
+                  </div>
+                  <div className="rounded-2xl bg-stone-50 px-4 py-3 text-center">
+                    <p className="font-display text-2xl font-bold text-[#653e00]">{event.photoCount}</p>
+                    <p className="text-xs font-bold uppercase text-stone-500">Photos</p>
+                  </div>
+                </div>
               </div>
-              <div className="rounded-lg bg-stone-100 px-3 py-2 text-sm font-semibold">{event.photoCount} photos</div>
-            </div>
-          </Link>
-        ))}
-        {!events.length && <p className="rounded-lg border border-dashed border-stone-300 p-6 text-center text-stone-600">No events yet. Create one to get a QR code.</p>}
-      </div>
+            </Link>
+          ))}
+        </div>
+        {!events.length && (
+          <Card className="text-center">
+            <h3 className="font-display text-2xl font-bold">No events yet</h3>
+            <p className="mt-2 text-stone-600">Create your first album to get a shareable link and QR code.</p>
+            <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950" to="/dashboard/events/new">Create event</Link>
+          </Card>
+        )}
+      </section>
     </Shell>
   );
 }
@@ -486,51 +664,76 @@ function CreateEvent() {
   if (created) {
     return (
       <Shell>
-        <div className="mx-auto max-w-xl rounded-lg border border-stone-200 bg-white p-5">
-          <h1 className="text-2xl font-bold">Event created</h1>
-          <p className="mt-2 text-sm text-stone-600">Share this link or QR code with guests.</p>
-          <input className="mt-4 w-full rounded-lg border border-stone-300 px-3 py-3 text-sm" readOnly value={created.eventLink} />
-          {copyStatus && <p className="mt-2 text-sm font-semibold text-orange-700">{copyStatus}</p>}
-          <div className="mt-4 flex justify-center">
-            <img className="h-64 w-64" src={created.qrCodeDataUrl} alt="Event QR code" />
+        <Card className="mx-auto max-w-2xl">
+          <StatusPill tone="green">Event ready</StatusPill>
+          <h1 className="mt-4 font-display text-3xl font-bold">Share your EventFilm link</h1>
+          <p className="mt-2 text-stone-600">Guests can scan the QR code or open the link to upload photos without an account.</p>
+          <input className="mt-5 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700" readOnly value={created.eventLink} />
+          {copyStatus && <p className="mt-2 text-sm font-semibold text-amber-700">{copyStatus}</p>}
+          <div className="mt-5 grid gap-6 sm:grid-cols-[220px_1fr] sm:items-center">
+            <div className="rounded-3xl bg-stone-50 p-4">
+              <img className="mx-auto h-48 w-48 rounded-2xl bg-white" src={created.qrCodeDataUrl} alt="Event QR code" />
+            </div>
+            <div className="grid gap-3">
+              <Button
+                onClick={async () => {
+                  try {
+                    await copyText(created.eventLink);
+                    setCopyStatus("Link copied");
+                  } catch (err) {
+                    setCopyStatus((err as Error).message);
+                  }
+                }}
+              >
+                Copy link
+              </Button>
+              <SecondaryButton onClick={() => downloadDataUrl(created.qrCodeDataUrl || "", `${created.name}-qr.png`)}>Download QR</SecondaryButton>
+              <SecondaryButton onClick={() => navigate(`/dashboard/events/${created.id}`)}>Manage event</SecondaryButton>
+            </div>
           </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-3">
-            <Button
-              onClick={async () => {
-                try {
-                  await copyText(created.eventLink);
-                  setCopyStatus("Link copied");
-                } catch (err) {
-                  setCopyStatus((err as Error).message);
-                }
-              }}
-            >
-              Copy link
-            </Button>
-            <Button onClick={() => downloadDataUrl(created.qrCodeDataUrl || "", `${created.name}-qr.png`)}>Download QR</Button>
-            <Button onClick={() => navigate(`/dashboard/events/${created.id}`)}>Manage event</Button>
-          </div>
-        </div>
+        </Card>
       </Shell>
     );
   }
 
   return (
     <Shell>
-      <form className="mx-auto max-w-xl rounded-lg border border-stone-200 bg-white p-5" onSubmit={submit}>
-        <h1 className="text-2xl font-bold">Create event</h1>
-        <label className="mt-5 block text-sm font-semibold">Event name</label>
-        <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} required />
-        <label className="mt-4 block text-sm font-semibold">Event date</label>
-        <TextInput type="datetime-local" value={form.eventDate} onChange={(event) => update("eventDate", event.target.value)} required />
-        <label className="mt-4 block text-sm font-semibold">Reveal date/time</label>
-        <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
-        <label className="mt-4 block text-sm font-semibold">Photo limit per guest</label>
-        <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
-        <label className="mt-4 block text-sm font-semibold">Description</label>
-        <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} />
-        {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        <Button className="mt-5 w-full">Create event</Button>
+      <div className="mx-auto max-w-3xl text-center">
+        <h1 className="font-display text-4xl font-bold text-[#653e00]">Start your story</h1>
+        <p className="mt-3 text-lg text-stone-600">Create a space where your guests can share their favorite moments instantly.</p>
+      </div>
+      <form className="mx-auto mt-8 grid max-w-3xl gap-5 rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-8" onSubmit={submit}>
+        <label className="grid gap-2 text-sm font-bold text-stone-700">
+          Event name
+          <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
+        </label>
+        <div className="grid gap-5 sm:grid-cols-2">
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Event date
+            <TextInput type="datetime-local" value={form.eventDate} onChange={(event) => update("eventDate", event.target.value)} required />
+          </label>
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Reveal date/time
+            <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
+          </label>
+        </div>
+        <label className="grid gap-2 text-sm font-bold text-stone-700">
+          Photo limit per guest
+          <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
+        </label>
+        <label className="grid gap-2 text-sm font-bold text-stone-700">
+          Description
+          <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
+        </label>
+        <div className="rounded-3xl bg-stone-50 p-5">
+          <h2 className="font-display text-xl font-bold text-[#653e00]">Event settings</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <p className="rounded-2xl bg-white p-4 text-sm text-stone-600"><strong className="block text-stone-950">QR upload</strong> Guests scan a QR code to upload photos.</p>
+            <p className="rounded-2xl bg-white p-4 text-sm text-stone-600"><strong className="block text-stone-950">Reveal lock</strong> Photos stay private until the reveal time.</p>
+          </div>
+        </div>
+        {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        <Button className="w-full sm:justify-self-end sm:px-12">Create event</Button>
       </form>
     </Shell>
   );
@@ -573,20 +776,35 @@ function ManageEvent() {
   }
 
   return (
-    <Shell>
-      {error && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+    <Shell wide>
+      {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {event && (
         <>
-          <div className="rounded-lg border border-stone-200 bg-white p-5">
-            <h1 className="text-2xl font-bold">{event.name}</h1>
-            <p className="mt-2 text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
-            <p className="text-sm text-stone-600">Limit: {event.photoLimitPerGuest} photos per guest</p>
-            <p className="text-sm text-stone-600">Uploaded: {event.photoCount} photos</p>
-            <input className="mt-4 w-full rounded-lg border border-stone-300 px-3 py-3 text-sm" readOnly value={event.eventLink} />
-            {copyStatus && <p className="mt-2 text-sm font-semibold text-orange-700">{copyStatus}</p>}
-            <div className="mt-4 grid gap-3 sm:grid-cols-[160px_1fr]">
-              <img className="h-40 w-40" src={event.qrCodeDataUrl} alt="Event QR code" />
-              <div className="grid content-start gap-3">
+          <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <StatusPill>Live event dashboard</StatusPill>
+              <h1 className="mt-3 font-display text-4xl font-bold text-stone-950">{event.name}</h1>
+              <div className="mt-3 flex flex-wrap gap-3 text-sm text-stone-600">
+                <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">calendar_today</Icon>{formatDateTime(event.eventDate)}</span>
+                <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">photo_library</Icon>{event.photoCount} photos</span>
+                <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">lock</Icon>Reveal: {formatDateTime(event.revealAt)}</span>
+              </div>
+            </div>
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
+          </section>
+
+          <section className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+            <Card className="lg:p-8">
+              <div className="flex items-center gap-3">
+                <div className="grid h-12 w-12 place-items-center rounded-full bg-amber-100 text-[#653e00]"><Icon>qr_code_2</Icon></div>
+                <div>
+                  <h2 className="font-display text-2xl font-bold">Share and invite</h2>
+                  <p className="text-sm text-stone-600">Invite guests to upload photos by sharing this link or displaying the QR code.</p>
+                </div>
+              </div>
+              <input className="mt-5 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700" readOnly value={event.eventLink} />
+              {copyStatus && <p className="mt-2 text-sm font-semibold text-amber-700">{copyStatus}</p>}
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <Button
                   onClick={async () => {
                     try {
@@ -597,29 +815,38 @@ function ManageEvent() {
                     }
                   }}
                 >
-                  Copy event link
+                  Copy link
                 </Button>
-                <Button onClick={() => downloadDataUrl(event.qrCodeDataUrl || "", `${event.name}-qr.png`)}>Download QR</Button>
-                <Button onClick={downloadZip}>Download all photos</Button>
+                <SecondaryButton onClick={() => downloadDataUrl(event.qrCodeDataUrl || "", `${event.name}-qr.png`)}>Download QR</SecondaryButton>
+                <SecondaryButton onClick={downloadZip}>Download ZIP</SecondaryButton>
+              </div>
+            </Card>
+            <Card className="grid place-items-center">
+              <img className="h-56 w-56 rounded-3xl bg-white p-2" src={event.qrCodeDataUrl} alt="Event QR code" />
+              <p className="mt-3 text-sm font-bold uppercase tracking-wide text-stone-500">Scan to upload photos</p>
+            </Card>
+          </section>
+
+          <section className="mt-10">
+            <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="font-display text-3xl font-bold">Recent uploads</h2>
+                <p className="text-stone-600">The latest memories from your guests.</p>
               </div>
             </div>
-          </div>
-
-          <section className="mt-6">
-            <h2 className="text-xl font-bold">Photos</h2>
-            <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {event.photos.map((photo) => (
-                <div className="overflow-hidden rounded-lg border border-stone-200 bg-white" key={photo.id}>
-                  <img className="aspect-square w-full object-cover" src={photo.url} alt={photo.originalFilename} />
+                <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white p-2 shadow-sm" key={photo.id}>
+                  <img className="aspect-square w-full rounded-2xl object-cover" src={photo.url} alt={photo.originalFilename} />
                   <div className="p-3 text-sm">
-                    <p className="truncate font-semibold">{photo.guestNickname || "Guest"}</p>
+                    <p className="truncate font-bold">{photo.guestNickname || "Guest"}</p>
                     <p className="text-stone-600">{formatDateTime(photo.createdAt)}</p>
-                    <button className="mt-2 rounded-lg bg-red-700 px-3 py-2 text-sm font-semibold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
+                    <button className="mt-3 inline-flex min-h-10 items-center rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
                   </div>
                 </div>
               ))}
             </div>
-            {!event.photos.length && <p className="mt-4 rounded-lg border border-dashed border-stone-300 p-6 text-center text-stone-600">No photos uploaded yet.</p>}
+            {!event.photos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos uploaded yet.</p></Card>}
           </section>
         </>
       )}
@@ -705,59 +932,74 @@ function GuestEvent() {
 
   return (
     <Shell>
+      {!event && (
+        <div className="mx-auto mb-5 max-w-2xl text-center">
+          <StatusPill>No app download. No account needed.</StatusPill>
+        </div>
+      )}
       {event && (
         <div className="mx-auto max-w-2xl">
-          <section className="rounded-lg border border-stone-200 bg-white p-5">
-            <h1 className="text-2xl font-bold">{event.name}</h1>
-            {event.description && <p className="mt-2 text-stone-700">{event.description}</p>}
+          <section className="text-center">
+            <StatusPill>No app download. No account needed.</StatusPill>
+            <h1 className="mt-5 font-display text-4xl font-bold text-stone-950">{event.name}</h1>
+            {event.description && <p className="mt-3 text-stone-700">{event.description}</p>}
             <p className="mt-3 text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
-            {!event.isRevealed && <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-800">Photos are locked until {formatDateTime(event.revealAt)}.</p>}
+            {!event.isRevealed && (
+              <p className="mt-5 rounded-3xl bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+                Photos are locked until {formatDateTime(event.revealAt)}.
+              </p>
+            )}
           </section>
 
-          <form className="mt-5 rounded-lg border border-stone-200 bg-white p-5" onSubmit={uploadPhoto}>
-            <h2 className="text-xl font-bold">Upload a photo</h2>
-            <label className="mt-4 block text-sm font-semibold">Name or nickname</label>
-            <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
-            <p className="mt-3 text-sm text-stone-600">
+          <form className="mt-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-6" onSubmit={uploadPhoto}>
+            <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
+            <p className="mt-2 text-stone-600">Add your name, pick a photo, and send it to the private album.</p>
+            <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
+              Name or nickname
+              <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
+            </label>
+            <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-700">
               {remaining === null ? "Checking uploads..." : `${remaining} uploads left`}
             </p>
-            <label className="mt-4 block text-sm font-semibold">Photo</label>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <label className="block cursor-pointer rounded-lg border border-orange-700 bg-orange-700 px-3 py-3 text-center text-sm font-semibold text-white">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400">
+                <Icon>photo_camera</Icon>
                 Take photo
                 <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => setFile(event.target.files?.[0] || null)} />
               </label>
-              <label className="block cursor-pointer rounded-lg border border-stone-300 bg-white px-3 py-3 text-center text-sm font-semibold text-stone-800">
+              <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900 transition hover:border-amber-500 hover:bg-amber-50">
+                <Icon>photo_library</Icon>
                 Choose from library
                 <input className="sr-only" type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} />
               </label>
             </div>
             {file && photoPreviewUrl && (
-              <div className="mt-4 flex items-center gap-4 rounded-lg border border-stone-200 bg-stone-50 p-3">
-                <img className="h-24 w-24 rounded-lg object-cover" src={photoPreviewUrl} alt="Selected photo preview" />
+              <div className="mt-4 flex items-center gap-4 rounded-3xl border border-stone-200 bg-stone-50 p-3">
+                <img className="h-24 w-24 rounded-2xl object-cover" src={photoPreviewUrl} alt="Selected photo preview" />
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-stone-900">{file.name || "Selected photo"}</p>
+                  <p className="truncate text-sm font-bold text-stone-900">{file.name || "Selected photo"}</p>
                   <p className="mt-1 text-sm text-stone-600">Ready to upload</p>
                 </div>
               </div>
             )}
-            {message && <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p>}
-            {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            {message && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+            {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
             <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Uploading..." : "Upload photo"}</Button>
           </form>
 
           {event.isRevealed && (
-            <section className="mt-6">
-              <h2 className="text-xl font-bold">Album</h2>
+            <section className="mt-8">
+              <h2 className="font-display text-2xl font-bold">Album</h2>
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {photos.map((photo) => <img className="aspect-square w-full rounded-lg object-cover" src={photo.url} alt={photo.originalFilename} key={photo.id} />)}
+                {photos.map((photo) => <img className="aspect-square w-full rounded-3xl object-cover" src={photo.url} alt={photo.originalFilename} key={photo.id} />)}
               </div>
-              {!photos.length && <p className="mt-4 rounded-lg border border-dashed border-stone-300 p-6 text-center text-stone-600">No photos yet.</p>}
+              {!photos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos yet.</p></Card>}
             </section>
           )}
         </div>
       )}
       {!event && !error && <p>Loading event...</p>}
+      {error && !event && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
     </Shell>
   );
 }
