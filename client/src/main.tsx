@@ -559,21 +559,29 @@ function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: s
     return <div className="h-36 bg-gradient-to-br from-amber-200 via-white to-[#ffdbd1]" />;
   }
 
+  const stripPhotos = photos.length > 1 ? [...photos, ...photos] : photos;
+
   return (
-    <div className="relative h-36 overflow-hidden bg-stone-100">
-      {photos.map((photo, index) => (
-        <img
-          className={cx(
-            "absolute inset-0 h-full w-full object-cover",
-            photos.length > 1 ? "animate-event-photo-cycle opacity-0" : "opacity-100",
-          )}
-          src={photo.url}
-          alt={`${eventName} upload preview ${index + 1}`}
-          key={photo.id}
-          style={photos.length > 1 ? { animationDelay: `${index * 4}s`, animationDuration: `${photos.length * 4}s` } : undefined}
-        />
-      ))}
-      <div className="absolute inset-0 bg-gradient-to-t from-stone-950/35 via-transparent to-transparent" />
+    <div className="relative h-36 overflow-hidden bg-[#f8f3ea]">
+      <div className="absolute inset-y-0 left-0 z-10 w-14 bg-gradient-to-r from-[#f8f3ea] to-transparent" />
+      <div className="absolute inset-y-0 right-0 z-10 w-14 bg-gradient-to-l from-[#f8f3ea] to-transparent" />
+      <div
+        className={cx("event-photo-strip-track flex h-full items-center gap-3 px-5", photos.length === 1 && "justify-center")}
+        style={photos.length > 1 ? { animationDuration: `${Math.max(photos.length * 4, 18)}s` } : { animation: "none", width: "100%" }}
+      >
+        {stripPhotos.map((photo, index) => (
+          <div className="event-photo-strip-frame h-28 w-22 shrink-0 overflow-hidden rounded-xl bg-white p-1.5 shadow-sm" key={`${photo.id}-${index}`}>
+            <img
+              className="h-full w-full rounded-lg object-cover"
+              src={photo.url}
+              alt={`${eventName} upload preview ${index % photos.length + 1}`}
+              onError={(event) => {
+                event.currentTarget.style.visibility = "hidden";
+              }}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
