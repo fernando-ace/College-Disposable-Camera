@@ -559,7 +559,7 @@ function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: s
     return <div className="h-36 bg-gradient-to-br from-amber-200 via-white to-[#ffdbd1]" />;
   }
 
-  const stripPhotos = photos.length > 1 ? [...photos, ...photos] : photos;
+  const stripPhotos = photos.length > 1 ? Array.from({ length: 4 }, () => photos).flat() : photos;
 
   return (
     <div className="relative h-36 overflow-hidden bg-[#f8f3ea]">
@@ -567,7 +567,14 @@ function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: s
       <div className="absolute inset-y-0 right-0 z-10 w-14 bg-gradient-to-l from-[#f8f3ea] to-transparent" />
       <div
         className={cx("event-photo-strip-track flex h-full items-center gap-3 px-5", photos.length === 1 && "justify-center")}
-        style={photos.length > 1 ? { animationDuration: `${Math.max(photos.length * 4, 18)}s` } : { animation: "none", width: "100%" }}
+        style={
+          photos.length > 1
+            ? {
+                animationDuration: `${Math.max(photos.length * 4, 18)}s`,
+                "--strip-shift": `${100 / 4}%`,
+              } as React.CSSProperties
+            : { animation: "none", width: "100%" }
+        }
       >
         {stripPhotos.map((photo, index) => (
           <div className="event-photo-strip-frame h-28 w-22 shrink-0 overflow-hidden rounded-xl bg-white p-1.5 shadow-sm" key={`${photo.id}-${index}`}>

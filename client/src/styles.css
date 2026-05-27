@@ -51,6 +51,6 @@ textarea {
   }
 
   to {
-    transform: translateX(-50%);
+    transform: translateX(calc(-1 * var(--strip-shift, 25%)));
   }
 }
