@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import "./styles.css";
@@ -582,12 +582,34 @@ function Dashboard() {
   const auth = useAuth();
   const [events, setEvents] = useState<EventSummary[]>([]);
   const [error, setError] = useState("");
+  const previewLoadIds = useRef(new Set<string>());
 
   useEffect(() => {
     api<{ events: EventSummary[] }>("/api/host/events", { token: auth.token })
       .then((data) => setEvents(data.events))
       .catch((err) => setError((err as Error).message));
   }, [auth.token]);
+
+  useEffect(() => {
+    const missingPreviewEvents = events.filter((event) => event.photoCount > 0 && !event.previewPhotos?.length && !previewLoadIds.current.has(event.id));
+    if (!missingPreviewEvents.length) return;
+
+    missingPreviewEvents.forEach((event) => previewLoadIds.current.add(event.id));
+    Promise.all(
+      missingPreviewEvents.map((event) =>
+        api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${event.id}`, { token: auth.token })
+          .then((data) => ({ id: event.id, photos: data.event.photos.slice(0, 6) }))
+          .catch(() => ({ id: event.id, photos: [] })),
+      ),
+    ).then((previews) => {
+      setEvents((currentEvents) =>
+        currentEvents.map((event) => {
+          const preview = previews.find((item) => item.id === event.id);
+          return preview ? { ...event, previewPhotos: preview.photos } : event;
+        }),
+      );
+    });
+  }, [auth.token, events]);
 
   const liveEvents = events.filter((event) => new Date(event.revealAt).getTime() > Date.now()).length;
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
