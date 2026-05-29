@@ -646,12 +646,12 @@ function Dashboard() {
           <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{liveEvents}</p>
         </Card>
         <Card>
-          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Total photos</p>
-          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{totalPhotos}</p>
+          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Total events</p>
+          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{events.length}</p>
         </Card>
         <Card>
-          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Guest flow</p>
-          <p className="mt-3 text-lg font-bold">No app. No account.</p>
+          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Total photos</p>
+          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{totalPhotos}</p>
         </Card>
       </div>
       <section className="mt-8">
