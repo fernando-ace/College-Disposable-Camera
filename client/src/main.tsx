@@ -655,9 +655,8 @@ function Dashboard() {
         </Card>
       </div>
       <section className="mt-8">
-        <div className="mb-4 flex items-center justify-between gap-4">
+        <div className="mb-4">
           <h2 className="font-display text-2xl font-bold">Your events</h2>
-          <span className="text-sm font-semibold text-stone-500">{events.length} total</span>
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
           {events.map((event) => (
