@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
 const multer = require("multer");
 const path = require("path");
+const sharp = require("sharp");
 const { ZipArchive } = require("archiver");
 const QRCode = require("qrcode");
 const rateLimit = require("express-rate-limit");
@@ -12,9 +13,11 @@ const { signToken, requireAuth } = require("./auth");
 const { port, clientUrl, serverUrl, maxFileSizeBytes, maxFileSizeMb } = require("./config");
 const {
   createPhotoObjectKey,
+  getPhotoPreviewUrl,
   getPhotoUrl,
   uploadPhotoObject,
   removePhotoObject,
+  downloadPhotoObject,
   createPhotoReadStream,
 } = require("./storage");
 
@@ -65,6 +68,7 @@ function photoPayload(photo) {
   return {
     id: photo.id,
     url: `${serverUrl}${getPhotoUrl(photo.id)}`,
+    previewUrl: `${serverUrl}${getPhotoPreviewUrl(photo.id)}`,
     originalFilename: photo.originalFilename,
     mimeType: photo.mimeType,
     sizeBytes: photo.sizeBytes,
@@ -345,6 +349,31 @@ app.get("/api/photos/:photoId/file", async (req, res) => {
   const stream = await createPhotoReadStream(photo.filePath);
   stream.on("error", () => res.status(404).end());
   stream.pipe(res);
+});
+
+app.get("/api/photos/:photoId/preview", async (req, res) => {
+  const photo = await prisma.photo.findFirst({ where: { id: req.params.photoId, deletedAt: null } });
+  if (!photo) return res.status(404).json({ error: "Photo not found" });
+
+  try {
+    const file = await downloadPhotoObject(photo.filePath);
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const preview = await sharp(buffer, { failOn: "none" })
+      .rotate()
+      .resize({ width: 360, height: 480, fit: "cover", position: "attention" })
+      .webp({ quality: 68, effort: 4 })
+      .toBuffer();
+
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+    res.type("image/webp");
+    res.send(preview);
+  } catch {
+    res.type(photo.mimeType);
+    res.set("Cache-Control", "public, max-age=86400");
+    const stream = await createPhotoReadStream(photo.filePath);
+    stream.on("error", () => res.status(404).end());
+    stream.pipe(res);
+  }
 });
 
 app.use((error, _req, res, _next) => {

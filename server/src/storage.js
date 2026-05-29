@@ -37,6 +37,10 @@ function getPhotoUrl(photoId) {
   return `/api/photos/${photoId}/file`;
 }
 
+function getPhotoPreviewUrl(photoId) {
+  return `/api/photos/${photoId}/preview`;
+}
+
 async function uploadPhotoObject({ objectKey, buffer, mimeType }) {
   const { error } = await bucket().upload(objectKey, buffer, {
     contentType: mimeType,
@@ -72,6 +76,7 @@ async function createPhotoReadStream(objectKey) {
 module.exports = {
   createStoredFilename,
   createPhotoObjectKey,
+  getPhotoPreviewUrl,
   getPhotoUrl,
   uploadPhotoObject,
   removePhotoObject,

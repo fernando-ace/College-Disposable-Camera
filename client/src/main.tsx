@@ -41,6 +41,7 @@ type EventSummary = {
 type Photo = {
   id: string;
   url: string;
+  previewUrl?: string;
   originalFilename: string;
   mimeType: string;
   sizeBytes: number;
@@ -580,7 +581,7 @@ function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: s
           <div className="event-photo-strip-frame h-28 w-22 shrink-0 overflow-hidden rounded-xl bg-white p-1.5 shadow-sm" key={`${photo.id}-${index}`}>
             <img
               className="h-full w-full rounded-lg object-cover"
-              src={photo.url}
+              src={photo.previewUrl || photo.url}
               alt={`${eventName} upload preview ${index % photos.length + 1}`}
               onError={(event) => {
                 event.currentTarget.style.visibility = "hidden";
