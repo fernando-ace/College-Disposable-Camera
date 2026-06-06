@@ -51,6 +51,8 @@ type Photo = {
   challengeId?: string | null;
   challengeParticipantId?: string | null;
   challengeColorName?: string | null;
+  challengePromptId?: string | null;
+  challengePromptText?: string | null;
   challengeParticipantName?: string | null;
   challengeColorHex?: string | null;
   challengeColorSlug?: string | null;
@@ -74,18 +76,26 @@ type ChallengeParticipant = {
   colorHex: string;
   colorSlug: string;
 };
+type ChallengeType = "COLOR_HUNT" | "PHOTO_SCAVENGER_HUNT";
+type ChallengePrompt = {
+  id?: string;
+  text: string;
+  order: number;
+};
 type EventChallenge = {
   id: string;
-  type: "COLOR_HUNT";
+  type: ChallengeType;
   title: string;
   instructions: string;
   config?: Record<string, unknown>;
   isActive?: boolean;
   participants: ChallengeParticipant[];
+  prompts?: ChallengePrompt[];
 };
 type ChallengeDraft = {
-  enabled: boolean;
+  type: "NONE" | ChallengeType;
   participants: ChallengeParticipant[];
+  prompts: ChallengePrompt[];
 };
 type DemoPhoto = {
   id: string;
@@ -107,6 +117,18 @@ const COLOR_HUNT_PALETTE: ChallengeParticipant[] = [
   { displayName: "", colorName: "White", colorHex: "#f8fafc", colorSlug: "white" },
   { displayName: "", colorName: "Black", colorHex: "#111827", colorSlug: "black" },
   { displayName: "", colorName: "Brown", colorHex: "#92400e", colorSlug: "brown" },
+];
+const STARTER_SCAVENGER_PROMPTS = [
+  "Group selfie",
+  "Someone laughing",
+  "Best outfit",
+  "Food or drink photo",
+  "Candid moment",
+  "Photo with someone new",
+  "Recreate this pose",
+  "Best dance floor photo",
+  "Decoration detail",
+  "Funniest photo",
 ];
 
 function useAuth() {
@@ -227,29 +249,85 @@ function getChallengeParticipantSession(slug: string) {
   return `eventfilm_challenge_participant_${slug}`;
 }
 
+function getChallengePromptSession(slug: string) {
+  return `eventfilm_challenge_prompt_${slug}`;
+}
+
+function createPrompt(text = "", order = 0, id?: string): ChallengePrompt {
+  return { id: id || `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, order };
+}
+
+function createStarterPrompts() {
+  return STARTER_SCAVENGER_PROMPTS.map((text, order) => createPrompt(text, order));
+}
+
+function promptsFromChallenge(challenge?: EventChallenge | null) {
+  const prompts = Array.isArray(challenge?.prompts)
+    ? challenge.prompts
+    : Array.isArray(challenge?.config?.prompts)
+      ? (challenge.config.prompts as ChallengePrompt[])
+      : [];
+
+  return prompts
+    .map((prompt, index) => createPrompt(String(prompt.text || ""), Number.isInteger(prompt.order) ? prompt.order : index, prompt.id))
+    .sort((a, b) => a.order - b.order)
+    .map((prompt, order) => ({ ...prompt, order }));
+}
+
 function createEmptyChallengeDraft(): ChallengeDraft {
   return {
-    enabled: false,
+    type: "NONE",
     participants: [
       { ...COLOR_HUNT_PALETTE[0], displayName: "" },
       { ...COLOR_HUNT_PALETTE[1], displayName: "" },
       { ...COLOR_HUNT_PALETTE[2], displayName: "" },
     ],
+    prompts: createStarterPrompts(),
   };
 }
 
 function draftFromChallenge(challenge?: EventChallenge | null): ChallengeDraft {
   if (!challenge) return createEmptyChallengeDraft();
+  const emptyDraft = createEmptyChallengeDraft();
   return {
-    enabled: Boolean(challenge.isActive ?? true),
+    type: Boolean(challenge.isActive ?? true) ? challenge.type : "NONE",
     participants: challenge.participants.length
       ? challenge.participants.map((participant) => ({ ...participant }))
-      : createEmptyChallengeDraft().participants,
+      : emptyDraft.participants,
+    prompts: challenge.type === "PHOTO_SCAVENGER_HUNT" && promptsFromChallenge(challenge).length
+      ? promptsFromChallenge(challenge)
+      : emptyDraft.prompts,
   };
 }
 
 function buildChallengePayload(draft: ChallengeDraft) {
-  if (!draft.enabled) return null;
+  if (draft.type === "NONE") return null;
+
+  if (draft.type === "PHOTO_SCAVENGER_HUNT") {
+    const prompts = draft.prompts
+      .map((prompt, order) => ({
+        id: prompt.id,
+        text: prompt.text.trim(),
+        order,
+      }));
+
+    if (prompts.length < 3) throw new Error("Add at least 3 prompts to start Photo Scavenger Hunt.");
+    if (prompts.some((prompt) => !prompt.text)) throw new Error("Prompts cannot be empty.");
+
+    const promptTexts = prompts.map((prompt) => prompt.text.toLowerCase());
+    if (new Set(promptTexts).size !== promptTexts.length) throw new Error("Remove duplicate prompts before saving.");
+
+    return {
+      type: "PHOTO_SCAVENGER_HUNT",
+      title: "Photo Scavenger Hunt",
+      instructions: "Pick a prompt, take a photo, and upload it to the event album.",
+      config: { prompts },
+      isActive: true,
+      prompts,
+      participants: [],
+    };
+  }
+
   const participants = draft.participants
     .map((participant) => ({
       id: participant.id,
@@ -283,6 +361,16 @@ function colorBySlug(colorSlug: string) {
 function hasDuplicateColors(participants: ChallengeParticipant[]) {
   const selectedColors = participants.map((participant) => participant.colorSlug).filter(Boolean);
   return new Set(selectedColors).size !== selectedColors.length;
+}
+
+function hasDuplicatePrompts(prompts: ChallengePrompt[]) {
+  const promptTexts = prompts.map((prompt) => prompt.text.trim().toLowerCase()).filter(Boolean);
+  return new Set(promptTexts).size !== promptTexts.length;
+}
+
+function challengeLabel(challenge?: EventChallenge | null) {
+  if (!challenge) return "No challenge";
+  return challenge.type === "PHOTO_SCAVENGER_HUNT" ? "Photo Scavenger Hunt" : "Color Hunt";
 }
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -399,8 +487,13 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
   );
 }
 
-function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
-  const showDuplicateColorWarning = draft.enabled && hasDuplicateColors(draft.participants);
+function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  const showDuplicateColorWarning = draft.type === "COLOR_HUNT" && hasDuplicateColors(draft.participants);
+  const showDuplicatePromptWarning = draft.type === "PHOTO_SCAVENGER_HUNT" && hasDuplicatePrompts(draft.prompts);
+
+  function updateType(type: ChallengeDraft["type"]) {
+    onChange({ ...draft, type });
+  }
 
   function updateParticipant(index: number, nextParticipant: ChallengeParticipant) {
     onChange({
@@ -438,21 +531,58 @@ function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
     });
   }
 
+  function updatePrompt(index: number, text: string) {
+    onChange({
+      ...draft,
+      prompts: draft.prompts.map((prompt, promptIndex) => (promptIndex === index ? { ...prompt, text } : prompt)),
+    });
+  }
+
+  function addPrompt() {
+    onChange({ ...draft, prompts: [...draft.prompts, createPrompt("", draft.prompts.length)] });
+  }
+
+  function removePrompt(index: number) {
+    onChange({ ...draft, prompts: draft.prompts.filter((_, promptIndex) => promptIndex !== index).map((prompt, order) => ({ ...prompt, order })) });
+  }
+
+  function movePrompt(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= draft.prompts.length) return;
+    const prompts = [...draft.prompts];
+    const [prompt] = prompts.splice(index, 1);
+    prompts.splice(nextIndex, 0, prompt);
+    onChange({ ...draft, prompts: prompts.map((nextPrompt, order) => ({ ...nextPrompt, order })) });
+  }
+
+  function useStarterPrompts() {
+    onChange({ ...draft, prompts: createStarterPrompts() });
+  }
+
   return (
     <div className="rounded-3xl bg-stone-50 p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="grid gap-3">
         <div>
           <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Add a photo challenge</p>
-          <h2 className="mt-1 font-display text-xl font-bold text-[#653e00]">Color Hunt</h2>
-          <p className="mt-2 text-sm text-stone-600">Each person gets a color. Upload photos of things you find in that color throughout the event.</p>
+          <h2 className="mt-1 font-display text-xl font-bold text-[#653e00]">{draft.type === "NONE" ? "Optional challenge mode" : draft.type === "PHOTO_SCAVENGER_HUNT" ? "Photo Scavenger Hunt" : "Color Hunt"}</h2>
         </div>
-        <label className="inline-flex cursor-pointer items-center gap-3 rounded-full bg-white px-4 py-3 text-sm font-bold text-stone-800 shadow-sm">
-          <input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />
-          Enable
-        </label>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === "NONE" ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")} onClick={() => updateType("NONE")}>
+            <span className="block font-bold text-stone-950">No challenge</span>
+            <span className="mt-1 block text-stone-600">A normal EventFilm album.</span>
+          </button>
+          <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === "COLOR_HUNT" ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")} onClick={() => updateType("COLOR_HUNT")}>
+            <span className="block font-bold text-stone-950">Color Hunt</span>
+            <span className="mt-1 block text-stone-600">Guests find photos matching assigned colors.</span>
+          </button>
+          <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === "PHOTO_SCAVENGER_HUNT" ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")} onClick={() => updateType("PHOTO_SCAVENGER_HUNT")}>
+            <span className="block font-bold text-stone-950">Photo Scavenger Hunt</span>
+            <span className="mt-1 block text-stone-600">Guests complete photo prompts throughout the event.</span>
+          </button>
+        </div>
       </div>
 
-      {draft.enabled && (
+      {draft.type === "COLOR_HUNT" && (
         <div className="mt-5 grid gap-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -484,6 +614,44 @@ function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
           )}
 
           <SecondaryButton type="button" className="justify-self-start" onClick={addParticipant}>Add participant</SecondaryButton>
+        </div>
+      )}
+
+      {draft.type === "PHOTO_SCAVENGER_HUNT" && (
+        <div className="mt-5 grid gap-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="font-display text-lg font-bold">Set up Photo Scavenger Hunt</h3>
+              <p className="text-sm text-stone-600">Add prompts guests can complete by uploading photos.</p>
+            </div>
+            <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={useStarterPrompts}>Use starter prompts</SecondaryButton>
+          </div>
+
+          <div className="grid gap-3">
+            {draft.prompts.map((prompt, index) => (
+              <div className="grid gap-3 rounded-2xl bg-white p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center" key={prompt.id || index}>
+                <span className="grid h-10 w-10 place-items-center rounded-full bg-stone-100 text-sm font-bold text-stone-600">{index + 1}</span>
+                <TextInput value={prompt.text} onChange={(event) => updatePrompt(index, event.target.value)} placeholder="Photo prompt" />
+                <div className="flex gap-2">
+                  <button type="button" className="min-h-10 rounded-full border border-stone-200 px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, -1)} disabled={index === 0}>Up</button>
+                  <button type="button" className="min-h-10 rounded-full border border-stone-200 px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, 1)} disabled={index === draft.prompts.length - 1}>Down</button>
+                  <button type="button" className="min-h-10 rounded-full border border-stone-200 px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700" onClick={() => removePrompt(index)} disabled={draft.prompts.length <= 1}>Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {draft.prompts.length < 3 && (
+            <p className="rounded-2xl bg-amber-100 p-3 text-sm font-bold text-amber-900">Add at least 3 prompts to start Photo Scavenger Hunt.</p>
+          )}
+          {draft.prompts.some((prompt) => !prompt.text.trim()) && (
+            <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">Prompts cannot be empty.</p>
+          )}
+          {showDuplicatePromptWarning && (
+            <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">Remove duplicate prompts before saving.</p>
+          )}
+
+          <SecondaryButton type="button" className="justify-self-start" onClick={addPrompt}>Add prompt</SecondaryButton>
         </div>
       )}
     </div>
@@ -1000,7 +1168,7 @@ function CreateEvent() {
           Description
           <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
         </label>
-        <ColorHuntSetup draft={challengeDraft} onChange={setChallengeDraft} />
+        <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} />
         <div className="rounded-3xl bg-stone-50 p-5">
           <h2 className="font-display text-xl font-bold text-[#653e00]">Event settings</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -1035,6 +1203,16 @@ function ManageEvent() {
     load().catch((err) => setError((err as Error).message));
   }, [eventId]);
 
+  useEffect(() => {
+    if (galleryFilter === "all") return;
+    if (!event?.challenge) {
+      setGalleryFilter("all");
+      return;
+    }
+    if (event.challenge.type === "COLOR_HUNT" && galleryFilter.startsWith("prompt:")) setGalleryFilter("all");
+    if (event.challenge.type === "PHOTO_SCAVENGER_HUNT" && (galleryFilter.startsWith("color:") || galleryFilter.startsWith("participant:"))) setGalleryFilter("all");
+  }, [event?.challenge, galleryFilter]);
+
   async function deletePhoto(photoId: string) {
     if (!confirm("Delete this photo?")) return;
     await api(`/api/host/events/${eventId}/photos/${photoId}`, { method: "DELETE", token: auth.token });
@@ -1066,7 +1244,7 @@ function ManageEvent() {
         body: JSON.stringify({ challenge }),
       });
       setChallengeDraft(draftFromChallenge(data.challenge));
-      setChallengeStatus(data.challenge ? "Color Hunt saved" : "Color Hunt disabled");
+      setChallengeStatus(data.challenge ? `${challengeLabel(data.challenge)} saved` : "Challenge disabled");
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -1075,10 +1253,12 @@ function ManageEvent() {
 
   const challengeParticipants = event?.challenge?.participants || [];
   const challengeColors = Array.from(new Map(challengeParticipants.map((participant) => [participant.colorSlug, participant])).values());
+  const challengePrompts = promptsFromChallenge(event?.challenge);
   const filteredPhotos = event?.photos.filter((photo) => {
     if (galleryFilter === "all") return true;
     if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
     if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
+    if (galleryFilter.startsWith("prompt:")) return photo.challengePromptId === galleryFilter.replace("prompt:", "");
     return true;
   }) || [];
 
@@ -1136,10 +1316,10 @@ function ManageEvent() {
 
           <section className="mt-8">
             <Card className="lg:p-8">
-              <ColorHuntSetup draft={challengeDraft} onChange={setChallengeDraft} />
+              <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} />
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                  <p className="text-sm font-bold text-stone-800">{event.challenge ? "Color Hunt is active for this event." : "Normal EventFilm albums still work without a challenge."}</p>
+                  <p className="text-sm font-bold text-stone-800">{event.challenge ? `${challengeLabel(event.challenge)} is active for this event.` : "Normal EventFilm albums still work without a challenge."}</p>
                   {challengeStatus && <p className="mt-1 text-sm font-semibold text-amber-700">{challengeStatus}</p>}
                 </div>
                 <Button onClick={saveChallenge}>Save challenge</Button>
@@ -1158,18 +1338,23 @@ function ManageEvent() {
               <div className="mb-5 grid gap-3 rounded-3xl bg-white p-4 shadow-sm">
                 <div className="flex flex-wrap gap-2">
                   <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === "all" ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter("all")}>All photos</button>
-                  {challengeColors.map((participant) => (
+                  {event.challenge.type === "COLOR_HUNT" && challengeColors.map((participant) => (
                     <button className={cx("inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `color:${participant.colorSlug}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`color:${participant.colorSlug}`)} key={participant.colorSlug}>
                       <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
                       {participant.colorName}
                     </button>
                   ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {challengeParticipants.map((participant) => (
-                    <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `participant:${participant.id}` ? "bg-amber-500 text-stone-950" : "bg-amber-50 text-[#653e00]")} onClick={() => setGalleryFilter(`participant:${participant.id}`)} key={participant.id}>{participant.displayName}</button>
+                  {event.challenge.type === "PHOTO_SCAVENGER_HUNT" && challengePrompts.map((prompt) => (
+                    <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `prompt:${prompt.id}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`prompt:${prompt.id}`)} key={prompt.id}>{prompt.text}</button>
                   ))}
                 </div>
+                {event.challenge.type === "COLOR_HUNT" && (
+                  <div className="flex flex-wrap gap-2">
+                    {challengeParticipants.map((participant) => (
+                      <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `participant:${participant.id}` ? "bg-amber-500 text-stone-950" : "bg-amber-50 text-[#653e00]")} onClick={() => setGalleryFilter(`participant:${participant.id}`)} key={participant.id}>{participant.displayName}</button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -1182,6 +1367,9 @@ function ManageEvent() {
                       <div className="mt-2">
                         <ColorChip participant={{ colorName: photo.challengeColorName, colorHex: photo.challengeColorHex || "#f59e0b" }} />
                       </div>
+                    )}
+                    {photo.challengePromptText && (
+                      <p className="mt-2 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-[#653e00]">{photo.challengePromptText}</p>
                     )}
                     <p className="text-stone-600">{formatDateTime(photo.createdAt)}</p>
                     <button className="mt-3 inline-flex min-h-10 items-center rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
@@ -1203,7 +1391,9 @@ function GuestEvent() {
   const [event, setEvent] = useState<PublicEvent | null>(null);
   const [nickname, setNickname] = useState(session.nickname);
   const [selectedParticipantId, setSelectedParticipantId] = useState(() => localStorage.getItem(getChallengeParticipantSession(slug)) || "");
+  const [selectedPromptId, setSelectedPromptId] = useState(() => localStorage.getItem(getChallengePromptSession(slug)) || "");
   const participantSelectRef = useRef<HTMLSelectElement | null>(null);
+  const promptSelectRef = useRef<HTMLSelectElement | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -1217,7 +1407,7 @@ function GuestEvent() {
     setEvent(eventData.event);
     const status = await api<{ remainingUploads: number; nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
     setRemaining(status.remainingUploads);
-    if (!eventData.event.challenge && status.nickname && !nickname) setNickname(status.nickname);
+    if (eventData.event.challenge?.type !== "COLOR_HUNT" && status.nickname && !nickname) setNickname(status.nickname);
     if (eventData.event.isRevealed) {
       const photoData = await api<{ photos: Photo[] }>(`/api/events/${slug}/photos`);
       setPhotos(photoData.photos);
@@ -1231,13 +1421,22 @@ function GuestEvent() {
   }, [slug]);
 
   useEffect(() => {
-    if (!event?.challenge) return;
+    if (event?.challenge?.type !== "COLOR_HUNT") return;
     const isValidParticipant = event.challenge.participants.some((participant) => participant.id === selectedParticipantId);
     if (!isValidParticipant) {
       setSelectedParticipantId("");
       localStorage.removeItem(getChallengeParticipantSession(slug));
     }
   }, [event, selectedParticipantId, slug]);
+
+  useEffect(() => {
+    if (event?.challenge?.type !== "PHOTO_SCAVENGER_HUNT") return;
+    const isValidPrompt = promptsFromChallenge(event.challenge).some((prompt) => prompt.id === selectedPromptId);
+    if (!isValidPrompt) {
+      setSelectedPromptId("");
+      localStorage.removeItem(getChallengePromptSession(slug));
+    }
+  }, [event, selectedPromptId, slug]);
 
   useEffect(() => {
     if (!file) {
@@ -1269,6 +1468,17 @@ function GuestEvent() {
     setTimeout(() => participantSelectRef.current?.focus(), 0);
   }
 
+  function saveSelectedPrompt(promptId: string) {
+    setSelectedPromptId(promptId);
+    if (promptId) localStorage.setItem(getChallengePromptSession(slug), promptId);
+    else localStorage.removeItem(getChallengePromptSession(slug));
+  }
+
+  function switchPrompt() {
+    saveSelectedPrompt("");
+    setTimeout(() => promptSelectRef.current?.focus(), 0);
+  }
+
   async function uploadPhoto(uploadEvent: React.FormEvent) {
     uploadEvent.preventDefault();
     setMessage("");
@@ -1276,14 +1486,16 @@ function GuestEvent() {
 
     if (!file) return setError("Choose a photo first");
     if (!file.type.startsWith("image/")) return setError("Only image files are allowed");
-    if (event?.challenge && !selectedParticipant) return setError("Select your Color Hunt name first");
-    if (!event?.challenge && !nickname.trim()) return setError("Enter your name or nickname first");
+    if (event?.challenge?.type === "COLOR_HUNT" && !selectedParticipant) return setError("Select your Color Hunt name first");
+    if (event?.challenge?.type === "PHOTO_SCAVENGER_HUNT" && !selectedPrompt) return setError("Choose a Photo Scavenger Hunt prompt first");
+    if (event?.challenge?.type !== "COLOR_HUNT" && !nickname.trim()) return setError("Enter your name or nickname first");
 
     const formData = new FormData();
     formData.append("photo", file);
     formData.append("nickname", selectedParticipant?.displayName || nickname.trim());
     formData.append("clientId", session.clientId);
     if (selectedParticipant?.id) formData.append("challengeParticipantId", selectedParticipant.id);
+    if (selectedPrompt?.id) formData.append("challengePromptId", selectedPrompt.id);
 
     setLoading(true);
     try {
@@ -1300,6 +1512,8 @@ function GuestEvent() {
   }
 
   const selectedParticipant = event?.challenge?.participants.find((participant) => participant.id === selectedParticipantId);
+  const guestPrompts = promptsFromChallenge(event?.challenge);
+  const selectedPrompt = guestPrompts.find((prompt) => prompt.id === selectedPromptId);
 
   return (
     <Shell>
@@ -1322,7 +1536,7 @@ function GuestEvent() {
             )}
           </section>
 
-          {event.challenge && (
+          {event.challenge?.type === "COLOR_HUNT" && (
             <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Color Hunt</StatusPill>
               <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Your group is playing Color Hunt.</h2>
@@ -1348,13 +1562,39 @@ function GuestEvent() {
             </section>
           )}
 
+          {event.challenge?.type === "PHOTO_SCAVENGER_HUNT" && (
+            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <StatusPill>Photo Scavenger Hunt</StatusPill>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Photo Scavenger Hunt</h2>
+              <p className="mt-2 text-stone-700">Pick a prompt, take a photo, and upload it to the event album.</p>
+              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
+                Choose a prompt
+                <select ref={promptSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedPromptId} onChange={(selectEvent) => saveSelectedPrompt(selectEvent.target.value)} required>
+                  <option value="">Select a prompt</option>
+                  {guestPrompts.map((prompt) => (
+                    <option value={prompt.id} key={prompt.id}>{prompt.text}</option>
+                  ))}
+                </select>
+              </label>
+              {selectedPrompt && (
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-white p-3 text-sm font-bold text-stone-800 sm:flex-row sm:items-center sm:justify-between">
+                  <span>Uploading for: {selectedPrompt.text}</span>
+                  <button type="button" className="self-start rounded-full border border-stone-200 px-3 py-2 text-xs font-bold text-stone-700 hover:border-amber-400 hover:bg-amber-50 sm:self-auto" onClick={switchPrompt}>Change prompt</button>
+                </div>
+              )}
+            </section>
+          )}
+
           <form className="mt-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-6" onSubmit={uploadPhoto}>
             <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
-            <p className="mt-2 text-stone-600">{event.challenge ? "Pick a photo and send it to the private album." : "Add your name, pick a photo, and send it to the private album."}</p>
-            {event.challenge && selectedParticipant && (
+            <p className="mt-2 text-stone-600">{event.challenge?.type === "COLOR_HUNT" ? "Pick a photo and send it to the private album." : "Add your name, pick a photo, and send it to the private album."}</p>
+            {event.challenge?.type === "COLOR_HUNT" && selectedParticipant && (
               <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p>
             )}
-            {!event.challenge && (
+            {event.challenge?.type === "PHOTO_SCAVENGER_HUNT" && selectedPrompt && (
+              <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Uploading for: {selectedPrompt.text}</p>
+            )}
+            {event.challenge?.type !== "COLOR_HUNT" && (
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
                 Name or nickname
                 <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
@@ -1398,6 +1638,9 @@ function GuestEvent() {
                     <img className="aspect-square w-full rounded-2xl object-cover" src={photo.url} alt={photo.originalFilename} />
                     {photo.challengeParticipantName && (
                       <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengeParticipantName} - {photo.challengeColorName}</p>
+                    )}
+                    {photo.challengePromptText && (
+                      <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengePromptText}</p>
                     )}
                   </div>
                 ))}

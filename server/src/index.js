@@ -65,8 +65,11 @@ function publicEventUrl(slug) {
 }
 
 const CHALLENGE_TYPE_COLOR_HUNT = "COLOR_HUNT";
+const CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT = "PHOTO_SCAVENGER_HUNT";
 const COLOR_HUNT_TITLE = "Color Hunt";
 const COLOR_HUNT_INSTRUCTIONS = "Assign each person a color. Guests will upload photos of things they find in their color.";
+const PHOTO_SCAVENGER_HUNT_TITLE = "Photo Scavenger Hunt";
+const PHOTO_SCAVENGER_HUNT_INSTRUCTIONS = "Pick a prompt, take a photo, and upload it to the event album.";
 
 const challengeInclude = {
   participants: { orderBy: { createdAt: "asc" } },
@@ -80,13 +83,28 @@ function slugifyColor(value) {
     .replace(/^-|-$/g, "");
 }
 
-function activeColorHuntInclude() {
+function activeChallengeInclude() {
   return {
-    where: { type: CHALLENGE_TYPE_COLOR_HUNT, isActive: true },
+    where: { isActive: true },
     orderBy: { createdAt: "desc" },
     take: 1,
     include: challengeInclude,
   };
+}
+
+function normalizePrompts(prompts) {
+  return (Array.isArray(prompts) ? prompts : [])
+    .map((prompt, index) => ({
+      id: typeof prompt.id === "string" && prompt.id.trim() ? prompt.id.trim() : crypto.randomUUID(),
+      text: String(prompt.text || "").trim(),
+      order: Number.isInteger(Number(prompt.order)) ? Number(prompt.order) : index,
+    }))
+    .sort((a, b) => a.order - b.order)
+    .map((prompt, index) => ({ ...prompt, order: index }));
+}
+
+function promptsFromConfig(config) {
+  return normalizePrompts(config && typeof config === "object" ? config.prompts : []);
 }
 
 function challengePayload(challenge) {
@@ -110,6 +128,7 @@ function challengePayload(challenge) {
       createdAt: participant.createdAt,
       updatedAt: participant.updatedAt,
     })),
+    prompts: promptsFromConfig(challenge.config),
   };
 }
 
@@ -121,6 +140,7 @@ function publicChallengePayload(challenge) {
     type: payload.type,
     title: payload.title,
     instructions: payload.instructions,
+    config: payload.config,
     participants: payload.participants.map(({ id, displayName, colorName, colorHex, colorSlug }) => ({
       id,
       displayName,
@@ -128,6 +148,7 @@ function publicChallengePayload(challenge) {
       colorHex,
       colorSlug,
     })),
+    prompts: payload.prompts,
   };
 }
 
@@ -144,6 +165,8 @@ function photoPayload(photo) {
     challengeId: photo.challengeId,
     challengeParticipantId: photo.challengeParticipantId,
     challengeColorName: photo.challengeColorName,
+    challengePromptId: photo.challengePromptId,
+    challengePromptText: photo.challengePromptText,
     challengeParticipantName: photo.challengeParticipant?.displayName,
     challengeColorHex: photo.challengeParticipant?.colorHex,
     challengeColorSlug: photo.challengeParticipant?.colorSlug || slugifyColor(photo.challengeColorName),
@@ -157,8 +180,33 @@ function requireFields(body, fields) {
 
 function normalizeChallengeSetup(input) {
   if (!input || input.isActive === false) return null;
-  if (input.type && input.type !== CHALLENGE_TYPE_COLOR_HUNT) {
+  if (input.type && ![CHALLENGE_TYPE_COLOR_HUNT, CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT].includes(input.type)) {
     throw new Error("Unsupported challenge type");
+  }
+  const challengeType = input.type || CHALLENGE_TYPE_COLOR_HUNT;
+
+  if (challengeType === CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT) {
+    const prompts = normalizePrompts(input.prompts || input.config?.prompts);
+    if (prompts.length < 3) {
+      throw new Error("Add at least 3 prompts to start Photo Scavenger Hunt.");
+    }
+    if (prompts.some((prompt) => !prompt.text)) {
+      throw new Error("Prompts cannot be empty.");
+    }
+
+    const promptTexts = prompts.map((prompt) => prompt.text.toLowerCase());
+    if (new Set(promptTexts).size !== promptTexts.length) {
+      throw new Error("Remove duplicate prompts before saving.");
+    }
+
+    return {
+      type: CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT,
+      title: String(input.title || PHOTO_SCAVENGER_HUNT_TITLE).trim() || PHOTO_SCAVENGER_HUNT_TITLE,
+      instructions: String(input.instructions || PHOTO_SCAVENGER_HUNT_INSTRUCTIONS).trim() || PHOTO_SCAVENGER_HUNT_INSTRUCTIONS,
+      config: { prompts },
+      isActive: true,
+      participants: [],
+    };
   }
 
   const participants = Array.isArray(input.participants)
@@ -196,6 +244,24 @@ function normalizeChallengeSetup(input) {
       ...participant,
       id: participant.id || undefined,
     })),
+  };
+}
+
+function challengeCreateData(eventId, challengeSetup) {
+  return {
+    ...(eventId ? { eventId } : {}),
+    type: challengeSetup.type,
+    title: challengeSetup.title,
+    instructions: challengeSetup.instructions,
+    config: challengeSetup.config,
+    isActive: true,
+    ...(challengeSetup.type === CHALLENGE_TYPE_COLOR_HUNT
+      ? {
+          participants: {
+            create: challengeSetup.participants.map(({ id: _id, ...participant }) => participant),
+          },
+        }
+      : {}),
   };
 }
 
@@ -259,7 +325,7 @@ app.get("/api/host/events", requireAuth, async (req, res) => {
         take: 6,
         include: { guest: true, challengeParticipant: true },
       },
-      challenges: activeColorHuntInclude(),
+      challenges: activeChallengeInclude(),
       _count: { select: { photos: { where: { deletedAt: null } } } },
     },
   });
@@ -297,21 +363,12 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
       ...(challengeSetup
         ? {
             challenges: {
-              create: {
-                type: challengeSetup.type,
-                title: challengeSetup.title,
-                instructions: challengeSetup.instructions,
-                config: challengeSetup.config,
-                isActive: challengeSetup.isActive,
-                participants: {
-                  create: challengeSetup.participants.map(({ id: _id, ...participant }) => participant),
-                },
-              },
+              create: challengeCreateData(undefined, challengeSetup),
             },
           }
         : {}),
     },
-    include: { challenges: activeColorHuntInclude() },
+    include: { challenges: activeChallengeInclude() },
   });
 
   const eventLink = publicEventUrl(event.slug);
@@ -328,7 +385,7 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
         orderBy: { createdAt: "desc" },
         include: { guest: true, challengeParticipant: true },
       },
-      challenges: activeColorHuntInclude(),
+      challenges: activeChallengeInclude(),
       _count: { select: { photos: { where: { deletedAt: null } } } },
     },
   });
@@ -347,7 +404,7 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
 app.put("/api/host/events/:eventId/challenge", requireAuth, async (req, res) => {
   const event = await prisma.event.findFirst({
     where: { id: req.params.eventId, hostId: req.user.userId },
-    include: { challenges: activeColorHuntInclude() },
+    include: { challenges: activeChallengeInclude() },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
@@ -367,7 +424,15 @@ app.put("/api/host/events/:eventId/challenge", requireAuth, async (req, res) => 
   }
 
   const challenge = await prisma.$transaction(async (tx) => {
-    if (existingChallenge) {
+    if (existingChallenge && existingChallenge.type !== challengeSetup.type) {
+      await tx.eventChallenge.update({ where: { id: existingChallenge.id }, data: { isActive: false } });
+      return tx.eventChallenge.create({
+        data: challengeCreateData(event.id, challengeSetup),
+        include: challengeInclude,
+      });
+    }
+
+    if (existingChallenge && challengeSetup.type === CHALLENGE_TYPE_COLOR_HUNT) {
       const existingParticipantsById = new Map(existingChallenge.participants.map((participant) => [participant.id, participant]));
       const retainedIds = [];
 
@@ -405,18 +470,23 @@ app.put("/api/host/events/:eventId/challenge", requireAuth, async (req, res) => 
       return tx.eventChallenge.findUnique({ where: { id: existingChallenge.id }, include: challengeInclude });
     }
 
-    return tx.eventChallenge.create({
-      data: {
-        eventId: event.id,
-        type: challengeSetup.type,
-        title: challengeSetup.title,
-        instructions: challengeSetup.instructions,
-        config: challengeSetup.config,
-        isActive: true,
-        participants: {
-          create: challengeSetup.participants.map(({ id: _id, ...participant }) => participant),
+    if (existingChallenge) {
+      await tx.challengeParticipant.deleteMany({ where: { eventChallengeId: existingChallenge.id } });
+      await tx.eventChallenge.update({
+        where: { id: existingChallenge.id },
+        data: {
+          title: challengeSetup.title,
+          instructions: challengeSetup.instructions,
+          config: challengeSetup.config,
+          isActive: true,
         },
-      },
+      });
+
+      return tx.eventChallenge.findUnique({ where: { id: existingChallenge.id }, include: challengeInclude });
+    }
+
+    return tx.eventChallenge.create({
+      data: challengeCreateData(event.id, challengeSetup),
       include: challengeInclude,
     });
   });
@@ -462,7 +532,7 @@ app.get("/api/events/:slug", async (req, res) => {
   const event = await prisma.event.findUnique({
     where: { slug: req.params.slug },
     include: {
-      challenges: activeColorHuntInclude(),
+      challenges: activeChallengeInclude(),
       _count: { select: { photos: { where: { deletedAt: null } } } },
     },
   });
@@ -504,7 +574,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
   let uploadedObjectKey;
 
   try {
-    const { nickname, clientId, challengeParticipantId } = req.body;
+    const { nickname, clientId, challengeParticipantId, challengePromptId } = req.body;
     if (!clientId) {
       return res.status(400).json({ error: "clientId is required" });
     }
@@ -512,7 +582,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
 
     const event = await prisma.event.findUnique({
       where: { slug: req.params.slug },
-      include: { challenges: activeColorHuntInclude() },
+      include: { challenges: activeChallengeInclude() },
     });
     if (!event) {
       return res.status(404).json({ error: "Event not found" });
@@ -520,7 +590,8 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
 
     const activeChallenge = event.challenges[0];
     let selectedParticipant = null;
-    if (activeChallenge) {
+    let selectedPrompt = null;
+    if (activeChallenge?.type === CHALLENGE_TYPE_COLOR_HUNT) {
       if (!challengeParticipantId) {
         return res.status(400).json({ error: "Select your Color Hunt participant before uploading" });
       }
@@ -528,7 +599,18 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
       if (!selectedParticipant) {
         return res.status(400).json({ error: "Selected Color Hunt participant is not valid for this event" });
       }
-    } else if (!nickname) {
+    } else if (activeChallenge?.type === CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT) {
+      if (!nickname?.trim()) {
+        return res.status(400).json({ error: "Enter your name or nickname first" });
+      }
+      if (!challengePromptId) {
+        return res.status(400).json({ error: "Choose a Photo Scavenger Hunt prompt before uploading" });
+      }
+      selectedPrompt = promptsFromConfig(activeChallenge.config).find((prompt) => prompt.id === challengePromptId);
+      if (!selectedPrompt) {
+        return res.status(400).json({ error: "Selected Photo Scavenger Hunt prompt is not valid for this event" });
+      }
+    } else if (!nickname?.trim()) {
       return res.status(400).json({ error: "Nickname and clientId are required" });
     }
 
@@ -561,9 +643,11 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
         originalFilename: req.file.originalname,
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
-        challengeId: selectedParticipant ? activeChallenge.id : null,
+        challengeId: selectedParticipant || selectedPrompt ? activeChallenge.id : null,
         challengeParticipantId: selectedParticipant?.id || null,
         challengeColorName: selectedParticipant?.colorName || null,
+        challengePromptId: selectedPrompt?.id || null,
+        challengePromptText: selectedPrompt?.text || null,
       },
       include: { guest: true, challengeParticipant: true },
     });
