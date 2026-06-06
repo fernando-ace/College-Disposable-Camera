@@ -37,6 +37,7 @@ type EventSummary = {
   qrCodeDataUrl?: string;
   photoCount: number;
   previewPhotos?: Photo[];
+  challenge?: EventChallenge | null;
 };
 type Photo = {
   id: string;
@@ -47,6 +48,12 @@ type Photo = {
   sizeBytes: number;
   createdAt: string;
   guestNickname?: string;
+  challengeId?: string | null;
+  challengeParticipantId?: string | null;
+  challengeColorName?: string | null;
+  challengeParticipantName?: string | null;
+  challengeColorHex?: string | null;
+  challengeColorSlug?: string | null;
 };
 type PublicEvent = {
   id: string;
@@ -58,6 +65,27 @@ type PublicEvent = {
   photoLimitPerGuest: number;
   isRevealed: boolean;
   photoCount: number | null;
+  challenge?: EventChallenge | null;
+};
+type ChallengeParticipant = {
+  id?: string;
+  displayName: string;
+  colorName: string;
+  colorHex: string;
+  colorSlug: string;
+};
+type EventChallenge = {
+  id: string;
+  type: "COLOR_HUNT";
+  title: string;
+  instructions: string;
+  config?: Record<string, unknown>;
+  isActive?: boolean;
+  participants: ChallengeParticipant[];
+};
+type ChallengeDraft = {
+  enabled: boolean;
+  participants: ChallengeParticipant[];
 };
 type DemoPhoto = {
   id: string;
@@ -67,6 +95,19 @@ type DemoPhoto = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+const COLOR_HUNT_PALETTE: ChallengeParticipant[] = [
+  { displayName: "", colorName: "Red", colorHex: "#dc2626", colorSlug: "red" },
+  { displayName: "", colorName: "Orange", colorHex: "#ea580c", colorSlug: "orange" },
+  { displayName: "", colorName: "Yellow", colorHex: "#facc15", colorSlug: "yellow" },
+  { displayName: "", colorName: "Green", colorHex: "#16a34a", colorSlug: "green" },
+  { displayName: "", colorName: "Blue", colorHex: "#2563eb", colorSlug: "blue" },
+  { displayName: "", colorName: "Purple", colorHex: "#9333ea", colorSlug: "purple" },
+  { displayName: "", colorName: "Pink", colorHex: "#db2777", colorSlug: "pink" },
+  { displayName: "", colorName: "White", colorHex: "#f8fafc", colorSlug: "white" },
+  { displayName: "", colorName: "Black", colorHex: "#111827", colorSlug: "black" },
+  { displayName: "", colorName: "Brown", colorHex: "#92400e", colorSlug: "brown" },
+];
 
 function useAuth() {
   const value = useContext(AuthContext);
@@ -182,6 +223,58 @@ function getGuestSession(slug: string) {
   return { key, session: { clientId, nickname: "" } };
 }
 
+function getChallengeParticipantSession(slug: string) {
+  return `eventfilm_challenge_participant_${slug}`;
+}
+
+function createEmptyChallengeDraft(): ChallengeDraft {
+  return {
+    enabled: false,
+    participants: [
+      { ...COLOR_HUNT_PALETTE[0], displayName: "" },
+      { ...COLOR_HUNT_PALETTE[1], displayName: "" },
+      { ...COLOR_HUNT_PALETTE[2], displayName: "" },
+    ],
+  };
+}
+
+function draftFromChallenge(challenge?: EventChallenge | null): ChallengeDraft {
+  if (!challenge) return createEmptyChallengeDraft();
+  return {
+    enabled: Boolean(challenge.isActive ?? true),
+    participants: challenge.participants.length
+      ? challenge.participants.map((participant) => ({ ...participant }))
+      : createEmptyChallengeDraft().participants,
+  };
+}
+
+function buildChallengePayload(draft: ChallengeDraft) {
+  if (!draft.enabled) return null;
+  const participants = draft.participants
+    .map((participant) => ({
+      displayName: participant.displayName.trim(),
+      colorName: participant.colorName,
+      colorHex: participant.colorHex,
+      colorSlug: participant.colorSlug,
+    }))
+    .filter((participant) => participant.displayName);
+
+  if (!participants.length) throw new Error("Add at least one Color Hunt participant");
+
+  return {
+    type: "COLOR_HUNT",
+    title: "Color Hunt",
+    instructions: "Assign each person a color. Guests will upload photos of things they find in their color.",
+    config: { palette: COLOR_HUNT_PALETTE.map(({ colorName, colorHex, colorSlug }) => ({ colorName, colorHex, colorSlug })) },
+    isActive: true,
+    participants,
+  };
+}
+
+function colorBySlug(colorSlug: string) {
+  return COLOR_HUNT_PALETTE.find((color) => color.colorSlug === colorSlug) || COLOR_HUNT_PALETTE[0];
+}
+
 function cx(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(" ");
 }
@@ -284,6 +377,101 @@ function LiveDemoPill() {
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return <div className={cx("rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)]", className)}>{children}</div>;
+}
+
+function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "colorName" | "colorHex"> }) {
+  const isLight = ["White", "Yellow"].includes(participant.colorName);
+  return (
+    <span className={cx("inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-bold", isLight ? "bg-stone-100 text-stone-800" : "bg-stone-950 text-white")}>
+      <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
+      {participant.colorName}
+    </span>
+  );
+}
+
+function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  function updateParticipant(index: number, nextParticipant: ChallengeParticipant) {
+    onChange({
+      ...draft,
+      participants: draft.participants.map((participant, participantIndex) => (participantIndex === index ? nextParticipant : participant)),
+    });
+  }
+
+  function updateParticipantName(index: number, displayName: string) {
+    updateParticipant(index, { ...draft.participants[index], displayName });
+  }
+
+  function updateParticipantColor(index: number, colorSlug: string) {
+    const color = colorBySlug(colorSlug);
+    updateParticipant(index, { ...draft.participants[index], ...color, displayName: draft.participants[index].displayName });
+  }
+
+  function addParticipant() {
+    const color = COLOR_HUNT_PALETTE[draft.participants.length % COLOR_HUNT_PALETTE.length];
+    onChange({ ...draft, participants: [...draft.participants, { ...color, displayName: "" }] });
+  }
+
+  function removeParticipant(index: number) {
+    onChange({ ...draft, participants: draft.participants.filter((_, participantIndex) => participantIndex !== index) });
+  }
+
+  function autoAssignColors() {
+    onChange({
+      ...draft,
+      participants: draft.participants.map((participant, index) => ({
+        ...participant,
+        ...COLOR_HUNT_PALETTE[index % COLOR_HUNT_PALETTE.length],
+        displayName: participant.displayName,
+      })),
+    });
+  }
+
+  return (
+    <div className="rounded-3xl bg-stone-50 p-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Add a photo challenge</p>
+          <h2 className="mt-1 font-display text-xl font-bold text-[#653e00]">Color Hunt</h2>
+          <p className="mt-2 text-sm text-stone-600">Each person gets a color. Upload photos of things you find in that color throughout the event.</p>
+        </div>
+        <label className="inline-flex cursor-pointer items-center gap-3 rounded-full bg-white px-4 py-3 text-sm font-bold text-stone-800 shadow-sm">
+          <input type="checkbox" checked={draft.enabled} onChange={(event) => onChange({ ...draft, enabled: event.target.checked })} />
+          Enable
+        </label>
+      </div>
+
+      {draft.enabled && (
+        <div className="mt-5 grid gap-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="font-display text-lg font-bold">Set up Color Hunt</h3>
+              <p className="text-sm text-stone-600">Assign each person a color. Guests will upload photos of things they find in their color.</p>
+            </div>
+            <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={autoAssignColors}>Auto assign colors</SecondaryButton>
+          </div>
+
+          <div className="grid gap-3">
+            {draft.participants.map((participant, index) => (
+              <div className="grid gap-3 rounded-2xl bg-white p-3 sm:grid-cols-[1fr_190px_auto] sm:items-center" key={index}>
+                <TextInput value={participant.displayName} onChange={(event) => updateParticipantName(index, event.target.value)} placeholder={`Participant ${index + 1}`} />
+                <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-stone-500">
+                  Color
+                  <select className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-sm font-bold text-stone-800 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={participant.colorSlug} onChange={(event) => updateParticipantColor(index, event.target.value)}>
+                    {COLOR_HUNT_PALETTE.map((color) => (
+                      <option value={color.colorSlug} key={color.colorSlug}>{color.colorName}</option>
+                    ))}
+                  </select>
+                </label>
+                <button type="button" className="min-h-10 rounded-full border border-stone-200 px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700" onClick={() => removeParticipant(index)} disabled={draft.participants.length <= 1}>Remove</button>
+              </div>
+            ))}
+          </div>
+
+          <SecondaryButton type="button" className="justify-self-start" onClick={addParticipant}>Add participant</SecondaryButton>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function Shell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
@@ -702,6 +890,7 @@ function CreateEvent() {
     photoLimitPerGuest: "10",
   });
   const [created, setCreated] = useState<EventSummary | null>(null);
+  const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
 
@@ -713,6 +902,7 @@ function CreateEvent() {
     event.preventDefault();
     setError("");
     try {
+      const challenge = buildChallengePayload(challengeDraft);
       const data = await api<{ event: EventSummary }>("/api/host/events", {
         method: "POST",
         token: auth.token,
@@ -721,6 +911,7 @@ function CreateEvent() {
           eventDate: new Date(form.eventDate).toISOString(),
           revealAt: new Date(form.revealAt).toISOString(),
           photoLimitPerGuest: Number(form.photoLimitPerGuest),
+          challenge,
         }),
       });
       setCreated(data.event);
@@ -793,6 +984,7 @@ function CreateEvent() {
           Description
           <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
         </label>
+        <ColorHuntSetup draft={challengeDraft} onChange={setChallengeDraft} />
         <div className="rounded-3xl bg-stone-50 p-5">
           <h2 className="font-display text-xl font-bold text-[#653e00]">Event settings</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -811,12 +1003,16 @@ function ManageEvent() {
   const { eventId } = useParams();
   const auth = useAuth();
   const [event, setEvent] = useState<(EventSummary & { photos: Photo[] }) | null>(null);
+  const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
+  const [galleryFilter, setGalleryFilter] = useState("all");
   const [error, setError] = useState("");
+  const [challengeStatus, setChallengeStatus] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
 
   async function load() {
     const data = await api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${eventId}`, { token: auth.token });
     setEvent(data.event);
+    setChallengeDraft(draftFromChallenge(data.event.challenge));
   }
 
   useEffect(() => {
@@ -842,6 +1038,33 @@ function ManageEvent() {
     a.click();
     URL.revokeObjectURL(url);
   }
+
+  async function saveChallenge() {
+    setError("");
+    setChallengeStatus("");
+    try {
+      const challenge = buildChallengePayload(challengeDraft);
+      const data = await api<{ challenge: EventChallenge | null }>(`/api/host/events/${eventId}/challenge`, {
+        method: "PUT",
+        token: auth.token,
+        body: JSON.stringify({ challenge }),
+      });
+      setChallengeDraft(draftFromChallenge(data.challenge));
+      setChallengeStatus(data.challenge ? "Color Hunt saved" : "Color Hunt disabled");
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  const challengeParticipants = event?.challenge?.participants || [];
+  const challengeColors = Array.from(new Map(challengeParticipants.map((participant) => [participant.colorSlug, participant])).values());
+  const filteredPhotos = event?.photos.filter((photo) => {
+    if (galleryFilter === "all") return true;
+    if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
+    if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
+    return true;
+  }) || [];
 
   return (
     <Shell wide>
@@ -895,6 +1118,19 @@ function ManageEvent() {
             </Card>
           </section>
 
+          <section className="mt-8">
+            <Card className="lg:p-8">
+              <ColorHuntSetup draft={challengeDraft} onChange={setChallengeDraft} />
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-sm font-bold text-stone-800">{event.challenge ? "Color Hunt is active for this event." : "Normal EventFilm albums still work without a challenge."}</p>
+                  {challengeStatus && <p className="mt-1 text-sm font-semibold text-amber-700">{challengeStatus}</p>}
+                </div>
+                <Button onClick={saveChallenge}>Save challenge</Button>
+              </div>
+            </Card>
+          </section>
+
           <section className="mt-10">
             <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
@@ -902,19 +1138,43 @@ function ManageEvent() {
                 <p className="text-stone-600">The latest memories from your guests.</p>
               </div>
             </div>
+            {event.challenge && (
+              <div className="mb-5 grid gap-3 rounded-3xl bg-white p-4 shadow-sm">
+                <div className="flex flex-wrap gap-2">
+                  <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === "all" ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter("all")}>All photos</button>
+                  {challengeColors.map((participant) => (
+                    <button className={cx("inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `color:${participant.colorSlug}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`color:${participant.colorSlug}`)} key={participant.colorSlug}>
+                      <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
+                      {participant.colorName}
+                    </button>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {challengeParticipants.map((participant) => (
+                    <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `participant:${participant.id}` ? "bg-amber-500 text-stone-950" : "bg-amber-50 text-[#653e00]")} onClick={() => setGalleryFilter(`participant:${participant.id}`)} key={participant.id}>{participant.displayName}</button>
+                  ))}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {event.photos.map((photo) => (
+              {filteredPhotos.map((photo) => (
                 <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white p-2 shadow-sm" key={photo.id}>
                   <img className="aspect-square w-full rounded-2xl object-cover" src={photo.url} alt={photo.originalFilename} />
                   <div className="p-3 text-sm">
                     <p className="truncate font-bold">{photo.guestNickname || "Guest"}</p>
+                    {photo.challengeParticipantName && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <ColorChip participant={{ colorName: photo.challengeColorName || "Color", colorHex: photo.challengeColorHex || "#f59e0b" }} />
+                        <span className="text-xs font-bold text-stone-600">{photo.challengeParticipantName}</span>
+                      </div>
+                    )}
                     <p className="text-stone-600">{formatDateTime(photo.createdAt)}</p>
                     <button className="mt-3 inline-flex min-h-10 items-center rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
                   </div>
                 </div>
               ))}
             </div>
-            {!event.photos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos uploaded yet.</p></Card>}
+            {!filteredPhotos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos match this view yet.</p></Card>}
           </section>
         </>
       )}
@@ -927,6 +1187,7 @@ function GuestEvent() {
   const [{ key, session }, setGuestSessionState] = useState(() => getGuestSession(slug));
   const [event, setEvent] = useState<PublicEvent | null>(null);
   const [nickname, setNickname] = useState(session.nickname);
+  const [selectedParticipantId, setSelectedParticipantId] = useState(() => localStorage.getItem(getChallengeParticipantSession(slug)) || "");
   const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -952,6 +1213,15 @@ function GuestEvent() {
   }, [slug]);
 
   useEffect(() => {
+    if (!event?.challenge) return;
+    const isValidParticipant = event.challenge.participants.some((participant) => participant.id === selectedParticipantId);
+    if (!isValidParticipant) {
+      setSelectedParticipantId("");
+      localStorage.removeItem(getChallengeParticipantSession(slug));
+    }
+  }, [event, selectedParticipantId, slug]);
+
+  useEffect(() => {
     if (!file) {
       setPhotoPreviewUrl("");
       return;
@@ -970,6 +1240,12 @@ function GuestEvent() {
     setGuestSessionState({ key, session: nextSession });
   }
 
+  function saveSelectedParticipant(participantId: string) {
+    setSelectedParticipantId(participantId);
+    if (participantId) localStorage.setItem(getChallengeParticipantSession(slug), participantId);
+    else localStorage.removeItem(getChallengeParticipantSession(slug));
+  }
+
   async function uploadPhoto(uploadEvent: React.FormEvent) {
     uploadEvent.preventDefault();
     setMessage("");
@@ -978,11 +1254,13 @@ function GuestEvent() {
     if (!file) return setError("Choose a photo first");
     if (!file.type.startsWith("image/")) return setError("Only image files are allowed");
     if (!nickname.trim()) return setError("Enter your name or nickname first");
+    if (event?.challenge && !selectedParticipantId) return setError("Select your Color Hunt name first");
 
     const formData = new FormData();
     formData.append("photo", file);
     formData.append("nickname", nickname.trim());
     formData.append("clientId", session.clientId);
+    if (selectedParticipantId) formData.append("challengeParticipantId", selectedParticipantId);
 
     setLoading(true);
     try {
@@ -997,6 +1275,8 @@ function GuestEvent() {
       setLoading(false);
     }
   }
+
+  const selectedParticipant = event?.challenge?.participants.find((participant) => participant.id === selectedParticipantId);
 
   return (
     <Shell>
@@ -1019,9 +1299,38 @@ function GuestEvent() {
             )}
           </section>
 
+          {event.challenge && (
+            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <StatusPill>Color Hunt</StatusPill>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Your group is playing Color Hunt.</h2>
+              <p className="mt-2 text-stone-700">Find things that match your color and upload them here.</p>
+              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
+                Choose your name
+                <select className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedParticipantId} onChange={(selectEvent) => saveSelectedParticipant(selectEvent.target.value)} required>
+                  <option value="">Select a participant</option>
+                  {event.challenge.participants.map((participant) => (
+                    <option value={participant.id} key={participant.id}>{participant.displayName} - {participant.colorName}</option>
+                  ))}
+                </select>
+              </label>
+              {selectedParticipant && (
+                <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 text-sm font-bold text-stone-800">
+                  <span>Your color:</span>
+                  <ColorChip participant={selectedParticipant} />
+                </div>
+              )}
+            </section>
+          )}
+
           <form className="mt-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-6" onSubmit={uploadPhoto}>
             <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
             <p className="mt-2 text-stone-600">Add your name, pick a photo, and send it to the private album.</p>
+            {selectedParticipant && (
+              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800">
+                Your color:
+                <ColorChip participant={selectedParticipant} />
+              </div>
+            )}
             <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
               Name or nickname
               <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
@@ -1059,7 +1368,14 @@ function GuestEvent() {
             <section className="mt-8">
               <h2 className="font-display text-2xl font-bold">Album</h2>
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {photos.map((photo) => <img className="aspect-square w-full rounded-3xl object-cover" src={photo.url} alt={photo.originalFilename} key={photo.id} />)}
+                {photos.map((photo) => (
+                  <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={photo.id}>
+                    <img className="aspect-square w-full rounded-2xl object-cover" src={photo.url} alt={photo.originalFilename} />
+                    {photo.challengeParticipantName && (
+                      <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengeParticipantName} - {photo.challengeColorName}</p>
+                    )}
+                  </div>
+                ))}
               </div>
               {!photos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos yet.</p></Card>}
             </section>

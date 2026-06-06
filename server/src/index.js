@@ -64,6 +64,73 @@ function publicEventUrl(slug) {
   return `${clientUrl}/e/${slug}`;
 }
 
+const CHALLENGE_TYPE_COLOR_HUNT = "COLOR_HUNT";
+const COLOR_HUNT_TITLE = "Color Hunt";
+const COLOR_HUNT_INSTRUCTIONS = "Assign each person a color. Guests will upload photos of things they find in their color.";
+
+const challengeInclude = {
+  participants: { orderBy: { createdAt: "asc" } },
+};
+
+function slugifyColor(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function activeColorHuntInclude() {
+  return {
+    where: { type: CHALLENGE_TYPE_COLOR_HUNT, isActive: true },
+    orderBy: { createdAt: "desc" },
+    take: 1,
+    include: challengeInclude,
+  };
+}
+
+function challengePayload(challenge) {
+  if (!challenge) return null;
+  return {
+    id: challenge.id,
+    eventId: challenge.eventId,
+    type: challenge.type,
+    title: challenge.title,
+    instructions: challenge.instructions,
+    config: challenge.config,
+    isActive: challenge.isActive,
+    createdAt: challenge.createdAt,
+    updatedAt: challenge.updatedAt,
+    participants: challenge.participants.map((participant) => ({
+      id: participant.id,
+      displayName: participant.displayName,
+      colorName: participant.colorName,
+      colorHex: participant.colorHex,
+      colorSlug: participant.colorSlug,
+      createdAt: participant.createdAt,
+      updatedAt: participant.updatedAt,
+    })),
+  };
+}
+
+function publicChallengePayload(challenge) {
+  const payload = challengePayload(challenge);
+  if (!payload) return null;
+  return {
+    id: payload.id,
+    type: payload.type,
+    title: payload.title,
+    instructions: payload.instructions,
+    participants: payload.participants.map(({ id, displayName, colorName, colorHex, colorSlug }) => ({
+      id,
+      displayName,
+      colorName,
+      colorHex,
+      colorSlug,
+    })),
+  };
+}
+
 function photoPayload(photo) {
   return {
     id: photo.id,
@@ -74,12 +141,63 @@ function photoPayload(photo) {
     sizeBytes: photo.sizeBytes,
     createdAt: photo.createdAt,
     guestNickname: photo.guest?.nickname,
+    challengeId: photo.challengeId,
+    challengeParticipantId: photo.challengeParticipantId,
+    challengeColorName: photo.challengeColorName,
+    challengeParticipantName: photo.challengeParticipant?.displayName,
+    challengeColorHex: photo.challengeParticipant?.colorHex,
+    challengeColorSlug: photo.challengeParticipant?.colorSlug,
   };
 }
 
 function requireFields(body, fields) {
   const missing = fields.filter((field) => !body[field]);
   return missing.length ? `Missing required fields: ${missing.join(", ")}` : null;
+}
+
+function normalizeChallengeSetup(input) {
+  if (!input || input.isActive === false) return null;
+  if (input.type && input.type !== CHALLENGE_TYPE_COLOR_HUNT) {
+    throw new Error("Unsupported challenge type");
+  }
+
+  const participants = Array.isArray(input.participants)
+    ? input.participants
+        .map((participant) => ({
+          displayName: String(participant.displayName || "").trim(),
+          colorName: String(participant.colorName || "").trim(),
+          colorHex: String(participant.colorHex || "").trim(),
+          colorSlug: slugifyColor(participant.colorSlug || participant.colorName),
+        }))
+        .filter((participant) => participant.displayName && participant.colorName && participant.colorHex && participant.colorSlug)
+    : [];
+
+  if (!participants.length) {
+    throw new Error("Add at least one Color Hunt participant");
+  }
+
+  return {
+    type: CHALLENGE_TYPE_COLOR_HUNT,
+    title: String(input.title || COLOR_HUNT_TITLE).trim() || COLOR_HUNT_TITLE,
+    instructions: String(input.instructions || COLOR_HUNT_INSTRUCTIONS).trim() || COLOR_HUNT_INSTRUCTIONS,
+    config: input.config && typeof input.config === "object" ? input.config : {},
+    isActive: true,
+    participants,
+  };
+}
+
+function eventPayload(event, { includePhotos = false } = {}) {
+  const challenge = event.challenges?.[0] || null;
+  return {
+    ...event,
+    eventLink: publicEventUrl(event.slug),
+    photoCount: event._count?.photos ?? event.photoCount ?? 0,
+    challenge: challengePayload(challenge),
+    previewPhotos: event.photos && !includePhotos ? event.photos.map(photoPayload) : event.previewPhotos,
+    photos: includePhotos && event.photos ? event.photos.map(photoPayload) : undefined,
+    challenges: undefined,
+    _count: undefined,
+  };
 }
 
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
@@ -126,20 +244,14 @@ app.get("/api/host/events", requireAuth, async (req, res) => {
         where: { deletedAt: null },
         orderBy: { createdAt: "desc" },
         take: 6,
-        include: { guest: true },
+        include: { guest: true, challengeParticipant: true },
       },
+      challenges: activeColorHuntInclude(),
       _count: { select: { photos: { where: { deletedAt: null } } } },
     },
   });
   res.json({
-    events: events.map((event) => ({
-      ...event,
-      eventLink: publicEventUrl(event.slug),
-      photoCount: event._count.photos,
-      previewPhotos: event.photos.map(photoPayload),
-      photos: undefined,
-      _count: undefined,
-    })),
+    events: events.map((event) => eventPayload(event)),
   });
 });
 
@@ -152,6 +264,13 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Photo limit must be at least 1" });
   }
 
+  let challengeSetup;
+  try {
+    challengeSetup = normalizeChallengeSetup(req.body.challenge);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
   const slug = crypto.randomBytes(12).toString("base64url");
   const event = await prisma.event.create({
     data: {
@@ -162,12 +281,27 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
       eventDate: new Date(req.body.eventDate),
       revealAt: new Date(req.body.revealAt),
       photoLimitPerGuest,
+      ...(challengeSetup
+        ? {
+            challenges: {
+              create: {
+                type: challengeSetup.type,
+                title: challengeSetup.title,
+                instructions: challengeSetup.instructions,
+                config: challengeSetup.config,
+                isActive: challengeSetup.isActive,
+                participants: { create: challengeSetup.participants },
+              },
+            },
+          }
+        : {}),
     },
+    include: { challenges: activeColorHuntInclude() },
   });
 
   const eventLink = publicEventUrl(event.slug);
   const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 320 });
-  res.status(201).json({ event: { ...event, eventLink, qrCodeDataUrl, photoCount: 0 } });
+  res.status(201).json({ event: { ...eventPayload({ ...event, _count: { photos: 0 } }), qrCodeDataUrl } });
 });
 
 app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
@@ -177,8 +311,9 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
       photos: {
         where: { deletedAt: null },
         orderBy: { createdAt: "desc" },
-        include: { guest: true },
+        include: { guest: true, challengeParticipant: true },
       },
+      challenges: activeColorHuntInclude(),
       _count: { select: { photos: { where: { deletedAt: null } } } },
     },
   });
@@ -188,14 +323,65 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
   const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 320 });
   res.json({
     event: {
-      ...event,
-      eventLink,
+      ...eventPayload(event, { includePhotos: true }),
       qrCodeDataUrl,
-      photoCount: event._count.photos,
-      photos: event.photos.map(photoPayload),
-      _count: undefined,
     },
   });
+});
+
+app.put("/api/host/events/:eventId/challenge", requireAuth, async (req, res) => {
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.eventId, hostId: req.user.userId },
+    include: { challenges: activeColorHuntInclude() },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  let challengeSetup;
+  try {
+    challengeSetup = normalizeChallengeSetup(req.body.challenge);
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  const existingChallenge = event.challenges[0];
+  if (!challengeSetup) {
+    if (existingChallenge) {
+      await prisma.eventChallenge.update({ where: { id: existingChallenge.id }, data: { isActive: false } });
+    }
+    return res.json({ challenge: null });
+  }
+
+  const challenge = await prisma.$transaction(async (tx) => {
+    if (existingChallenge) {
+      await tx.challengeParticipant.deleteMany({ where: { eventChallengeId: existingChallenge.id } });
+      return tx.eventChallenge.update({
+        where: { id: existingChallenge.id },
+        data: {
+          title: challengeSetup.title,
+          instructions: challengeSetup.instructions,
+          config: challengeSetup.config,
+          isActive: true,
+          participants: { create: challengeSetup.participants },
+        },
+        include: challengeInclude,
+      });
+    }
+
+    return tx.eventChallenge.create({
+      data: {
+        eventId: event.id,
+        type: challengeSetup.type,
+        title: challengeSetup.title,
+        instructions: challengeSetup.instructions,
+        config: challengeSetup.config,
+        isActive: true,
+        participants: { create: challengeSetup.participants },
+      },
+      include: challengeInclude,
+    });
+  });
+
+  res.json({ challenge: challengePayload(challenge) });
 });
 
 app.delete("/api/host/events/:eventId/photos/:photoId", requireAuth, async (req, res) => {
@@ -235,7 +421,10 @@ app.get("/api/host/events/:eventId/download", requireAuth, async (req, res) => {
 app.get("/api/events/:slug", async (req, res) => {
   const event = await prisma.event.findUnique({
     where: { slug: req.params.slug },
-    include: { _count: { select: { photos: { where: { deletedAt: null } } } } },
+    include: {
+      challenges: activeColorHuntInclude(),
+      _count: { select: { photos: { where: { deletedAt: null } } } },
+    },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
@@ -251,6 +440,7 @@ app.get("/api/events/:slug", async (req, res) => {
       photoLimitPerGuest: event.photoLimitPerGuest,
       isRevealed,
       photoCount: isRevealed ? event._count.photos : null,
+      challenge: publicChallengePayload(event.challenges[0]),
     },
   });
 });
@@ -274,15 +464,30 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
   let uploadedObjectKey;
 
   try {
-    const { nickname, clientId } = req.body;
+    const { nickname, clientId, challengeParticipantId } = req.body;
     if (!nickname || !clientId) {
       return res.status(400).json({ error: "Nickname and clientId are required" });
     }
     if (!req.file) return res.status(400).json({ error: "Photo file is required" });
 
-    const event = await prisma.event.findUnique({ where: { slug: req.params.slug } });
+    const event = await prisma.event.findUnique({
+      where: { slug: req.params.slug },
+      include: { challenges: activeColorHuntInclude() },
+    });
     if (!event) {
       return res.status(404).json({ error: "Event not found" });
+    }
+
+    const activeChallenge = event.challenges[0];
+    let selectedParticipant = null;
+    if (activeChallenge) {
+      if (!challengeParticipantId) {
+        return res.status(400).json({ error: "Select your Color Hunt participant before uploading" });
+      }
+      selectedParticipant = activeChallenge.participants.find((participant) => participant.id === challengeParticipantId);
+      if (!selectedParticipant) {
+        return res.status(400).json({ error: "Selected Color Hunt participant is not valid for this event" });
+      }
     }
 
     const guest = await prisma.guest.upsert({
@@ -312,8 +517,11 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
         originalFilename: req.file.originalname,
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
+        challengeId: selectedParticipant ? activeChallenge.id : null,
+        challengeParticipantId: selectedParticipant?.id || null,
+        challengeColorName: selectedParticipant?.colorName || null,
       },
-      include: { guest: true },
+      include: { guest: true, challengeParticipant: true },
     });
     uploadedObjectKey = null;
 
@@ -333,7 +541,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
 app.get("/api/events/:slug/photos", async (req, res) => {
   const event = await prisma.event.findUnique({
     where: { slug: req.params.slug },
-    include: { photos: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, include: { guest: true } } },
+    include: { photos: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, include: { guest: true, challengeParticipant: true } } },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
   if (event.revealAt > new Date()) {

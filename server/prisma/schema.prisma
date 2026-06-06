@@ -7,6 +7,10 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum ChallengeType {
+  COLOR_HUNT
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -30,8 +34,45 @@ model Event {
   host   User    @relation(fields: [hostId], references: [id], onDelete: Cascade)
   guests Guest[]
   photos Photo[]
+  challenges EventChallenge[]
 
   @@index([hostId])
+}
+
+model EventChallenge {
+  id           String        @id @default(cuid())
+  eventId      String
+  type         ChallengeType
+  title        String
+  instructions String
+  config       Json
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  event        Event                  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  participants ChallengeParticipant[]
+  photos       Photo[]                @relation("PhotoChallenge")
+
+  @@index([eventId])
+  @@index([eventId, isActive])
+}
+
+model ChallengeParticipant {
+  id               String   @id @default(cuid())
+  eventChallengeId String
+  displayName      String
+  colorName        String
+  colorHex         String
+  colorSlug        String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  eventChallenge EventChallenge @relation(fields: [eventChallengeId], references: [id], onDelete: Cascade)
+  photos         Photo[]
+
+  @@index([eventChallengeId])
+  @@index([eventChallengeId, colorSlug])
 }
 
 model Guest {
@@ -58,10 +99,17 @@ model Photo {
   sizeBytes        Int
   createdAt        DateTime  @default(now())
   deletedAt        DateTime?
+  challengeId      String?
+  challengeParticipantId String?
+  challengeColorName     String?
 
-  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  guest Guest @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  event                Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  guest                Guest                 @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  challenge            EventChallenge?       @relation("PhotoChallenge", fields: [challengeId], references: [id], onDelete: SetNull)
+  challengeParticipant ChallengeParticipant? @relation(fields: [challengeParticipantId], references: [id], onDelete: SetNull)
 
   @@index([eventId])
   @@index([guestId])
+  @@index([challengeId])
+  @@index([challengeParticipantId])
 }
