@@ -488,8 +488,10 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
 }
 
 function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const showDuplicateColorWarning = draft.type === "COLOR_HUNT" && hasDuplicateColors(draft.participants);
   const showDuplicatePromptWarning = draft.type === "PHOTO_SCAVENGER_HUNT" && hasDuplicatePrompts(draft.prompts);
+  const validPromptCount = draft.prompts.filter((prompt) => prompt.text.trim()).length;
 
   function updateType(type: ChallengeDraft["type"]) {
     onChange({ ...draft, type });
@@ -539,6 +541,7 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
   }
 
   function addPrompt() {
+    setIsPromptEditorOpen(true);
     onChange({ ...draft, prompts: [...draft.prompts, createPrompt("", draft.prompts.length)] });
   }
 
@@ -556,6 +559,7 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
   }
 
   function useStarterPrompts() {
+    setIsPromptEditorOpen(false);
     onChange({ ...draft, prompts: createStarterPrompts() });
   }
 
@@ -577,7 +581,7 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
           </button>
           <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === "PHOTO_SCAVENGER_HUNT" ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")} onClick={() => updateType("PHOTO_SCAVENGER_HUNT")}>
             <span className="block font-bold text-stone-950">Photo Scavenger Hunt</span>
-            <span className="mt-1 block text-stone-600">Guests complete photo prompts throughout the event.</span>
+            <span className="mt-1 block text-stone-600">Guests choose prompts and upload photos throughout the event.</span>
           </button>
         </div>
       </div>
@@ -623,22 +627,32 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
             <div>
               <h3 className="font-display text-lg font-bold">Set up Photo Scavenger Hunt</h3>
               <p className="text-sm text-stone-600">Add prompts guests can complete by uploading photos.</p>
+              <p className="mt-2 text-sm font-bold text-stone-800">{validPromptCount} prompts added</p>
             </div>
             <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={useStarterPrompts}>Use starter prompts</SecondaryButton>
           </div>
 
-          <div className="grid gap-3">
-            {draft.prompts.map((prompt, index) => (
-              <div className="grid gap-3 rounded-2xl bg-white p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center" key={prompt.id || index}>
-                <span className="grid h-10 w-10 place-items-center rounded-full bg-stone-100 text-sm font-bold text-stone-600">{index + 1}</span>
-                <TextInput value={prompt.text} onChange={(event) => updatePrompt(index, event.target.value)} placeholder="Photo prompt" />
-                <div className="flex gap-2">
-                  <button type="button" className="min-h-10 rounded-full border border-stone-200 px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, -1)} disabled={index === 0}>Up</button>
-                  <button type="button" className="min-h-10 rounded-full border border-stone-200 px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, 1)} disabled={index === draft.prompts.length - 1}>Down</button>
-                  <button type="button" className="min-h-10 rounded-full border border-stone-200 px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700" onClick={() => removePrompt(index)} disabled={draft.prompts.length <= 1}>Remove</button>
-                </div>
+          <div className="rounded-2xl bg-white p-3">
+            <button type="button" className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left font-bold text-stone-900" onClick={() => setIsPromptEditorOpen((isOpen) => !isOpen)} aria-expanded={isPromptEditorOpen}>
+              <span>Edit prompts</span>
+              <span className="text-sm text-stone-500">{isPromptEditorOpen ? "Hide" : "Show"}</span>
+            </button>
+            {isPromptEditorOpen && (
+              <div className="mt-3 grid gap-3">
+                {draft.prompts.map((prompt, index) => (
+                  <div className="grid gap-3 rounded-2xl bg-stone-50 p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center" key={prompt.id || index}>
+                    <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-sm font-bold text-stone-600">{index + 1}</span>
+                    <TextInput value={prompt.text} onChange={(event) => updatePrompt(index, event.target.value)} placeholder="Photo prompt" />
+                    <div className="flex gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
+                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, -1)} disabled={index === 0}>Up</button>
+                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, 1)} disabled={index === draft.prompts.length - 1}>Down</button>
+                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700" onClick={() => removePrompt(index)} disabled={draft.prompts.length <= 1}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+                <SecondaryButton type="button" className="justify-self-start" onClick={addPrompt}>Add prompt</SecondaryButton>
               </div>
-            ))}
+            )}
           </div>
 
           {draft.prompts.length < 3 && (
@@ -650,8 +664,6 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
           {showDuplicatePromptWarning && (
             <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">Remove duplicate prompts before saving.</p>
           )}
-
-          <SecondaryButton type="button" className="justify-self-start" onClick={addPrompt}>Add prompt</SecondaryButton>
         </div>
       )}
     </div>
@@ -1336,17 +1348,19 @@ function ManageEvent() {
             </div>
             {event.challenge && (
               <div className="mb-5 grid gap-3 rounded-3xl bg-white p-4 shadow-sm">
-                <div className="flex flex-wrap gap-2">
-                  <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === "all" ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter("all")}>All photos</button>
-                  {event.challenge.type === "COLOR_HUNT" && challengeColors.map((participant) => (
-                    <button className={cx("inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `color:${participant.colorSlug}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`color:${participant.colorSlug}`)} key={participant.colorSlug}>
-                      <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
-                      {participant.colorName}
-                    </button>
-                  ))}
-                  {event.challenge.type === "PHOTO_SCAVENGER_HUNT" && challengePrompts.map((prompt) => (
-                    <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `prompt:${prompt.id}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`prompt:${prompt.id}`)} key={prompt.id}>{prompt.text}</button>
-                  ))}
+                <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
+                  <div className="flex min-w-max gap-2 sm:min-w-0 sm:flex-wrap">
+                    <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === "all" ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter("all")}>All photos</button>
+                    {event.challenge.type === "COLOR_HUNT" && challengeColors.map((participant) => (
+                      <button className={cx("inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `color:${participant.colorSlug}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`color:${participant.colorSlug}`)} key={participant.colorSlug}>
+                        <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
+                        {participant.colorName}
+                      </button>
+                    ))}
+                    {event.challenge.type === "PHOTO_SCAVENGER_HUNT" && challengePrompts.map((prompt) => (
+                      <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `prompt:${prompt.id}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`prompt:${prompt.id}`)} key={prompt.id}>{prompt.text}</button>
+                    ))}
+                  </div>
                 </div>
                 {event.challenge.type === "COLOR_HUNT" && (
                   <div className="flex flex-wrap gap-2">
@@ -1369,9 +1383,9 @@ function ManageEvent() {
                       </div>
                     )}
                     {photo.challengePromptText && (
-                      <p className="mt-2 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-[#653e00]">{photo.challengePromptText}</p>
+                      <p className="mt-2 text-sm font-semibold text-[#653e00]">Prompt: {photo.challengePromptText}</p>
                     )}
-                    <p className="text-stone-600">{formatDateTime(photo.createdAt)}</p>
+                    <p className="mt-1 text-stone-600">{formatDateTime(photo.createdAt)}</p>
                     <button className="mt-3 inline-flex min-h-10 items-center rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
                   </div>
                 </div>
@@ -1401,6 +1415,7 @@ function GuestEvent() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [showScavengerSuccessActions, setShowScavengerSuccessActions] = useState(false);
 
   async function load() {
     const eventData = await api<{ event: PublicEvent }>(`/api/events/${slug}`);
@@ -1470,19 +1485,17 @@ function GuestEvent() {
 
   function saveSelectedPrompt(promptId: string) {
     setSelectedPromptId(promptId);
+    setShowScavengerSuccessActions(false);
+    setMessage("");
     if (promptId) localStorage.setItem(getChallengePromptSession(slug), promptId);
     else localStorage.removeItem(getChallengePromptSession(slug));
-  }
-
-  function switchPrompt() {
-    saveSelectedPrompt("");
-    setTimeout(() => promptSelectRef.current?.focus(), 0);
   }
 
   async function uploadPhoto(uploadEvent: React.FormEvent) {
     uploadEvent.preventDefault();
     setMessage("");
     setError("");
+    setShowScavengerSuccessActions(false);
 
     if (!file) return setError("Choose a photo first");
     if (!file.type.startsWith("image/")) return setError("Only image files are allowed");
@@ -1502,7 +1515,12 @@ function GuestEvent() {
       const data = await api<{ remainingUploads: number }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
       setFile(null);
       setRemaining(data.remainingUploads);
-      setMessage("Photo uploaded");
+      if (event?.challenge?.type === "PHOTO_SCAVENGER_HUNT") {
+        setMessage("Photo uploaded. Want to complete another prompt?");
+        setShowScavengerSuccessActions(true);
+      } else {
+        setMessage("Photo uploaded");
+      }
       await load();
     } catch (err) {
       setError((err as Error).message);
@@ -1514,6 +1532,20 @@ function GuestEvent() {
   const selectedParticipant = event?.challenge?.participants.find((participant) => participant.id === selectedParticipantId);
   const guestPrompts = promptsFromChallenge(event?.challenge);
   const selectedPrompt = guestPrompts.find((prompt) => prompt.id === selectedPromptId);
+
+  function uploadAnotherForPrompt() {
+    setShowScavengerSuccessActions(false);
+    setMessage("");
+    setError("");
+  }
+
+  function chooseNewPrompt() {
+    saveSelectedPrompt("");
+    setShowScavengerSuccessActions(false);
+    setMessage("");
+    setError("");
+    setTimeout(() => promptSelectRef.current?.focus(), 0);
+  }
 
   return (
     <Shell>
@@ -1577,9 +1609,9 @@ function GuestEvent() {
                 </select>
               </label>
               {selectedPrompt && (
-                <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-white p-3 text-sm font-bold text-stone-800 sm:flex-row sm:items-center sm:justify-between">
-                  <span>Uploading for: {selectedPrompt.text}</span>
-                  <button type="button" className="self-start rounded-full border border-stone-200 px-3 py-2 text-xs font-bold text-stone-700 hover:border-amber-400 hover:bg-amber-50 sm:self-auto" onClick={switchPrompt}>Change prompt</button>
+                <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-stone-800">
+                  <p className="text-xs font-bold uppercase tracking-wide text-stone-500">Current prompt</p>
+                  <p className="mt-1 font-display text-xl font-bold text-[#653e00]">{selectedPrompt.text}</p>
                 </div>
               )}
             </section>
@@ -1625,9 +1657,22 @@ function GuestEvent() {
               </div>
             )}
             {message && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+            {showScavengerSuccessActions && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <SecondaryButton type="button" onClick={uploadAnotherForPrompt}>Upload another for this prompt</SecondaryButton>
+                <SecondaryButton type="button" onClick={chooseNewPrompt}>Choose a new prompt</SecondaryButton>
+              </div>
+            )}
             {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
             <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Uploading..." : "Upload photo"}</Button>
           </form>
+
+          {!event.isRevealed && (
+            <section className="mt-8 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <h2 className="font-display text-2xl font-bold text-[#653e00]">Album</h2>
+              <p className="mt-2 text-sm font-semibold text-amber-900">Photos are hidden until the reveal. Keep uploading throughout the event.</p>
+            </section>
+          )}
 
           {event.isRevealed && (
             <section className="mt-8">
