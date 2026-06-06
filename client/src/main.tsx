@@ -252,14 +252,19 @@ function buildChallengePayload(draft: ChallengeDraft) {
   if (!draft.enabled) return null;
   const participants = draft.participants
     .map((participant) => ({
+      id: participant.id,
       displayName: participant.displayName.trim(),
       colorName: participant.colorName,
       colorHex: participant.colorHex,
       colorSlug: participant.colorSlug,
-    }))
-    .filter((participant) => participant.displayName);
+    }));
 
-  if (!participants.length) throw new Error("Add at least one Color Hunt participant");
+  if (participants.length < 2) throw new Error("Add at least 2 participants to start Color Hunt.");
+  if (participants.some((participant) => !participant.displayName)) throw new Error("Participant names cannot be empty.");
+  if (participants.some((participant) => !participant.colorName || !participant.colorHex || !participant.colorSlug)) throw new Error("Each participant needs a color.");
+
+  const participantNames = participants.map((participant) => participant.displayName.toLowerCase());
+  if (new Set(participantNames).size !== participantNames.length) throw new Error("Participant names must be unique.");
 
   return {
     type: "COLOR_HUNT",
@@ -273,6 +278,11 @@ function buildChallengePayload(draft: ChallengeDraft) {
 
 function colorBySlug(colorSlug: string) {
   return COLOR_HUNT_PALETTE.find((color) => color.colorSlug === colorSlug) || COLOR_HUNT_PALETTE[0];
+}
+
+function hasDuplicateColors(participants: ChallengeParticipant[]) {
+  const selectedColors = participants.map((participant) => participant.colorSlug).filter(Boolean);
+  return new Set(selectedColors).size !== selectedColors.length;
 }
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -390,6 +400,8 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
 }
 
 function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  const showDuplicateColorWarning = draft.enabled && hasDuplicateColors(draft.participants);
+
   function updateParticipant(index: number, nextParticipant: ChallengeParticipant) {
     onChange({
       ...draft,
@@ -453,7 +465,7 @@ function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
           <div className="grid gap-3">
             {draft.participants.map((participant, index) => (
               <div className="grid gap-3 rounded-2xl bg-white p-3 sm:grid-cols-[1fr_190px_auto] sm:items-center" key={index}>
-                <TextInput value={participant.displayName} onChange={(event) => updateParticipantName(index, event.target.value)} placeholder={`Participant ${index + 1}`} />
+                <TextInput value={participant.displayName} onChange={(event) => updateParticipantName(index, event.target.value)} placeholder="Participant name" />
                 <label className="grid gap-1 text-xs font-bold uppercase tracking-wide text-stone-500">
                   Color
                   <select className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-sm font-bold text-stone-800 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={participant.colorSlug} onChange={(event) => updateParticipantColor(index, event.target.value)}>
@@ -466,6 +478,10 @@ function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
               </div>
             ))}
           </div>
+
+          {showDuplicateColorWarning && (
+            <p className="rounded-2xl bg-amber-100 p-3 text-sm font-bold text-amber-900">Two people have the same color. That is okay if you meant to do it.</p>
+          )}
 
           <SecondaryButton type="button" className="justify-self-start" onClick={addParticipant}>Add participant</SecondaryButton>
         </div>
@@ -1161,11 +1177,10 @@ function ManageEvent() {
                 <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white p-2 shadow-sm" key={photo.id}>
                   <img className="aspect-square w-full rounded-2xl object-cover" src={photo.url} alt={photo.originalFilename} />
                   <div className="p-3 text-sm">
-                    <p className="truncate font-bold">{photo.guestNickname || "Guest"}</p>
-                    {photo.challengeParticipantName && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <ColorChip participant={{ colorName: photo.challengeColorName || "Color", colorHex: photo.challengeColorHex || "#f59e0b" }} />
-                        <span className="text-xs font-bold text-stone-600">{photo.challengeParticipantName}</span>
+                    <p className="truncate font-bold">{photo.challengeParticipantName || photo.guestNickname || "Guest"}</p>
+                    {photo.challengeColorName && (
+                      <div className="mt-2">
+                        <ColorChip participant={{ colorName: photo.challengeColorName, colorHex: photo.challengeColorHex || "#f59e0b" }} />
                       </div>
                     )}
                     <p className="text-stone-600">{formatDateTime(photo.createdAt)}</p>
@@ -1188,6 +1203,7 @@ function GuestEvent() {
   const [event, setEvent] = useState<PublicEvent | null>(null);
   const [nickname, setNickname] = useState(session.nickname);
   const [selectedParticipantId, setSelectedParticipantId] = useState(() => localStorage.getItem(getChallengeParticipantSession(slug)) || "");
+  const participantSelectRef = useRef<HTMLSelectElement | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -1201,10 +1217,12 @@ function GuestEvent() {
     setEvent(eventData.event);
     const status = await api<{ remainingUploads: number; nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
     setRemaining(status.remainingUploads);
-    if (status.nickname && !nickname) setNickname(status.nickname);
+    if (!eventData.event.challenge && status.nickname && !nickname) setNickname(status.nickname);
     if (eventData.event.isRevealed) {
       const photoData = await api<{ photos: Photo[] }>(`/api/events/${slug}/photos`);
       setPhotos(photoData.photos);
+    } else {
+      setPhotos([]);
     }
   }
 
@@ -1246,6 +1264,11 @@ function GuestEvent() {
     else localStorage.removeItem(getChallengeParticipantSession(slug));
   }
 
+  function switchParticipant() {
+    saveSelectedParticipant("");
+    setTimeout(() => participantSelectRef.current?.focus(), 0);
+  }
+
   async function uploadPhoto(uploadEvent: React.FormEvent) {
     uploadEvent.preventDefault();
     setMessage("");
@@ -1253,14 +1276,14 @@ function GuestEvent() {
 
     if (!file) return setError("Choose a photo first");
     if (!file.type.startsWith("image/")) return setError("Only image files are allowed");
-    if (!nickname.trim()) return setError("Enter your name or nickname first");
-    if (event?.challenge && !selectedParticipantId) return setError("Select your Color Hunt name first");
+    if (event?.challenge && !selectedParticipant) return setError("Select your Color Hunt name first");
+    if (!event?.challenge && !nickname.trim()) return setError("Enter your name or nickname first");
 
     const formData = new FormData();
     formData.append("photo", file);
-    formData.append("nickname", nickname.trim());
+    formData.append("nickname", selectedParticipant?.displayName || nickname.trim());
     formData.append("clientId", session.clientId);
-    if (selectedParticipantId) formData.append("challengeParticipantId", selectedParticipantId);
+    if (selectedParticipant?.id) formData.append("challengeParticipantId", selectedParticipant.id);
 
     setLoading(true);
     try {
@@ -1294,7 +1317,7 @@ function GuestEvent() {
             <p className="mt-3 text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
             {!event.isRevealed && (
               <p className="mt-5 rounded-3xl bg-amber-50 p-4 text-sm font-semibold text-amber-900">
-                Photos are locked until {formatDateTime(event.revealAt)}.
+                Photos are hidden until the reveal. Keep uploading throughout the event.
               </p>
             )}
           </section>
@@ -1306,7 +1329,7 @@ function GuestEvent() {
               <p className="mt-2 text-stone-700">Find things that match your color and upload them here.</p>
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
                 Choose your name
-                <select className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedParticipantId} onChange={(selectEvent) => saveSelectedParticipant(selectEvent.target.value)} required>
+                <select ref={participantSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedParticipantId} onChange={(selectEvent) => saveSelectedParticipant(selectEvent.target.value)} required>
                   <option value="">Select a participant</option>
                   {event.challenge.participants.map((participant) => (
                     <option value={participant.id} key={participant.id}>{participant.displayName} - {participant.colorName}</option>
@@ -1314,9 +1337,12 @@ function GuestEvent() {
                 </select>
               </label>
               {selectedParticipant && (
-                <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl bg-white p-3 text-sm font-bold text-stone-800">
-                  <span>Your color:</span>
-                  <ColorChip participant={selectedParticipant} />
+                <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-white p-3 text-sm font-bold text-stone-800 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span>Your color:</span>
+                    <ColorChip participant={selectedParticipant} />
+                  </div>
+                  <button type="button" className="self-start rounded-full border border-stone-200 px-3 py-2 text-xs font-bold text-stone-700 hover:border-amber-400 hover:bg-amber-50 sm:self-auto" onClick={switchParticipant}>Switch participant</button>
                 </div>
               )}
             </section>
@@ -1324,17 +1350,16 @@ function GuestEvent() {
 
           <form className="mt-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-6" onSubmit={uploadPhoto}>
             <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
-            <p className="mt-2 text-stone-600">Add your name, pick a photo, and send it to the private album.</p>
-            {selectedParticipant && (
-              <div className="mt-4 inline-flex items-center gap-2 rounded-full bg-stone-100 px-4 py-2 text-sm font-bold text-stone-800">
-                Your color:
-                <ColorChip participant={selectedParticipant} />
-              </div>
+            <p className="mt-2 text-stone-600">{event.challenge ? "Pick a photo and send it to the private album." : "Add your name, pick a photo, and send it to the private album."}</p>
+            {event.challenge && selectedParticipant && (
+              <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p>
             )}
-            <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-              Name or nickname
-              <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
-            </label>
+            {!event.challenge && (
+              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
+                Name or nickname
+                <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
+              </label>
+            )}
             <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-700">
               {remaining === null ? "Checking uploads..." : `${remaining} uploads left`}
             </p>

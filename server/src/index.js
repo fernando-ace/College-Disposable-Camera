@@ -146,7 +146,7 @@ function photoPayload(photo) {
     challengeColorName: photo.challengeColorName,
     challengeParticipantName: photo.challengeParticipant?.displayName,
     challengeColorHex: photo.challengeParticipant?.colorHex,
-    challengeColorSlug: photo.challengeParticipant?.colorSlug,
+    challengeColorSlug: photo.challengeParticipant?.colorSlug || slugifyColor(photo.challengeColorName),
   };
 }
 
@@ -162,18 +162,28 @@ function normalizeChallengeSetup(input) {
   }
 
   const participants = Array.isArray(input.participants)
-    ? input.participants
-        .map((participant) => ({
-          displayName: String(participant.displayName || "").trim(),
-          colorName: String(participant.colorName || "").trim(),
-          colorHex: String(participant.colorHex || "").trim(),
-          colorSlug: slugifyColor(participant.colorSlug || participant.colorName),
-        }))
-        .filter((participant) => participant.displayName && participant.colorName && participant.colorHex && participant.colorSlug)
+    ? input.participants.map((participant) => ({
+        id: typeof participant.id === "string" ? participant.id : undefined,
+        displayName: String(participant.displayName || "").trim(),
+        colorName: String(participant.colorName || "").trim(),
+        colorHex: String(participant.colorHex || "").trim(),
+        colorSlug: slugifyColor(participant.colorSlug || participant.colorName),
+      }))
     : [];
 
-  if (!participants.length) {
-    throw new Error("Add at least one Color Hunt participant");
+  if (participants.length < 2) {
+    throw new Error("Add at least 2 participants to start Color Hunt.");
+  }
+  if (participants.some((participant) => !participant.displayName)) {
+    throw new Error("Participant names cannot be empty.");
+  }
+  if (participants.some((participant) => !participant.colorName || !participant.colorHex || !participant.colorSlug)) {
+    throw new Error("Each participant needs a color.");
+  }
+
+  const participantNames = participants.map((participant) => participant.displayName.toLowerCase());
+  if (new Set(participantNames).size !== participantNames.length) {
+    throw new Error("Participant names must be unique.");
   }
 
   return {
@@ -182,7 +192,10 @@ function normalizeChallengeSetup(input) {
     instructions: String(input.instructions || COLOR_HUNT_INSTRUCTIONS).trim() || COLOR_HUNT_INSTRUCTIONS,
     config: input.config && typeof input.config === "object" ? input.config : {},
     isActive: true,
-    participants,
+    participants: participants.map((participant) => ({
+      ...participant,
+      id: participant.id || undefined,
+    })),
   };
 }
 
@@ -290,7 +303,9 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
                 instructions: challengeSetup.instructions,
                 config: challengeSetup.config,
                 isActive: challengeSetup.isActive,
-                participants: { create: challengeSetup.participants },
+                participants: {
+                  create: challengeSetup.participants.map(({ id: _id, ...participant }) => participant),
+                },
               },
             },
           }
@@ -353,18 +368,41 @@ app.put("/api/host/events/:eventId/challenge", requireAuth, async (req, res) => 
 
   const challenge = await prisma.$transaction(async (tx) => {
     if (existingChallenge) {
-      await tx.challengeParticipant.deleteMany({ where: { eventChallengeId: existingChallenge.id } });
-      return tx.eventChallenge.update({
+      const existingParticipantsById = new Map(existingChallenge.participants.map((participant) => [participant.id, participant]));
+      const retainedIds = [];
+
+      for (const participant of challengeSetup.participants) {
+        const data = {
+          displayName: participant.displayName,
+          colorName: participant.colorName,
+          colorHex: participant.colorHex,
+          colorSlug: participant.colorSlug,
+        };
+
+        if (participant.id && existingParticipantsById.has(participant.id)) {
+          await tx.challengeParticipant.update({ where: { id: participant.id }, data });
+          retainedIds.push(participant.id);
+        } else {
+          const createdParticipant = await tx.challengeParticipant.create({ data: { ...data, eventChallengeId: existingChallenge.id } });
+          retainedIds.push(createdParticipant.id);
+        }
+      }
+
+      await tx.challengeParticipant.deleteMany({
+        where: { eventChallengeId: existingChallenge.id, id: { notIn: retainedIds } },
+      });
+
+      await tx.eventChallenge.update({
         where: { id: existingChallenge.id },
         data: {
           title: challengeSetup.title,
           instructions: challengeSetup.instructions,
           config: challengeSetup.config,
           isActive: true,
-          participants: { create: challengeSetup.participants },
         },
-        include: challengeInclude,
       });
+
+      return tx.eventChallenge.findUnique({ where: { id: existingChallenge.id }, include: challengeInclude });
     }
 
     return tx.eventChallenge.create({
@@ -375,7 +413,9 @@ app.put("/api/host/events/:eventId/challenge", requireAuth, async (req, res) => 
         instructions: challengeSetup.instructions,
         config: challengeSetup.config,
         isActive: true,
-        participants: { create: challengeSetup.participants },
+        participants: {
+          create: challengeSetup.participants.map(({ id: _id, ...participant }) => participant),
+        },
       },
       include: challengeInclude,
     });
@@ -465,8 +505,8 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
 
   try {
     const { nickname, clientId, challengeParticipantId } = req.body;
-    if (!nickname || !clientId) {
-      return res.status(400).json({ error: "Nickname and clientId are required" });
+    if (!clientId) {
+      return res.status(400).json({ error: "clientId is required" });
     }
     if (!req.file) return res.status(400).json({ error: "Photo file is required" });
 
@@ -488,12 +528,16 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
       if (!selectedParticipant) {
         return res.status(400).json({ error: "Selected Color Hunt participant is not valid for this event" });
       }
+    } else if (!nickname) {
+      return res.status(400).json({ error: "Nickname and clientId are required" });
     }
+
+    const uploadNickname = selectedParticipant ? selectedParticipant.displayName : nickname.trim();
 
     const guest = await prisma.guest.upsert({
       where: { eventId_clientId: { eventId: event.id, clientId } },
-      update: { nickname: nickname.trim() },
-      create: { eventId: event.id, clientId, nickname: nickname.trim() },
+      update: { nickname: uploadNickname },
+      create: { eventId: event.id, clientId, nickname: uploadNickname },
     });
 
     const used = await prisma.photo.count({ where: { eventId: event.id, guestId: guest.id, deletedAt: null } });
