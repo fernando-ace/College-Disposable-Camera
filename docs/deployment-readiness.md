@@ -4,13 +4,29 @@ Use this runbook before Fernando gives EventFilm to first beta hosts. Do not com
 
 ## Deployment Targets
 
-EventFilm is provider-flexible:
+Current beta inventory:
 
-- Web: Vercel or similar, rooted at `client/`.
-- API: Railway, Render, Fly.io, or similar, rooted at `server/`.
-- Database: the current configured PostgreSQL provider.
-- Photo storage: Supabase Storage private bucket.
+- Web: Vercel, rooted at `client/`. The current public beta frontend is `https://eventfilm.vercel.app`.
+- API: confirm the real host before smoke. Railway is the default documented target, rooted at `server/`; Render or Fly.io can also work if they use the same build/start/env contract.
+- Database: hosted PostgreSQL through `DATABASE_URL`.
+- Photo storage: Supabase Storage private bucket named by `SUPABASE_STORAGE_BUCKET`.
 - Mobile preview: EAS internal/preview build from `apps/mobile/`.
+
+No real deployed API URL is committed in this repo. Do not claim deployed smoke success until Fernando provides or configures the real API URL in the shell/provider environment.
+
+## Values Fernando Must Provide
+
+Before real beta smoke can pass, Fernando needs to confirm these target-environment values:
+
+- `API_PUBLIC_URL`: deployed HTTPS API base URL, no `/api` suffix.
+- `WEB_PUBLIC_URL`: deployed HTTPS web URL, expected to be `https://eventfilm.vercel.app` unless a custom domain is active.
+- `CLIENT_ORIGIN` or `CLIENT_ORIGINS`: deployed web origin plus any preview origins that should pass CORS.
+- `VITE_API_URL`: same deployed API base URL for the web deployment.
+- `EXPO_PUBLIC_API_URL`: same deployed API base URL for EAS preview builds.
+- API provider/project identity: Railway project/service or the equivalent Render/Fly service.
+- Supabase project and private bucket name, expected `event-photos` unless changed.
+- Dedicated deployed smoke event slug.
+- Dedicated deployed smoke host email/password, stored only in local shell or provider env while running smoke.
 
 ## Environment Values
 
@@ -26,6 +42,21 @@ VITE_API_URL="http://localhost:4000"
 EXPO_PUBLIC_API_URL="http://localhost:4000"
 EXPO_PUBLIC_RELEASE_CHANNEL="development"
 ```
+
+LAN mobile development:
+
+```env
+CLIENT_URL="http://localhost:5173"
+SERVER_URL="http://192.168.1.25:4000"
+WEB_PUBLIC_URL="http://localhost:5173"
+API_PUBLIC_URL="http://192.168.1.25:4000"
+CLIENT_ORIGINS="http://localhost:5173"
+VITE_API_URL="http://localhost:4000"
+EXPO_PUBLIC_API_URL="http://192.168.1.25:4000"
+EXPO_PUBLIC_RELEASE_CHANNEL="development"
+```
+
+Replace `192.168.1.25` with the machine's current LAN IP. Keep release channel as `development` for LAN testing.
 
 Preview deployment:
 
@@ -62,9 +93,66 @@ Backend secrets, server-only:
 - `MAX_FILE_SIZE_MB`
 - `PORT`
 
+Frontend public values:
+
+- `VITE_API_URL`
+- `VITE_BOOKING_SMS_URL`, optional
+
+Mobile preview public values:
+
+- `EXPO_PUBLIC_API_URL`
+- `EXPO_PUBLIC_RELEASE_CHANNEL`
+
 `CLIENT_URL` and `SERVER_URL` still work for existing hosts. `WEB_PUBLIC_URL` and `API_PUBLIC_URL` are aliases for the same public values. `CLIENT_ORIGIN` or comma-separated `CLIENT_ORIGINS` can add allowed CORS origins for preview domains.
 
 Production startup fails if required database/storage config is missing, if production public URLs point at localhost or non-HTTPS, if wildcard CORS is configured, if `JWT_SECRET` uses the dev fallback, or if production secrets are too short.
+
+## Provider Readiness
+
+Use these commands only for inspection or deployment after the target project is known. Do not create paid resources, delete resources, rotate secrets, or print secret values from this workflow.
+
+Vercel web from `client/`:
+
+```bash
+npx vercel@latest link
+npx vercel@latest env pull
+npx vercel@latest deploy
+```
+
+Railway API from `server/`:
+
+```bash
+npx @railway/cli@latest login
+npx @railway/cli@latest link
+npx @railway/cli@latest status
+npx @railway/cli@latest up --service <api-service-name>
+```
+
+If the API host is Render or Fly.io instead, use the provider dashboard or CLI to set the same backend env values and confirm the service root is `server/`.
+
+Supabase storage:
+
+```bash
+npx supabase@latest projects list
+npx supabase@latest storage ls
+```
+
+The dashboard is safer for final confirmation: verify the project is active, the bucket named by `SUPABASE_STORAGE_BUCKET` exists, and the service role key is configured only on the API host.
+
+EAS preview readiness:
+
+```bash
+cd apps/mobile
+npx eas-cli@latest whoami
+npx eas-cli@latest build:configure
+npx eas-cli@latest build --profile preview --platform android
+```
+
+Run an iOS preview build only when Apple credentials are already available and the deployed API URL is real:
+
+```bash
+npx eas-cli@latest build --profile preview --platform ios
+```
 
 ## Deploy Sequence
 
@@ -115,6 +203,19 @@ npm run smoke:deployed:all
 
 If no deployed URLs are configured, deployed smoke commands must fail with clear missing-env output. That is expected during local validation.
 
+Failure triage:
+
+- Missing env: set the required `DEPLOYED_*` values in the shell and rerun.
+- Wrong CORS: add the deployed web origin to `CLIENT_ORIGIN` or `CLIENT_ORIGINS` on the API host.
+- API cannot reach DB: verify `DATABASE_URL`, database allowlist/networking, and migration status.
+- API cannot reach Supabase: verify `SUPABASE_URL`, service role key, bucket name, and project pause status.
+- Storage bucket issue: create or correct the private bucket named by `SUPABASE_STORAGE_BUCKET`.
+- Migration not applied: run `npm run prisma:deploy -w server` against the target database.
+- Web points to wrong API: update `VITE_API_URL` on Vercel and redeploy.
+- Mobile points to wrong API: update `EXPO_PUBLIC_API_URL` in EAS env or `apps/mobile/eas.json` before the preview build.
+- Auth/session issue: use a dedicated smoke host created in the deployed environment.
+- Route mismatch: confirm the event slug is from the same deployed database as the API under test.
+
 ## Safe Target Data
 
 For local development, `npm run demo:seed` creates dev-only demo events and `npm run demo:cleanup` removes them. For deployed preview/production candidates, do not run the dev-only seed blindly unless the target environment is intended for smoke data. Preferred options:
@@ -127,6 +228,13 @@ For local development, `npm run demo:seed` creates dev-only demo events and `npm
 ## Mobile Preview Build
 
 Keep `EXPO_PUBLIC_API_URL` as the Expo public API base URL. It is bundled into the app and must never contain secrets.
+
+Config validation:
+
+```bash
+cd apps/mobile
+npx eas-cli@latest whoami
+```
 
 Preview build:
 
@@ -194,6 +302,6 @@ npm run smoke:storage
 
 - Web: redeploy the last known-good web deployment.
 - API: redeploy the last known-good server build and re-run API health.
-- Database: prefer forward fixes; do not hand-edit production data as rollback.
+- Database: prefer forward fixes; do not hand-edit production data as rollback. Before any migration, check target status with `npm exec -w server -- prisma migrate status --schema prisma/schema.prisma`; apply with `npm run prisma:deploy -w server` only after confirming `DATABASE_URL` targets the intended deployed database.
 - Storage: hide problematic photos first; reserve permanent delete for cleanup or abuse.
 - Mobile: stop distributing the bad internal build and create a new preview build with corrected env values.

@@ -255,6 +255,7 @@ Guest:
 - Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Live Wall, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
 - See `docs/real-event-qa.md` before testing with a real host.
 - See `docs/deployment-readiness.md` for the deployment, storage, CORS, migration, EAS, smoke, and rollback checklists.
+- See `docs/beta-release-candidate-checklist.md` for the final deployed beta go/no-go checklist.
 - See `docs/first-host-beta-handoff.md` before handing a real beta host the product.
 - See `docs/demo-recording-checklist.md` before recording the release-candidate demo.
 
