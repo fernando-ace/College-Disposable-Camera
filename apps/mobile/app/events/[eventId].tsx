@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Link, useLocalSearchParams } from "expo-router";
 import { Linking, View } from "react-native";
-import type { LaunchLinkVerification } from "@eventfilm/api-client";
+import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
 import { buildHostLaunchKit, challengeLabel } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
@@ -15,6 +15,7 @@ export default function EventDetailScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { api } = useAuth();
   const [event, setEvent] = React.useState<(EventSummary & { photos: Photo[] }) | null>(null);
+  const [analyticsSummary, setAnalyticsSummary] = React.useState<EventAnalyticsSummary | null>(null);
   const [linkChecks, setLinkChecks] = React.useState<LaunchLinkVerification[]>([]);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
@@ -30,6 +31,8 @@ export default function EventDetailScreen() {
       ]);
       setEvent(data.event);
       if (links) setLinkChecks(links.links);
+      const analytics = await api.getEventAnalyticsSummary(eventId).catch(() => null);
+      if (analytics) setAnalyticsSummary(analytics.summary);
     } catch (err) {
       setError(`${(err as Error).message}. Check your connection and retry before the event.`);
     } finally {
@@ -64,11 +67,13 @@ export default function EventDetailScreen() {
       Promise.all([
         api.getHostEvent(eventId),
         api.verifyHostEventLinks(eventId).catch(() => null),
+        api.getEventAnalyticsSummary(eventId).catch(() => null),
       ])
-        .then(([data, links]) => {
+        .then(([data, links, analytics]) => {
           if (!isMounted) return;
           setEvent(data.event);
           if (links) setLinkChecks(links.links);
+          if (analytics) setAnalyticsSummary(analytics.summary);
         })
         .catch((err) => {
           if (isMounted) setError(`${(err as Error).message}. Check your connection and retry before the event.`);
@@ -152,6 +157,7 @@ export default function EventDetailScreen() {
               </Card>
             ) : null}
             <LinkHealthPanel linkChecks={linkChecks} />
+            <EventMetricsPanel summary={analyticsSummary} />
             <RunOfShow />
             <Button tone="secondary" loading={loading} onPress={loadEvent}>Refresh photos</Button>
           </View>
@@ -201,6 +207,32 @@ export default function EventDetailScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null }) {
+  if (!summary) return null;
+  const rows = [
+    ["Guest joins", summary.guestJoins],
+    ["Uploads", summary.uploads],
+    ["Live Wall", summary.liveWallOpens],
+    ["Recaps", summary.recapOpens],
+    ["Hidden", summary.hiddenPhotos],
+    ["Reported", summary.reportedPhotos],
+  ];
+
+  return (
+    <Card>
+      <SectionHeader title="Beta event metrics" subtitle="Simple signal for this event across guest, wall, recap, and moderation activity." />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        {rows.map(([label, value]) => (
+          <View key={label} style={{ minWidth: 96, flex: 1, gap: 3 }}>
+            <Body>{String(value)}</Body>
+            <Body tone="muted">{label}</Body>
+          </View>
+        ))}
+      </View>
+    </Card>
   );
 }
 

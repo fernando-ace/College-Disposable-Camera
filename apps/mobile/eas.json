@@ -16,14 +16,14 @@
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_RELEASE_CHANNEL": "preview",
-        "EXPO_PUBLIC_API_URL": "https://replace-with-your-api.example.com"
+        "EXPO_PUBLIC_API_URL": "https://api.your-eventfilm-domain.com"
       }
     },
     "production": {
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_RELEASE_CHANNEL": "production",
-        "EXPO_PUBLIC_API_URL": "https://replace-with-your-api.example.com"
+        "EXPO_PUBLIC_API_URL": "https://api.your-eventfilm-domain.com"
       }
     }
   },

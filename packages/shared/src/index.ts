@@ -219,6 +219,16 @@ export type AnalyticsEventInput = {
   metadata?: Record<string, string | number | boolean | null>;
 };
 
+export const BETA_METRIC_DEFINITIONS = {
+  activeHost: "A signed-in host who opens the host dashboard in the last 30 days.",
+  guestJoin: "A guest upload route visit that records guest_joined_event for an event.",
+  photoUpload: "A successfully stored event photo that has not been deleted.",
+  liveWallOpen: "A Live Wall route visit that records live_wall_opened for an event.",
+  recapOpen: "A Recap route visit that records recap_opened for an event.",
+} as const;
+
+export type BetaMetricKey = keyof typeof BETA_METRIC_DEFINITIONS;
+
 export type EventSummary = {
   id: string;
   name: string;

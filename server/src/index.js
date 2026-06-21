@@ -629,6 +629,64 @@ app.get("/api/host/analytics/summary", requireAuth, async (req, res) => {
   });
 });
 
+app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, res) => {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.eventId, hostId: req.user.userId },
+    select: { id: true, slug: true },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const eventScope = { OR: [{ eventId: event.id }, { eventSlug: event.slug }] };
+  const [
+    photoCount,
+    visiblePhotos,
+    hiddenPhotos,
+    reportedPhotos,
+    featuredPhotos,
+    guestJoins,
+    liveWallOpens,
+    recapOpens,
+    activeGuestRows,
+  ] = await Promise.all([
+    prisma.photo.count({ where: activePhotoWhere({ eventId: event.id }) }),
+    prisma.photo.count({ where: visiblePhotoWhere({ eventId: event.id }) }),
+    prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, visibilityStatus: PHOTO_VISIBILITY_HIDDEN }) }),
+    prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, reports: { some: {} } }) }),
+    prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, isFeatured: true }) }),
+    countAnalytics("guest_joined_event", eventScope),
+    countAnalytics("live_wall_opened", eventScope),
+    countAnalytics("recap_opened", eventScope),
+    prisma.analyticsEvent.findMany({
+      where: {
+        name: { in: ["guest_joined_event", "photo_upload_succeeded"] },
+        createdAt: { gte: since },
+        anonymousIdHash: { not: null },
+        ...eventScope,
+      },
+      distinct: ["anonymousIdHash"],
+      select: { anonymousIdHash: true },
+    }),
+  ]);
+
+  res.json({
+    summary: {
+      eventId: event.id,
+      eventSlug: event.slug,
+      photoCount,
+      visiblePhotos,
+      hiddenPhotos,
+      reportedPhotos,
+      featuredPhotos,
+      guestJoins,
+      uploads: photoCount,
+      liveWallOpens,
+      recapOpens,
+      activeGuests: activeGuestRows.length,
+    },
+  });
+});
+
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password || password.length < 8) {

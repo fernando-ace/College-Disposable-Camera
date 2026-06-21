@@ -22,6 +22,14 @@
     "test:shared": "npm run test -w @eventfilm/shared",
     "check:api-client": "npm run typecheck -w @eventfilm/api-client",
     "check:mobile": "npm run typecheck -w @eventfilm/mobile",
-    "lint:mobile": "npm run lint -w @eventfilm/mobile"
+    "lint:mobile": "npm run lint -w @eventfilm/mobile",
+    "preflight": "node scripts/preflight.js",
+    "smoke:browser": "playwright test",
+    "smoke:storage": "npm run storage:smoke -w server",
+    "demo:seed": "npm run seed:beta-demo -w server",
+    "demo:cleanup": "npm run seed:beta-demo -w server -- --cleanup"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.0"
   }
 }

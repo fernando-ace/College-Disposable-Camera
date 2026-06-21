@@ -52,6 +52,7 @@ EXPO_PUBLIC_API_URL="http://192.168.1.25:4000"
 
 For preview or production builds, set `EXPO_PUBLIC_API_URL` to the deployed API base URL, not a path under `/api`.
 Set `EXPO_PUBLIC_RELEASE_CHANNEL` to `preview` or `production` only when the API URL points at deployed infrastructure. The app blocks release-like builds that still use localhost.
+Use `https://api.your-eventfilm-domain.com` as the safe placeholder until the real deployed API URL is ready.
 
 ## Current Beta Configuration
 
@@ -100,9 +101,21 @@ Use EAS Update only for compatible JavaScript and asset changes that do not requ
 Before running preview or production builds, replace the placeholder API URL in `eas.json` or configure the same env values through EAS:
 
 ```env
-EXPO_PUBLIC_API_URL="https://your-deployed-api-domain"
+EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
 EXPO_PUBLIC_RELEASE_CHANNEL="preview"
 ```
+
+For local testing against a deployed API, keep the release channel as
+`development` and point the local `.env` at the deployed API:
+
+```env
+EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
+EXPO_PUBLIC_RELEASE_CHANNEL="development"
+```
+
+Before giving a preview build to a beta host, verify the build can sign in,
+create an event, copy or share the guest link, open Live Wall, open Recap, view
+the analytics summary, and hide/restore or feature photos.
 
 ## App Store Metadata Placeholders
 
@@ -112,6 +125,7 @@ These are planning placeholders for internal/beta review notes, not public launc
 - Long description: `EventFilm lets hosts create QR-based private photo albums, share guest upload links, open a Live Wall, review photos, and share a recap after the event. Guests upload from the web and do not need accounts.`
 - Beta review note: `This build is for internal host testing. Use the provided beta API environment and create a test event before inviting guests.`
 - Known beta limitations: no in-app payments, no guest accounts, no public app-store availability claim, and manual production environment review required before real events.
+- Before store submission, replace placeholder icon, splash, screenshots, privacy URL, support URL, and final app name if needed. Do not submit to app stores from the beta rehearsal workflow.
 
 ## Checks
 
@@ -133,6 +147,8 @@ npm run lint:mobile
 ```
 
 Before a real-host beta, also run the checklist in `docs/real-event-qa.md`.
+For deployment, storage, CORS, EAS env, smoke, and rollback checklists, use
+`docs/deployment-readiness.md`.
 
 ## Feature Workflow
 

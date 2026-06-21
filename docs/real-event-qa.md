@@ -17,6 +17,8 @@ Use this before a real host or guest group tests EventFilm.
 npm exec -w server -- prisma migrate status --schema prisma/schema.prisma
 ```
 
+For full deployment readiness, also follow `docs/deployment-readiness.md`.
+
 ## Dev Demo Setup
 
 Create demo events only in development:
@@ -32,6 +34,50 @@ Cleanup:
 ```bash
 npm run seed:beta-demo -w server -- --cleanup
 ```
+
+Root aliases are available:
+
+```bash
+npm run demo:seed
+npm run demo:cleanup
+```
+
+## Browser Smoke
+
+With the API and web app running, run:
+
+```bash
+npm run smoke:browser
+```
+
+Optional overrides:
+
+```bash
+$env:EVENTFILM_WEB_URL="http://localhost:5173"
+$env:EVENTFILM_API_URL="http://localhost:4000"
+$env:EVENTFILM_SMOKE_EVENT_SLUG="eventfilm-beta-demo-memory-capsule"
+```
+
+The smoke covers the landing page, primary CTA, unauthenticated host routes,
+guest upload route, Live Wall, Recap, privacy, terms, support, and obvious
+console errors on public pages.
+
+## Supabase Storage Smoke
+
+Run this only when the API is configured with real Supabase Storage values:
+
+```bash
+npm run demo:seed
+$env:STORAGE_SMOKE_API_URL="http://localhost:4000"
+npm run smoke:storage
+npm run demo:cleanup
+```
+
+The script uploads a tiny PNG through the actual guest upload API, verifies the
+photo record and public file/preview routes, confirms the photo appears in Live
+Wall before moderation, hides it as host, confirms hidden photos leave public
+routes, and deletes the test photo. It does not require or print Supabase
+secrets.
 
 ## Host Flow
 
@@ -71,7 +117,17 @@ npm run seed:beta-demo -w server -- --cleanup
 - Upload one photo successfully.
 - Trigger one upload validation failure if practical.
 - Confirm host analytics summary changes after events are recorded.
+- Open the host event detail page and confirm event-level beta metrics show guest joins, uploads, Live Wall opens, Recap opens, hidden photos, reported photos, and featured photos.
 - If checking directly in the database, filter `AnalyticsEvent` by the test event id or slug and confirm event names such as `guest_joined_event`, `photo_upload_succeeded`, `live_wall_opened`, and `recap_opened`.
+
+Metric definitions:
+
+- Active host: signed-in host dashboard open in the last 30 days.
+- Guest join: guest upload route visit that records `guest_joined_event`.
+- Photo upload: successfully stored event photo that has not been deleted.
+- Live Wall open: route visit that records `live_wall_opened`.
+- Recap open: route visit that records `recap_opened`.
+- Beta MAU: distinct active hosts plus distinct anonymous guest hashes in the last 30 days. Keep this internal during beta.
 
 ## Known Beta Limitations
 

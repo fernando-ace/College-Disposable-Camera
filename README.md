@@ -123,6 +123,8 @@ server secrets in `EXPO_PUBLIC_` variables.
 For EAS preview or production builds, set `EXPO_PUBLIC_RELEASE_CHANNEL` to
 `preview` or `production` and set `EXPO_PUBLIC_API_URL` to the deployed API URL.
 The mobile app refuses release-like builds that still point at localhost.
+Use `https://api.your-eventfilm-domain.com` as the safe placeholder until the
+real deployed API URL is ready.
 
 ## Local Setup
 
@@ -244,6 +246,7 @@ Guest:
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
 - Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Live Wall, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
 - See `docs/real-event-qa.md` before testing with a real host.
+- See `docs/deployment-readiness.md` for the deployment, storage, CORS, migration, EAS, smoke, and rollback checklists.
 
 ## Vercel Frontend Deployment
 
@@ -258,12 +261,15 @@ Output directory: dist
 Required frontend environment variables:
 
 ```env
-VITE_API_URL="https://your-deployed-api-domain"
+VITE_API_URL="https://api.your-eventfilm-domain.com"
 VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFilm%20beta%20event"
 ```
 
 `VITE_API_URL` must point at the deployed API base URL and should not include a
 trailing path such as `/api`.
+Use `https://api.your-eventfilm-domain.com` as the explicit placeholder while
+setting up deployment. The web app itself should deploy at
+`https://your-eventfilm-domain.com`.
 `VITE_BOOKING_SMS_URL` is optional and only needed if changing the booking number or prefilled text.
 
 ## Railway Backend Deployment
@@ -316,16 +322,18 @@ cd apps/mobile
 npx eas-cli@latest build --profile preview --platform all
 ```
 
-Replace the placeholder `EXPO_PUBLIC_API_URL` values in `apps/mobile/eas.json`
-with the deployed API URL or override them in EAS environment settings. The
-preview and production profiles set `EXPO_PUBLIC_RELEASE_CHANNEL` so localhost
-URLs fail early instead of shipping to testers.
+Replace the `https://api.your-eventfilm-domain.com` `EXPO_PUBLIC_API_URL`
+placeholder in `apps/mobile/eas.json` with the deployed API URL or override it
+in EAS environment settings. The preview and production profiles set
+`EXPO_PUBLIC_RELEASE_CHANNEL` so localhost URLs fail early instead of shipping
+to testers.
 
 ## Workspace Checks
 
 From the repo root:
 
 ```bash
+npm run preflight
 npm run check:shared
 npm run check:api-client
 npm run check:web
@@ -335,6 +343,20 @@ npm run lint:mobile
 npm run build:web
 npm run check
 ```
+
+Browser and storage smoke commands:
+
+```bash
+npm run demo:seed
+npm run smoke:browser
+npm run smoke:storage
+npm run demo:cleanup
+```
+
+`smoke:browser` expects the web and API servers to be reachable. Override with
+`EVENTFILM_WEB_URL`, `EVENTFILM_API_URL`, and `EVENTFILM_SMOKE_EVENT_SLUG` when
+testing deployed URLs. `smoke:storage` expects real Supabase-backed API
+configuration and never commits or prints storage secrets.
 
 The guest web upload flow remains the lowest-friction path for event attendees.
 Do not make a native app install required for QR/link uploads.

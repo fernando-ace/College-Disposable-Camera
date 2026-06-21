@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { createEventFilmApiClient } from "@eventfilm/api-client";
-import type { AnalyticsSummary, EventRecapResponse, LiveWallResponse } from "@eventfilm/api-client";
+import type { AnalyticsSummary, EventAnalyticsSummary, EventRecapResponse, LiveWallResponse } from "@eventfilm/api-client";
 import {
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
@@ -1631,13 +1631,18 @@ function ManageEvent() {
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [galleryFilter, setGalleryFilter] = useState("all");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [eventAnalytics, setEventAnalytics] = useState<EventAnalyticsSummary | null>(null);
   const [downloadStatus, setDownloadStatus] = useState("");
   const [error, setError] = useState("");
   const [challengeStatus, setChallengeStatus] = useState("");
 
   async function load() {
-    const data = await api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${eventId}`, { token: auth.token });
+    const [data, analytics] = await Promise.all([
+      api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${eventId}`, { token: auth.token }),
+      eventId ? eventFilmApi.getEventAnalyticsSummary(eventId, auth.token).catch(() => null) : Promise.resolve(null),
+    ]);
     setEvent(data.event);
+    setEventAnalytics(analytics?.summary || null);
     setChallengeDraft(draftFromChallenge(data.event.challenge));
   }
 
@@ -1775,6 +1780,32 @@ function ManageEvent() {
             </div>
             {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
           </section>
+
+          {eventAnalytics && (
+            <section className="mt-8">
+              <div className="mb-4">
+                <h2 className="font-display text-2xl font-bold">Beta event metrics</h2>
+                <p className="text-sm text-stone-600">Host-owned signal for this event. Counts use real uploads plus internal analytics events.</p>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {[
+                  ["Guest joins", eventAnalytics.guestJoins],
+                  ["Uploads", eventAnalytics.uploads],
+                  ["Live Wall opens", eventAnalytics.liveWallOpens],
+                  ["Recap opens", eventAnalytics.recapOpens],
+                  ["Visible photos", eventAnalytics.visiblePhotos],
+                  ["Hidden photos", eventAnalytics.hiddenPhotos],
+                  ["Reported photos", eventAnalytics.reportedPhotos],
+                  ["Featured photos", eventAnalytics.featuredPhotos],
+                ].map(([label, value]) => (
+                  <Card key={label}>
+                    <p className="text-sm font-bold uppercase tracking-wide text-stone-500">{label}</p>
+                    <p className="mt-3 font-display text-3xl font-bold text-[#653e00]">{value}</p>
+                  </Card>
+                ))}
+              </div>
+            </section>
+          )}
 
           <section className="mt-8">
             <Card className="lg:p-8">

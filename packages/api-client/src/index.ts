@@ -84,6 +84,21 @@ export type AnalyticsSummary = {
   activeGuests: number;
 };
 
+export type EventAnalyticsSummary = {
+  eventId: string;
+  eventSlug: string;
+  photoCount: number;
+  visiblePhotos: number;
+  hiddenPhotos: number;
+  reportedPhotos: number;
+  featuredPhotos: number;
+  guestJoins: number;
+  uploads: number;
+  liveWallOpens: number;
+  recapOpens: number;
+  activeGuests: number;
+};
+
 export type LaunchLinkVerification = {
   key: "guest" | "live-wall" | "recap";
   label: string;
@@ -202,6 +217,12 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     },
     getAnalyticsSummary(token?: string | null) {
       return request<{ summary: AnalyticsSummary }>("/api/host/analytics/summary", { auth: !token, token });
+    },
+    getEventAnalyticsSummary(eventId: string, token?: string | null) {
+      return request<{ summary: EventAnalyticsSummary }>(`/api/host/events/${encodeURIComponent(eventId)}/analytics/summary`, {
+        auth: !token,
+        token,
+      });
     },
     getHostEvents(token?: string | null) {
       return request<{ events: EventSummary[] }>("/api/host/events", { auth: !token, token });
