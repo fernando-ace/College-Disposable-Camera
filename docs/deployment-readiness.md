@@ -45,11 +45,12 @@ Mobile required values:
 - Prisma client: confirm the server build or `prestart` ran `prisma generate`.
 - Database migrations: run `npm run prisma:deploy -w server` against the production database.
 - Supabase storage: create a private bucket named by `SUPABASE_STORAGE_BUCKET`; do not make the bucket public.
+- Supabase project: confirm the project is active/unpaused before treating upload `fetch failed` errors as app bugs.
 - CORS: set `CLIENT_URL` to the exact deployed web origin. Localhost variants are allowed only outside production.
 - Auth/session: create a beta host, sign in on web and mobile, then refresh to confirm the token-backed session survives reload.
 - Public routes: verify `/e/:slug`, `/wall/:slug`, and `/recap/:slug` load from deployed web and call the deployed API.
 - Analytics: confirm `host_dashboard_opened`, `guest_joined_event`, `photo_upload_succeeded`, `live_wall_opened`, and `recap_opened` write without blocking the user flow.
-- EAS env: set preview/production `EXPO_PUBLIC_API_URL` to `https://api.your-eventfilm-domain.com` or the actual deployed API URL.
+- EAS env: replace the `https://api.your-eventfilm-domain.com` placeholder with the actual deployed API URL before sharing preview/production builds.
 
 ## Post-Deploy Smoke
 
@@ -78,7 +79,9 @@ npm run smoke:storage
 npm run demo:cleanup
 ```
 
-Use the deployed API URL for `STORAGE_SMOKE_API_URL` when testing deployed infrastructure. The smoke script signs in as the demo host, uploads a tiny PNG through the public guest API, verifies file and preview routes, hides the photo, confirms it leaves public routes, and deletes the test photo.
+Use the deployed API URL for `STORAGE_SMOKE_API_URL` when testing deployed infrastructure. The smoke script signs in as the demo host, uploads a tiny PNG through the public guest API, verifies the database photo record, file and preview routes, guest album, Live Wall, Recap, feature/unfeature, guest report, hide/restore moderation, event analytics summary, and cleanup. It prints whether required env vars are present, but never prints service keys, tokens, or secrets.
+
+The default smoke event is `eventfilm-beta-demo-storage-smoke`, created by `npm run demo:seed`. It is intentionally revealed so public album and Recap routes should include the uploaded test photo. If upload fails with `fetch failed`, first confirm the API URL is reachable and the Supabase project is unpaused.
 
 ## Mobile Beta Rehearsal
 

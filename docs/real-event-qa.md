@@ -27,7 +27,7 @@ Create demo events only in development:
 npm run seed:beta-demo -w server
 ```
 
-The script creates one event for each flagship mode: Color Hunt, Photo Scavenger Hunt, Event Awards, and Memory Capsule. It does not create fake guest testimonials or fake production photos.
+The script creates one event for each flagship mode: Color Hunt, Photo Scavenger Hunt, Event Awards, and Memory Capsule. It also creates `eventfilm-beta-demo-storage-smoke`, a revealed dev-only event used by the Supabase storage smoke so album, Live Wall, and Recap visibility can be checked with a real upload. It does not create fake guest testimonials or fake production photos.
 
 Cleanup:
 
@@ -74,10 +74,27 @@ npm run demo:cleanup
 ```
 
 The script uploads a tiny PNG through the actual guest upload API, verifies the
-photo record and public file/preview routes, confirms the photo appears in Live
-Wall before moderation, hides it as host, confirms hidden photos leave public
-routes, and deletes the test photo. It does not require or print Supabase
-secrets.
+photo record, public file/preview routes, guest album, Live Wall, Recap,
+feature/unfeature, guest report, host moderation state, hide/restore behavior,
+event analytics summary, and cleanup. It prints whether required environment
+variables are present, but it does not require or print Supabase secrets. If the
+previous failure was `Could not upload photo: fetch failed`, confirm the API is
+reachable and the Supabase project is active/unpaused before changing app code.
+
+## First-Host Beta Checklist
+
+- Create one test event from web.
+- Create one test event from mobile.
+- Use Color Hunt, Photo Scavenger Hunt, Event Awards, and Memory Capsule at least once.
+- Upload one real photo from a guest phone.
+- Open the Live Wall on a laptop or display device.
+- Share the Recap link and confirm reveal behavior.
+- Hide and restore one photo.
+- Feature one photo.
+- Report one photo as a guest.
+- Confirm host metrics update after guest, upload, Live Wall, Recap, moderation, feature, and report activity.
+- Confirm analytics records event activity.
+- Run `npm run demo:cleanup` or otherwise remove test data before real beta use.
 
 ## Host Flow
 

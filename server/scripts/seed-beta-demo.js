@@ -17,6 +17,10 @@ function hoursFromNow(hours) {
   return new Date(Date.now() + hours * 60 * 60 * 1000);
 }
 
+function hoursAgo(hours) {
+  return new Date(Date.now() - hours * 60 * 60 * 1000);
+}
+
 function challengeFor(mode) {
   if (mode === "COLOR_HUNT") {
     return {
@@ -70,6 +74,23 @@ function challengeFor(mode) {
       revealNote: "Guests can keep adding photos now. Everyone comes back at reveal time to see the full capsule together.",
     },
   };
+}
+
+async function upsertStorageSmokeEvent(hostId) {
+  const slug = `${DEMO_SLUG_PREFIX}-storage-smoke`;
+  const existing = await prisma.event.findUnique({ where: { slug } });
+  const base = {
+    hostId,
+    name: "EventFilm Beta Demo - Storage Smoke",
+    description: "Dev-only revealed event for Supabase storage and public route smoke tests.",
+    eventDate: hoursAgo(4),
+    revealAt: hoursAgo(2),
+    photoLimitPerGuest: 10,
+  };
+
+  return existing
+    ? prisma.event.update({ where: { slug }, data: base })
+    : prisma.event.create({ data: { ...base, slug } });
 }
 
 async function cleanup() {
@@ -126,12 +147,13 @@ async function main() {
   for (const [index, mode] of modes.entries()) {
     events.push(await upsertDemoEvent(host.id, mode, index));
   }
+  const storageSmokeEvent = await upsertStorageSmokeEvent(host.id);
 
   console.log(JSON.stringify({
     hostEmail: DEMO_HOST_EMAIL,
     hostPassword: DEMO_HOST_PASSWORD,
-    note: "Dev-only demo events contain challenge configs but no fake photos. Upload real test photos through guest links.",
-    events: events.map((event) => ({
+    note: "Dev-only demo events contain challenge configs but no fake photos. Upload real test photos through guest links. The storage smoke event is already revealed so album, Live Wall, and Recap can be verified.",
+    events: [...events, storageSmokeEvent].map((event) => ({
       name: event.name,
       slug: event.slug,
       guestUploadPath: `/e/${event.slug}`,

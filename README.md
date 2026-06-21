@@ -153,6 +153,8 @@ In Supabase, create a private bucket named `event-photos`, or set
 `SUPABASE_STORAGE_BUCKET` to the bucket name you choose. The server uses the
 service role key to upload, fetch, and remove objects while continuing to serve
 photos through the existing API routes.
+Confirm the Supabase project is active/unpaused before debugging upload
+`fetch failed` errors as app issues.
 
 4. From the repo root, configure environment files.
 
@@ -356,7 +358,10 @@ npm run demo:cleanup
 `smoke:browser` expects the web and API servers to be reachable. Override with
 `EVENTFILM_WEB_URL`, `EVENTFILM_API_URL`, and `EVENTFILM_SMOKE_EVENT_SLUG` when
 testing deployed URLs. `smoke:storage` expects real Supabase-backed API
-configuration and never commits or prints storage secrets.
+configuration and never commits or prints storage secrets. The storage smoke
+uses the revealed `eventfilm-beta-demo-storage-smoke` seed event by default and
+verifies upload, DB record, album, Live Wall, Recap, moderation, reporting,
+analytics, and cleanup.
 
 The guest web upload flow remains the lowest-friction path for event attendees.
 Do not make a native app install required for QR/link uploads.
