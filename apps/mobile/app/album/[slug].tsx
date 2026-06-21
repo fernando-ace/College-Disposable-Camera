@@ -27,7 +27,7 @@ export default function AlbumScreen() {
           setPhotos(photoData.photos);
         }
       })
-      .catch((err) => setError((err as Error).message))
+      .catch((err) => setError(`${(err as Error).message}. Check the album link or try again when your connection is stable.`))
       .finally(() => setLoading(false));
   }, [api, slug]);
 
@@ -37,7 +37,7 @@ export default function AlbumScreen() {
         await api.reportPhoto(photo.id, { reason });
         setReportStatus("Thanks. The host can review this report.");
       } catch (err) {
-        setError((err as Error).message);
+        setError(`${(err as Error).message}. Try again when your connection is stable.`);
       }
     };
 

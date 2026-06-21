@@ -2,6 +2,7 @@ import * as React from "react";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams } from "expo-router";
 import { Image, Share, View } from "react-native";
+import type { LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo } from "@eventfilm/shared";
 import { buildHostLaunchKit } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, ErrorState, HeroHeader, LoadingState, Screen, SectionHeader, SuccessState, colors } from "../../../src/components/ui";
@@ -11,12 +12,21 @@ export default function ShareEventScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { api } = useAuth();
   const [event, setEvent] = React.useState<(EventSummary & { photos: Photo[] }) | null>(null);
+  const [linkChecks, setLinkChecks] = React.useState<LaunchLinkVerification[]>([]);
   const [message, setMessage] = React.useState("");
   const [error, setError] = React.useState("");
 
   React.useEffect(() => {
     if (!eventId) return;
-    api.getHostEvent(eventId).then((data) => setEvent(data.event)).catch((err) => setError((err as Error).message));
+    Promise.all([
+      api.getHostEvent(eventId),
+      api.verifyHostEventLinks(eventId).catch(() => null),
+    ])
+      .then(([data, links]) => {
+        setEvent(data.event);
+        if (links) setLinkChecks(links.links);
+      })
+      .catch((err) => setError(`${(err as Error).message}. Reopen this event when your connection is stable.`));
   }, [api, eventId]);
 
   React.useEffect(() => {
@@ -101,6 +111,8 @@ export default function ShareEventScreen() {
             onCopy={() => copyLink("Recap link", event.recapLink)}
           />
 
+          <LinkHealthPanel linkChecks={linkChecks} />
+
           <Card>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <SectionHeader title="QR code" subtitle="Place this near the entrance, bar, or table." />
@@ -138,6 +150,24 @@ export default function ShareEventScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+function LinkHealthPanel({ linkChecks }: { linkChecks: LaunchLinkVerification[] }) {
+  if (!linkChecks.length) return null;
+
+  return (
+    <Card tone={linkChecks.some((link) => !link.ok) ? "danger" : "success"}>
+      <SectionHeader title="Beta link check" subtitle="Use deployed HTTPS links before sharing with real guests." />
+      <View style={{ gap: 9 }}>
+        {linkChecks.map((link) => (
+          <View key={link.key} style={{ gap: 4 }}>
+            <Badge tone={link.ok ? "green" : "red"}>{link.ok ? "Ready" : "Review"}</Badge>
+            <Body tone={link.ok ? "muted" : "danger"}>{link.warning || `${link.label}: ${link.url}`}</Body>
+          </View>
+        ))}
+      </View>
+    </Card>
   );
 }
 

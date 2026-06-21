@@ -131,6 +131,30 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-[#fff8ed] p-6 text-stone-950">
+          <div className="mx-auto mt-16 max-w-xl rounded-3xl border border-[#eadfce] bg-white p-6 text-center shadow-[0_24px_70px_rgba(101,62,0,0.08)]">
+            <h1 className="font-display text-3xl font-bold">EventFilm needs a refresh</h1>
+            <p className="mt-3 text-stone-600">Something unexpected happened while loading this page. Refresh once, then ask the host for a fresh link if it continues.</p>
+            <Button className="mt-5" onClick={() => window.location.reload()}>Refresh</Button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
@@ -139,6 +163,16 @@ function formatBytes(value: number) {
   if (!Number.isFinite(value)) return "";
   if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
   return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function publicRouteErrorMessage(error: unknown, fallback = "This event link is not available right now. Check the link or ask the host to resend it.") {
+  const message = (error as Error).message || "";
+  if (/not found/i.test(message)) return "We could not find this event. Check the link or ask the host to resend it.";
+  if (/locked until/i.test(message)) return "This album is still locked until the host's reveal time.";
+  if (/failed to fetch|network/i.test(message)) return "EventFilm could not reach the server. Check your connection and try again.";
+  if (/used all uploads/i.test(message)) return "You have used all uploads for this event.";
+  if (/photo must|upload a jpg|choose|enter your name|select|prompt|award/i.test(message)) return message;
+  return fallback;
 }
 
 const REPORT_REASONS: Array<{ value: PhotoReportReason; label: string }> = [
@@ -1938,7 +1972,7 @@ function LiveWall() {
         setError("");
         setLastUpdated(new Date());
       } catch (err) {
-        if (isMounted) setError((err as Error).message);
+        if (isMounted) setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment."));
       }
     }
     loadIfMounted();
@@ -2006,7 +2040,7 @@ function LiveWall() {
               <p className="mt-2 font-display text-6xl font-bold">{data.photos.length}</p>
               <p className="text-sm font-bold">photos uploaded</p>
               {error && <p className="mt-4 rounded-2xl bg-red-100 p-3 text-sm font-bold text-red-800">{error}</p>}
-              <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" onClick={() => load().catch((err) => setError((err as Error).message))}>Refresh now</button>
+              <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" onClick={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment.")))}>Refresh now</button>
             </section>
             {summary && <ProgressSummaryPanel summary={summary} dark />}
           </aside>
@@ -2031,7 +2065,7 @@ function EventRecap() {
         setData(nextData);
         setError("");
       })
-      .catch((err) => setError((err as Error).message));
+      .catch((err) => setError(publicRouteErrorMessage(err, "Recap is not available right now. Check the event link or try again after reveal.")));
   }, [slug]);
 
   const event = data?.event;
@@ -2186,7 +2220,7 @@ function GuestEvent() {
   }
 
   useEffect(() => {
-    load().catch((err) => setError((err as Error).message));
+    load().catch((err) => setError(publicRouteErrorMessage(err)));
   }, [slug]);
 
   useEffect(() => {
@@ -2309,7 +2343,7 @@ function GuestEvent() {
     } catch (err) {
       const message = (err as Error).message || "Upload failed. Check your connection and try again.";
       trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: message.includes("used all uploads") ? "event_limit" : "error" } });
-      setError((err as Error).message);
+      setError(publicRouteErrorMessage(err, "Upload failed. Check your connection and try again."));
     } finally {
       setLoading(false);
     }
@@ -2546,22 +2580,24 @@ function GuestEvent() {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Landing />} />
-          <Route path="/privacy" element={<TrustPage kind="privacy" />} />
-          <Route path="/terms" element={<TrustPage kind="terms" />} />
-          <Route path="/support" element={<TrustPage kind="support" />} />
-          <Route path="/signup" element={<AuthForm mode="signup" />} />
-          <Route path="/login" element={<AuthForm mode="login" />} />
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
-          <Route path="/dashboard/events/:eventId" element={<ProtectedRoute><ManageEvent /></ProtectedRoute>} />
-          <Route path="/wall/:slug" element={<LiveWall />} />
-          <Route path="/recap/:slug" element={<EventRecap />} />
-          <Route path="/e/:slug" element={<GuestEvent />} />
-        </Routes>
-      </BrowserRouter>
+      <AppErrorBoundary>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/" element={<Landing />} />
+            <Route path="/privacy" element={<TrustPage kind="privacy" />} />
+            <Route path="/terms" element={<TrustPage kind="terms" />} />
+            <Route path="/support" element={<TrustPage kind="support" />} />
+            <Route path="/signup" element={<AuthForm mode="signup" />} />
+            <Route path="/login" element={<AuthForm mode="login" />} />
+            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
+            <Route path="/dashboard/events/:eventId" element={<ProtectedRoute><ManageEvent /></ProtectedRoute>} />
+            <Route path="/wall/:slug" element={<LiveWall />} />
+            <Route path="/recap/:slug" element={<EventRecap />} />
+            <Route path="/e/:slug" element={<GuestEvent />} />
+          </Routes>
+        </BrowserRouter>
+      </AppErrorBoundary>
     </AuthProvider>
   );
 }

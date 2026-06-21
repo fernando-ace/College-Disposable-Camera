@@ -77,7 +77,7 @@ export default function UploadScreen() {
       setRemaining(status.remainingUploads);
       if (status.nickname) setNickname(status.nickname);
     } catch (err) {
-      setError((err as Error).message);
+      setError(`${(err as Error).message}. Check the event link and your API connection, then try again.`);
     } finally {
       setFindingEvent(false);
     }

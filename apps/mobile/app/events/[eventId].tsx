@@ -1,6 +1,7 @@
 import * as React from "react";
 import { Link, useLocalSearchParams } from "expo-router";
-import { Alert, Linking, View } from "react-native";
+import { Linking, View } from "react-native";
+import type { LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
 import { buildHostLaunchKit, challengeLabel } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
@@ -14,6 +15,7 @@ export default function EventDetailScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { api } = useAuth();
   const [event, setEvent] = React.useState<(EventSummary & { photos: Photo[] }) | null>(null);
+  const [linkChecks, setLinkChecks] = React.useState<LaunchLinkVerification[]>([]);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -22,10 +24,14 @@ export default function EventDetailScreen() {
     setLoading(true);
     setError("");
     try {
-      const data = await api.getHostEvent(eventId);
+      const [data, links] = await Promise.all([
+        api.getHostEvent(eventId),
+        api.verifyHostEventLinks(eventId).catch(() => null),
+      ]);
       setEvent(data.event);
+      if (links) setLinkChecks(links.links);
     } catch (err) {
-      setError((err as Error).message);
+      setError(`${(err as Error).message}. Check your connection and retry before the event.`);
     } finally {
       setLoading(false);
     }
@@ -51,35 +57,21 @@ export default function EventDetailScreen() {
     }
   }
 
-  function confirmDelete(photo: Photo) {
-    Alert.alert("Delete photo?", "Hidden photos can be restored. Deleted photos are removed from storage.", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          if (!eventId) return;
-          try {
-            await api.deletePhoto(eventId, photo.id);
-            setEvent((current) => current ? { ...current, photos: current.photos.filter((item) => item.id !== photo.id) } : current);
-          } catch (err) {
-            setError((err as Error).message);
-          }
-        },
-      },
-    ]);
-  }
-
   React.useEffect(() => {
     let isMounted = true;
 
     if (eventId) {
-      api.getHostEvent(eventId)
-        .then((data) => {
-          if (isMounted) setEvent(data.event);
+      Promise.all([
+        api.getHostEvent(eventId),
+        api.verifyHostEventLinks(eventId).catch(() => null),
+      ])
+        .then(([data, links]) => {
+          if (!isMounted) return;
+          setEvent(data.event);
+          if (links) setLinkChecks(links.links);
         })
         .catch((err) => {
-          if (isMounted) setError((err as Error).message);
+          if (isMounted) setError(`${(err as Error).message}. Check your connection and retry before the event.`);
         });
     }
 
@@ -159,6 +151,8 @@ export default function EventDetailScreen() {
                 </View>
               </Card>
             ) : null}
+            <LinkHealthPanel linkChecks={linkChecks} />
+            <RunOfShow />
             <Button tone="secondary" loading={loading} onPress={loadEvent}>Refresh photos</Button>
           </View>
 
@@ -187,7 +181,7 @@ export default function EventDetailScreen() {
                           <Button tone="secondary" disabled={photo.visibilityStatus === "HIDDEN"} onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Unfeature" : "Feature"}</Button>
                         </View>
                       </View>
-                      <Button tone="danger" onPress={() => confirmDelete(photo)}>Delete</Button>
+                      <Body tone="muted">Use hide for beta moderation. Hidden photos leave public views but can be restored.</Body>
                     </Card>
                   </View>
                 ))}
@@ -207,5 +201,46 @@ export default function EventDetailScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+function LinkHealthPanel({ linkChecks }: { linkChecks: LaunchLinkVerification[] }) {
+  if (!linkChecks.length) return null;
+
+  return (
+    <Card>
+      <SectionHeader title="Public link check" subtitle="Confirm these are usable before the event starts." />
+      <View style={{ gap: 10 }}>
+        {linkChecks.map((link) => (
+          <View key={link.key} style={{ gap: 5 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+              <Body>{link.label}</Body>
+              <Badge tone={link.ok ? "green" : "red"}>{link.ok ? "Ready" : "Review"}</Badge>
+            </View>
+            <Body tone={link.ok ? "muted" : "danger"}>{link.warning || link.url}</Body>
+          </View>
+        ))}
+      </View>
+    </Card>
+  );
+}
+
+function RunOfShow() {
+  const rows = [
+    ["Before", "Create the event, verify the guest link, and place the QR code where guests will see it."],
+    ["During", "Keep the Live Wall open and hide any reported or off-tone photos instead of deleting them."],
+    ["After", "Refresh the album, feature favorites, then share the Recap link after reveal."],
+  ];
+
+  return (
+    <Card tone="warm">
+      <SectionHeader title="Real-event run of show" subtitle="The minimum flow for a beta host." />
+      {rows.map(([label, body]) => (
+        <View key={label} style={{ gap: 4 }}>
+          <Badge tone="stone">{label}</Badge>
+          <Body tone="muted">{body}</Body>
+        </View>
+      ))}
+    </Card>
   );
 }

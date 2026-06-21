@@ -11,7 +11,7 @@ const QRCode = require("qrcode");
 const rateLimit = require("express-rate-limit");
 const prisma = require("./prisma");
 const { signToken, requireAuth } = require("./auth");
-const { port, clientUrl, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt } = require("./config");
+const { port, clientUrl, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction } = require("./config");
 const {
   createPhotoObjectKey,
   getPhotoPreviewUrl,
@@ -28,13 +28,13 @@ function normalizeOrigin(value) {
   return value.replace(/\/+$/, "");
 }
 
-const allowedOrigins = new Set([
-  normalizeOrigin(clientUrl),
-  normalizeOrigin(clientUrl.replace("localhost", "127.0.0.1")),
-  normalizeOrigin(clientUrl.replace("127.0.0.1", "localhost")),
-  "http://localhost:5173",
-  "http://127.0.0.1:5173",
-]);
+const allowedOrigins = new Set([normalizeOrigin(clientUrl)]);
+if (!isProduction) {
+  allowedOrigins.add(normalizeOrigin(clientUrl.replace("localhost", "127.0.0.1")));
+  allowedOrigins.add(normalizeOrigin(clientUrl.replace("127.0.0.1", "localhost")));
+  allowedOrigins.add("http://localhost:5173");
+  allowedOrigins.add("http://127.0.0.1:5173");
+}
 
 app.use(cors({
   origin(origin, callback) {
@@ -130,6 +130,34 @@ function liveWallUrl(slug) {
 
 function recapUrl(slug) {
   return `${clientUrl}/recap/${slug}`;
+}
+
+function linkWarning(url) {
+  try {
+    const parsed = new URL(url);
+    if (["localhost", "127.0.0.1"].includes(parsed.hostname)) {
+      return "Uses localhost and will not work for guests outside this computer.";
+    }
+    if (parsed.protocol !== "https:" && !["localhost", "127.0.0.1"].includes(parsed.hostname)) {
+      return "Use HTTPS before sharing this outside local development.";
+    }
+    return undefined;
+  } catch {
+    return "Link is not a valid URL.";
+  }
+}
+
+function launchLinkVerification(event) {
+  const links = [
+    { key: "guest", label: "Guest upload link", url: publicEventUrl(event.slug) },
+    { key: "live-wall", label: "Live Wall link", url: liveWallUrl(event.slug) },
+    { key: "recap", label: "Recap link", url: recapUrl(event.slug) },
+  ];
+
+  return links.map((link) => {
+    const warning = linkWarning(link.url);
+    return { ...link, ok: !warning, warning };
+  });
 }
 
 const CHALLENGE_TYPE_COLOR_HUNT = "COLOR_HUNT";
@@ -718,6 +746,20 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
       ...eventPayload(event, { includePhotos: true, includeModeration: true }),
       qrCodeDataUrl,
     },
+  });
+});
+
+app.get("/api/host/events/:eventId/links/verify", requireAuth, async (req, res) => {
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.eventId, hostId: req.user.userId },
+    select: { id: true, slug: true },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  res.json({
+    eventId: event.id,
+    eventSlug: event.slug,
+    links: launchLinkVerification(event),
   });
 });
 

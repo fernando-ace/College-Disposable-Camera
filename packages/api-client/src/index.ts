@@ -84,6 +84,20 @@ export type AnalyticsSummary = {
   activeGuests: number;
 };
 
+export type LaunchLinkVerification = {
+  key: "guest" | "live-wall" | "recap";
+  label: string;
+  url: string;
+  ok: boolean;
+  warning?: string;
+};
+
+export type LaunchLinksVerificationResponse = {
+  eventId: string;
+  eventSlug: string;
+  links: LaunchLinkVerification[];
+};
+
 export type EventFilmApiClientOptions = {
   baseUrl: string;
   tokenProvider?: () => string | null | Promise<string | null>;
@@ -95,7 +109,7 @@ type RequestOptions = RequestInit & {
   auth?: boolean;
 };
 
-function normalizeBaseUrl(baseUrl: string) {
+export function normalizeEventFilmBaseUrl(baseUrl: string) {
   const trimmed = baseUrl.trim().replace(/\/+$/, "");
   if (!trimmed) throw new Error("EventFilm API base URL is required");
   return trimmed.startsWith("http://") || trimmed.startsWith("https://") ? trimmed : `https://${trimmed}`;
@@ -123,7 +137,7 @@ function appendUploadPhoto(formData: FormData, photo: UploadPhotoInput["photo"])
 }
 
 export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
-  const baseUrl = normalizeBaseUrl(options.baseUrl);
+  const baseUrl = normalizeEventFilmBaseUrl(options.baseUrl);
   const fetcher = options.fetchImpl || fetch;
 
   async function request<T>(path: string, requestOptions: RequestOptions = {}): Promise<T> {
@@ -202,6 +216,12 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     },
     getHostEvent(eventId: string, token?: string | null) {
       return request<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${encodeURIComponent(eventId)}`, {
+        auth: !token,
+        token,
+      });
+    },
+    verifyHostEventLinks(eventId: string, token?: string | null) {
+      return request<LaunchLinksVerificationResponse>(`/api/host/events/${encodeURIComponent(eventId)}/links/verify`, {
         auth: !token,
         token,
       });

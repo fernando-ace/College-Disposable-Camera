@@ -1,8 +1,9 @@
 import * as React from "react";
 import { Link, router } from "expo-router";
 import { View } from "react-native";
+import type { AnalyticsSummary } from "@eventfilm/api-client";
 import type { EventSummary } from "@eventfilm/shared";
-import { Body, Button, Card, EmptyState, ErrorState, EventCard, HeroHeader, LoadingState, Screen, SectionHeader } from "../../src/components/ui";
+import { Badge, Body, Button, Card, EmptyState, ErrorState, EventCard, HeroHeader, LoadingState, Screen, SectionHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function eventTime(value: string) {
@@ -21,6 +22,7 @@ function sortEvents(events: EventSummary[]) {
 export default function EventsScreen() {
   const { api, user, signOut } = useAuth();
   const [events, setEvents] = React.useState<EventSummary[]>([]);
+  const [analyticsSummary, setAnalyticsSummary] = React.useState<AnalyticsSummary | null>(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -29,10 +31,14 @@ export default function EventsScreen() {
     setLoading(true);
     setError("");
     try {
-      const data = await api.getHostEvents();
+      const [data, analytics] = await Promise.all([
+        api.getHostEvents(),
+        api.getAnalyticsSummary().catch(() => null),
+      ]);
       setEvents(data.events);
+      if (analytics) setAnalyticsSummary(analytics.summary);
     } catch (err) {
-      setError((err as Error).message);
+      setError(`${(err as Error).message}. Check your connection and API URL, then try again.`);
     } finally {
       setLoading(false);
     }
@@ -42,12 +48,17 @@ export default function EventsScreen() {
     let isMounted = true;
 
     if (user) {
-      api.getHostEvents()
-        .then((data) => {
-          if (isMounted) setEvents(data.events);
+      Promise.all([
+        api.getHostEvents(),
+        api.getAnalyticsSummary().catch(() => null),
+      ])
+        .then(([data, analytics]) => {
+          if (!isMounted) return;
+          setEvents(data.events);
+          if (analytics) setAnalyticsSummary(analytics.summary);
         })
         .catch((err) => {
-          if (isMounted) setError((err as Error).message);
+          if (isMounted) setError(`${(err as Error).message}. Check your connection and API URL, then try again.`);
         });
     }
 
@@ -103,6 +114,21 @@ export default function EventsScreen() {
         <StatCard label="Photos" value={String(totalPhotos)} />
       </View>
 
+      {analyticsSummary ? (
+        <Card>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+            <SectionHeader title="30-day activity" subtitle="Simple beta signal across your hosted events." />
+            <Badge tone="stone">Beta</Badge>
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            <Metric label="Guest joins" value={analyticsSummary.guestJoins} />
+            <Metric label="Uploads" value={analyticsSummary.uploads} />
+            <Metric label="Live Wall" value={analyticsSummary.liveWallOpens} />
+            <Metric label="Recaps" value={analyticsSummary.recapOpens} />
+          </View>
+        </Card>
+      ) : null}
+
       {error ? <ErrorState message={error} /> : null}
       {loading && !events.length ? <LoadingState label="Loading your events..." /> : null}
 
@@ -145,5 +171,14 @@ function StatCard({ label, value }: { label: string; value: string }) {
       <Body>{value}</Body>
       <Body tone="muted">{label}</Body>
     </Card>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: number }) {
+  return (
+    <View style={{ minWidth: 118, flex: 1, gap: 3 }}>
+      <Body>{String(value)}</Body>
+      <Body tone="muted">{label}</Body>
+    </View>
   );
 }

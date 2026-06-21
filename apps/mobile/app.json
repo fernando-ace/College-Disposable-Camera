@@ -6,12 +6,37 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#fff8ed"
+    },
     "ios": {
       "bundleIdentifier": "com.eventfilm.app",
-      "supportsTablet": true
+      "buildNumber": "1",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSCameraUsageDescription": "EventFilm lets hosts and guests take photos for private event albums.",
+        "NSPhotoLibraryUsageDescription": "EventFilm lets you choose event photos to upload.",
+        "NSPhotoLibraryAddUsageDescription": "EventFilm may save event materials you choose to keep."
+      }
     },
     "android": {
-      "package": "com.eventfilm.app"
+      "package": "com.eventfilm.app",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#fff8ed"
+      },
+      "permissions": [
+        "CAMERA",
+        "READ_MEDIA_IMAGES"
+      ]
+    },
+    "extra": {
+      "apiUrl": "$EXPO_PUBLIC_API_URL",
+      "releaseChannel": "$EXPO_PUBLIC_RELEASE_CHANNEL"
     },
     "plugins": [
       "expo-router",

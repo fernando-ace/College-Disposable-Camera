@@ -20,8 +20,10 @@ See `docs/june-revenue-sprint.md` for the free beta checklist, manual sales rout
 
 - Host sign up, login, logout with JWT auth
 - Host dashboard with event list and photo counts
+- Host analytics summary for guest joins, uploads, Live Wall opens, and Recap opens
 - Event creation with a hard-to-guess public slug
 - Event link and QR code generation
+- Host launch link verification for guest upload, Live Wall, and Recap links
 - Public guest event page at `/e/:eventSlug`
 - Guest nickname stored in local storage
 - Guest image upload without an account
@@ -42,7 +44,19 @@ See `docs/june-revenue-sprint.md` for the free beta checklist, manual sales rout
   Express API
   Prisma schema
   Supabase Storage helper for image files
+
+/apps/mobile
+  Expo React Native app
+
+/packages/shared
+  Shared TypeScript API/domain types and challenge helpers
+
+/packages/api-client
+  Shared API client for web and mobile
 ```
+
+The current Vercel and Railway roots are intentionally preserved. Use `/client`
+as the Vercel frontend root and `/server` as the backend service root.
 
 ## Requirements
 
@@ -69,7 +83,9 @@ Backend: copy `server/.env.example` to `server/.env`.
 
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:5432/eventfilm?schema=public"
+NODE_ENV="development"
 JWT_SECRET="replace-with-a-long-random-secret"
+ANALYTICS_SALT="replace-with-a-long-random-analytics-salt"
 CLIENT_URL="http://localhost:5173"
 SERVER_URL="http://localhost:4000"
 SUPABASE_URL="https://your-project.supabase.co"
@@ -82,6 +98,10 @@ PORT="4000"
 `SUPABASE_SERVICE_ROLE_KEY` must stay server-side only. Do not expose it in the
 client app or commit a real key.
 
+In production, the API fails fast when required backend values are missing or
+when `JWT_SECRET` still uses the development fallback. Use deployed HTTPS
+values for `CLIENT_URL` and `SERVER_URL` before sharing links with real guests.
+
 Frontend: copy `client/.env.example` to `client/.env`.
 
 ```env
@@ -91,11 +111,26 @@ VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFi
 
 `VITE_BOOKING_SMS_URL` is optional. The app defaults to the beta booking number in code; set this only if the booking number or prefilled text should change.
 
+Mobile: copy `apps/mobile/.env.example` to `apps/mobile/.env`.
+
+```env
+EXPO_PUBLIC_API_URL="http://localhost:4000"
+EXPO_PUBLIC_RELEASE_CHANNEL="development"
+```
+
+Use a LAN IP instead of `localhost` when testing from a physical phone. Never put
+server secrets in `EXPO_PUBLIC_` variables.
+For EAS preview or production builds, set `EXPO_PUBLIC_RELEASE_CHANNEL` to
+`preview` or `production` and set `EXPO_PUBLIC_API_URL` to the deployed API URL.
+The mobile app refuses release-like builds that still point at localhost.
+
 ## Local Setup
 
 1. Install dependencies.
 
 ```bash
+npm install
+
 cd server
 npm install
 
@@ -147,6 +182,29 @@ npm run dev
 
 Open `http://localhost:5173`.
 
+8. Start the Expo mobile app in another terminal.
+
+```bash
+cd apps/mobile
+copy .env.example .env
+npm run start
+```
+
+See `docs/mobile.md` for Expo, EAS Build, EAS Update, and cross-platform feature workflow notes.
+
+9. Optional: create dev-only beta demo events.
+
+```bash
+npm run seed:beta-demo -w server
+```
+
+This creates challenge-configured demo events without fake production photos.
+Clean them up with:
+
+```bash
+npm run seed:beta-demo -w server -- --cleanup
+```
+
 ## MVP Test Flow
 
 Host:
@@ -181,10 +239,11 @@ Guest:
 
 - Provision a hosted PostgreSQL database and run Prisma migrations before starting the server.
 - Create the private Supabase Storage bucket named by `SUPABASE_STORAGE_BUCKET`.
-- Configure backend environment variables on the deployment host: `DATABASE_URL`, `JWT_SECRET`, `CLIENT_URL`, `SERVER_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `MAX_FILE_SIZE_MB`, and `PORT`.
+- Configure backend environment variables on the deployment host: `DATABASE_URL`, `NODE_ENV=production`, `JWT_SECRET`, `ANALYTICS_SALT`, `CLIENT_URL`, `SERVER_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `MAX_FILE_SIZE_MB`, and `PORT`.
 - Configure the frontend deployment with `VITE_API_URL` pointing at the deployed API.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
-- Verify the private beta flow after deployment: host signup/login, event creation, guest upload, host list, guest reveal list, host delete, direct photo view, and zip download.
+- Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Live Wall, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
+- See `docs/real-event-qa.md` before testing with a real host.
 
 ## Vercel Frontend Deployment
 
@@ -244,6 +303,41 @@ PORT="4000"
 
 Railway normally provides `PORT` automatically. If it is not set, the server
 falls back to `4000`.
+
+## Mobile Internal Beta
+
+The Expo app is the host command center. Guests should continue using web links
+from QR codes or messages.
+
+Before an EAS preview/internal build:
+
+```bash
+cd apps/mobile
+npx eas-cli@latest build --profile preview --platform all
+```
+
+Replace the placeholder `EXPO_PUBLIC_API_URL` values in `apps/mobile/eas.json`
+with the deployed API URL or override them in EAS environment settings. The
+preview and production profiles set `EXPO_PUBLIC_RELEASE_CHANNEL` so localhost
+URLs fail early instead of shipping to testers.
+
+## Workspace Checks
+
+From the repo root:
+
+```bash
+npm run check:shared
+npm run check:api-client
+npm run check:web
+npm run check:api
+npm run check:mobile
+npm run lint:mobile
+npm run build:web
+npm run check
+```
+
+The guest web upload flow remains the lowest-friction path for event attendees.
+Do not make a native app install required for QR/link uploads.
 
 ## Next Steps
 
