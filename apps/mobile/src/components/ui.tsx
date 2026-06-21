@@ -1,7 +1,7 @@
 import * as React from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import type { EventSummary, Photo } from "@eventfilm/shared";
-import { challengeLabel } from "@eventfilm/shared";
+import { challengeLabel, photoChallengeLabel } from "@eventfilm/shared";
 
 export const colors = {
   ink: "#1c1917",
@@ -541,7 +541,7 @@ export function PhotoCard({ photo, compact = false }: { photo: Photo; compact?: 
       <View style={{ gap: 5 }}>
         <Text selectable style={{ color: colors.ink, fontSize: compact ? 14 : 16, fontWeight: "900" }}>{photo.challengeParticipantName || photo.guestNickname || "Guest"}</Text>
         {photo.challengeColorName ? <Badge tone="stone">{photo.challengeColorName}</Badge> : null}
-        {photo.challengePromptText ? <Caption>{photo.challengePromptText}</Caption> : null}
+        {photoChallengeLabel(photo) && !photo.challengeColorName ? <Caption>{photoChallengeLabel(photo)}</Caption> : null}
       </View>
     </Card>
   );

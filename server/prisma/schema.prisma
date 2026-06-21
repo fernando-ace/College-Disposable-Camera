@@ -10,6 +10,8 @@ datasource db {
 enum ChallengeType {
   COLOR_HUNT
   PHOTO_SCAVENGER_HUNT
+  EVENT_AWARDS
+  MEMORY_CAPSULE
 }
 
 model User {
@@ -105,6 +107,9 @@ model Photo {
   challengeColorName     String?
   challengePromptId      String?
   challengePromptText    String?
+  challengeItemId        String?
+  challengeItemLabel     String?
+  challengeItemKind      String?
 
   event                Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
   guest                Guest                 @relation(fields: [guestId], references: [id], onDelete: Cascade)
@@ -116,4 +121,5 @@ model Photo {
   @@index([challengeId])
   @@index([challengeParticipantId])
   @@index([challengePromptId])
+  @@index([challengeItemId])
 }

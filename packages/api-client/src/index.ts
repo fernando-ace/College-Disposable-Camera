@@ -111,6 +111,7 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     formData.append("clientId", input.clientId);
     if (input.challengeParticipantId) formData.append("challengeParticipantId", input.challengeParticipantId);
     if (input.challengePromptId) formData.append("challengePromptId", input.challengePromptId);
+    if (input.challengeItemId) formData.append("challengeItemId", input.challengeItemId);
 
     return request<{ photo: Photo; uploadedCount: number; remainingUploads: number }>(`/api/events/${encodeURIComponent(slug)}/photos`, {
       method: "POST",

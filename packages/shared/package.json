@@ -10,7 +10,8 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test src/challenge-packs.test.ts"
   },
   "devDependencies": {
     "typescript": "~6.0.2"

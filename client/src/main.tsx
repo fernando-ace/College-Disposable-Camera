@@ -1,6 +1,31 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { createEventFilmApiClient } from "@eventfilm/api-client";
+import {
+  CHALLENGE_PACKS,
+  CHALLENGE_TYPES,
+  COLOR_HUNT_PALETTE,
+  buildChallengePayload,
+  categoriesFromChallenge,
+  challengeLabel,
+  colorBySlug,
+  createCategory,
+  createDefaultAwardCategories,
+  createEmptyChallengeDraft,
+  createPrompt,
+  createStarterPrompts,
+  draftFromChallenge,
+  getChallengePack,
+  hasDuplicateCategories,
+  hasDuplicateParticipantColors,
+  hasDuplicatePrompts,
+  memoryCapsuleFromChallenge,
+  photoChallengeLabel,
+  promptsFromChallenge,
+  validateChallengeDraft,
+} from "@eventfilm/shared";
+import type { ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, Photo, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -18,84 +43,11 @@ const DEFAULT_DEMO_PHOTOS = [
   { id: "demo-album-4", name: "Taylor", dataUrl: "/demo/demo-album-4.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
 ];
 
-type User = { id: string; email: string };
 type AuthContextValue = {
   token: string | null;
   user: User | null;
   login: (token: string, user: User) => void;
   logout: () => void;
-};
-type EventSummary = {
-  id: string;
-  name: string;
-  description?: string | null;
-  slug: string;
-  eventDate: string;
-  revealAt: string;
-  photoLimitPerGuest: number;
-  eventLink: string;
-  qrCodeDataUrl?: string;
-  photoCount: number;
-  previewPhotos?: Photo[];
-  challenge?: EventChallenge | null;
-};
-type Photo = {
-  id: string;
-  url: string;
-  previewUrl?: string;
-  originalFilename: string;
-  mimeType: string;
-  sizeBytes: number;
-  createdAt: string;
-  guestNickname?: string;
-  challengeId?: string | null;
-  challengeParticipantId?: string | null;
-  challengeColorName?: string | null;
-  challengePromptId?: string | null;
-  challengePromptText?: string | null;
-  challengeParticipantName?: string | null;
-  challengeColorHex?: string | null;
-  challengeColorSlug?: string | null;
-};
-type PublicEvent = {
-  id: string;
-  name: string;
-  description?: string | null;
-  slug: string;
-  eventDate: string;
-  revealAt: string;
-  photoLimitPerGuest: number;
-  isRevealed: boolean;
-  photoCount: number | null;
-  challenge?: EventChallenge | null;
-};
-type ChallengeParticipant = {
-  id?: string;
-  displayName: string;
-  colorName: string;
-  colorHex: string;
-  colorSlug: string;
-};
-type ChallengeType = "COLOR_HUNT" | "PHOTO_SCAVENGER_HUNT";
-type ChallengePrompt = {
-  id?: string;
-  text: string;
-  order: number;
-};
-type EventChallenge = {
-  id: string;
-  type: ChallengeType;
-  title: string;
-  instructions: string;
-  config?: Record<string, unknown>;
-  isActive?: boolean;
-  participants: ChallengeParticipant[];
-  prompts?: ChallengePrompt[];
-};
-type ChallengeDraft = {
-  type: "NONE" | ChallengeType;
-  participants: ChallengeParticipant[];
-  prompts: ChallengePrompt[];
 };
 type DemoPhoto = {
   id: string;
@@ -105,31 +57,9 @@ type DemoPhoto = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+const eventFilmApi = createEventFilmApiClient({ baseUrl: API_BASE_URL });
+const api = eventFilmApi.request;
 
-const COLOR_HUNT_PALETTE: ChallengeParticipant[] = [
-  { displayName: "", colorName: "Red", colorHex: "#dc2626", colorSlug: "red" },
-  { displayName: "", colorName: "Orange", colorHex: "#ea580c", colorSlug: "orange" },
-  { displayName: "", colorName: "Yellow", colorHex: "#facc15", colorSlug: "yellow" },
-  { displayName: "", colorName: "Green", colorHex: "#16a34a", colorSlug: "green" },
-  { displayName: "", colorName: "Blue", colorHex: "#2563eb", colorSlug: "blue" },
-  { displayName: "", colorName: "Purple", colorHex: "#9333ea", colorSlug: "purple" },
-  { displayName: "", colorName: "Pink", colorHex: "#db2777", colorSlug: "pink" },
-  { displayName: "", colorName: "White", colorHex: "#f8fafc", colorSlug: "white" },
-  { displayName: "", colorName: "Black", colorHex: "#111827", colorSlug: "black" },
-  { displayName: "", colorName: "Brown", colorHex: "#92400e", colorSlug: "brown" },
-];
-const STARTER_SCAVENGER_PROMPTS = [
-  "Group selfie",
-  "Someone laughing",
-  "Best outfit",
-  "Food or drink photo",
-  "Candid moment",
-  "Photo with someone new",
-  "Recreate this pose",
-  "Best dance floor photo",
-  "Decoration detail",
-  "Funniest photo",
-];
 
 function useAuth() {
   const value = useContext(AuthContext);
@@ -165,19 +95,6 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-async function api<T>(path: string, options: RequestInit & { token?: string | null } = {}): Promise<T> {
-  const headers = new Headers(options.headers);
-  if (!(options.body instanceof FormData)) headers.set("Content-Type", "application/json");
-  if (options.token) headers.set("Authorization", `Bearer ${options.token}`);
-
-  const response = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
-  const contentType = response.headers.get("content-type") || "";
-  const data = contentType.includes("application/json") ? await response.json() : null;
-
-  if (!response.ok) throw new Error(data?.error || "Request failed");
-  return data as T;
 }
 
 function formatDateTime(value: string) {
@@ -253,124 +170,8 @@ function getChallengePromptSession(slug: string) {
   return `eventfilm_challenge_prompt_${slug}`;
 }
 
-function createPrompt(text = "", order = 0, id?: string): ChallengePrompt {
-  return { id: id || `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, text, order };
-}
-
-function createStarterPrompts() {
-  return STARTER_SCAVENGER_PROMPTS.map((text, order) => createPrompt(text, order));
-}
-
-function promptsFromChallenge(challenge?: EventChallenge | null) {
-  const prompts = Array.isArray(challenge?.prompts)
-    ? challenge.prompts
-    : Array.isArray(challenge?.config?.prompts)
-      ? (challenge.config.prompts as ChallengePrompt[])
-      : [];
-
-  return prompts
-    .map((prompt, index) => createPrompt(String(prompt.text || ""), Number.isInteger(prompt.order) ? prompt.order : index, prompt.id))
-    .sort((a, b) => a.order - b.order)
-    .map((prompt, order) => ({ ...prompt, order }));
-}
-
-function createEmptyChallengeDraft(): ChallengeDraft {
-  return {
-    type: "NONE",
-    participants: [
-      { ...COLOR_HUNT_PALETTE[0], displayName: "" },
-      { ...COLOR_HUNT_PALETTE[1], displayName: "" },
-      { ...COLOR_HUNT_PALETTE[2], displayName: "" },
-    ],
-    prompts: createStarterPrompts(),
-  };
-}
-
-function draftFromChallenge(challenge?: EventChallenge | null): ChallengeDraft {
-  if (!challenge) return createEmptyChallengeDraft();
-  const emptyDraft = createEmptyChallengeDraft();
-  return {
-    type: Boolean(challenge.isActive ?? true) ? challenge.type : "NONE",
-    participants: challenge.participants.length
-      ? challenge.participants.map((participant) => ({ ...participant }))
-      : emptyDraft.participants,
-    prompts: challenge.type === "PHOTO_SCAVENGER_HUNT" && promptsFromChallenge(challenge).length
-      ? promptsFromChallenge(challenge)
-      : emptyDraft.prompts,
-  };
-}
-
-function buildChallengePayload(draft: ChallengeDraft) {
-  if (draft.type === "NONE") return null;
-
-  if (draft.type === "PHOTO_SCAVENGER_HUNT") {
-    const prompts = draft.prompts
-      .map((prompt, order) => ({
-        id: prompt.id,
-        text: prompt.text.trim(),
-        order,
-      }));
-
-    if (prompts.length < 3) throw new Error("Add at least 3 prompts to start Photo Scavenger Hunt.");
-    if (prompts.some((prompt) => !prompt.text)) throw new Error("Prompts cannot be empty.");
-
-    const promptTexts = prompts.map((prompt) => prompt.text.toLowerCase());
-    if (new Set(promptTexts).size !== promptTexts.length) throw new Error("Remove duplicate prompts before saving.");
-
-    return {
-      type: "PHOTO_SCAVENGER_HUNT",
-      title: "Photo Scavenger Hunt",
-      instructions: "Pick a prompt, take a photo, and upload it to the event album.",
-      config: { prompts },
-      isActive: true,
-      prompts,
-      participants: [],
-    };
-  }
-
-  const participants = draft.participants
-    .map((participant) => ({
-      id: participant.id,
-      displayName: participant.displayName.trim(),
-      colorName: participant.colorName,
-      colorHex: participant.colorHex,
-      colorSlug: participant.colorSlug,
-    }));
-
-  if (participants.length < 2) throw new Error("Add at least 2 participants to start Color Hunt.");
-  if (participants.some((participant) => !participant.displayName)) throw new Error("Participant names cannot be empty.");
-  if (participants.some((participant) => !participant.colorName || !participant.colorHex || !participant.colorSlug)) throw new Error("Each participant needs a color.");
-
-  const participantNames = participants.map((participant) => participant.displayName.toLowerCase());
-  if (new Set(participantNames).size !== participantNames.length) throw new Error("Participant names must be unique.");
-
-  return {
-    type: "COLOR_HUNT",
-    title: "Color Hunt",
-    instructions: "Assign each person a color. Guests will upload photos of things they find in their color.",
-    config: { palette: COLOR_HUNT_PALETTE.map(({ colorName, colorHex, colorSlug }) => ({ colorName, colorHex, colorSlug })) },
-    isActive: true,
-    participants,
-  };
-}
-
-function colorBySlug(colorSlug: string) {
-  return COLOR_HUNT_PALETTE.find((color) => color.colorSlug === colorSlug) || COLOR_HUNT_PALETTE[0];
-}
-
-function hasDuplicateColors(participants: ChallengeParticipant[]) {
-  const selectedColors = participants.map((participant) => participant.colorSlug).filter(Boolean);
-  return new Set(selectedColors).size !== selectedColors.length;
-}
-
-function hasDuplicatePrompts(prompts: ChallengePrompt[]) {
-  const promptTexts = prompts.map((prompt) => prompt.text.trim().toLowerCase()).filter(Boolean);
-  return new Set(promptTexts).size !== promptTexts.length;
-}
-
-function challengeLabel(challenge?: EventChallenge | null) {
-  if (!challenge) return "No challenge";
-  return challenge.type === "PHOTO_SCAVENGER_HUNT" ? "Photo Scavenger Hunt" : "Color Hunt";
+function getChallengeItemSession(slug: string) {
+  return `eventfilm_challenge_item_${slug}`;
 }
 
 function cx(...classes: Array<string | false | null | undefined>) {
@@ -489,9 +290,14 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
 
 function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
-  const showDuplicateColorWarning = draft.type === "COLOR_HUNT" && hasDuplicateColors(draft.participants);
-  const showDuplicatePromptWarning = draft.type === "PHOTO_SCAVENGER_HUNT" && hasDuplicatePrompts(draft.prompts);
+  const [isAwardEditorOpen, setIsAwardEditorOpen] = useState(false);
+  const selectedPack = getChallengePack(draft.type);
+  const showDuplicateColorWarning = draft.type === CHALLENGE_TYPES.COLOR_HUNT && hasDuplicateParticipantColors(draft.participants);
+  const showDuplicatePromptWarning = draft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && hasDuplicatePrompts(draft.prompts);
+  const showDuplicateCategoryWarning = draft.type === CHALLENGE_TYPES.EVENT_AWARDS && hasDuplicateCategories(draft.categories);
   const validPromptCount = draft.prompts.filter((prompt) => prompt.text.trim()).length;
+  const validCategoryCount = draft.categories.filter((category) => category.label.trim()).length;
+  const validationError = validateChallengeDraft(draft);
 
   function updateType(type: ChallengeDraft["type"]) {
     onChange({ ...draft, type });
@@ -563,30 +369,74 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
     onChange({ ...draft, prompts: createStarterPrompts() });
   }
 
+  function updateCategory(index: number, label: string) {
+    onChange({
+      ...draft,
+      categories: draft.categories.map((category, categoryIndex) => (categoryIndex === index ? { ...category, label } : category)),
+    });
+  }
+
+  function addCategory() {
+    setIsAwardEditorOpen(true);
+    onChange({ ...draft, categories: [...draft.categories, createCategory("", draft.categories.length)] });
+  }
+
+  function removeCategory(index: number) {
+    onChange({ ...draft, categories: draft.categories.filter((_, categoryIndex) => categoryIndex !== index).map((category, order) => ({ ...category, order })) });
+  }
+
+  function moveCategory(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= draft.categories.length) return;
+    const categories = [...draft.categories];
+    const [category] = categories.splice(index, 1);
+    categories.splice(nextIndex, 0, category);
+    onChange({ ...draft, categories: categories.map((nextCategory, order) => ({ ...nextCategory, order })) });
+  }
+
+  function useDefaultAwards() {
+    setIsAwardEditorOpen(false);
+    onChange({ ...draft, categories: createDefaultAwardCategories() });
+  }
+
+  function updateCapsule(field: keyof ChallengeDraft["memoryCapsule"], value: string) {
+    onChange({ ...draft, memoryCapsule: { ...draft.memoryCapsule, [field]: value } });
+  }
+
   return (
     <div className="rounded-3xl bg-stone-50 p-5">
       <div className="grid gap-3">
         <div>
-          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Add a photo challenge</p>
-          <h2 className="mt-1 font-display text-xl font-bold text-[#653e00]">{draft.type === "NONE" ? "Optional challenge mode" : draft.type === "PHOTO_SCAVENGER_HUNT" ? "Photo Scavenger Hunt" : "Color Hunt"}</h2>
+          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Choose an event mode</p>
+          <h2 className="mt-1 font-display text-xl font-bold text-[#653e00]">{selectedPack.name}</h2>
+          <p className="mt-1 text-sm text-stone-600">{selectedPack.shortDescription}</p>
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === "NONE" ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")} onClick={() => updateType("NONE")}>
-            <span className="block font-bold text-stone-950">No challenge</span>
-            <span className="mt-1 block text-stone-600">A normal EventFilm album.</span>
-          </button>
-          <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === "COLOR_HUNT" ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")} onClick={() => updateType("COLOR_HUNT")}>
-            <span className="block font-bold text-stone-950">Color Hunt</span>
-            <span className="mt-1 block text-stone-600">Guests find photos matching assigned colors.</span>
-          </button>
-          <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === "PHOTO_SCAVENGER_HUNT" ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")} onClick={() => updateType("PHOTO_SCAVENGER_HUNT")}>
-            <span className="block font-bold text-stone-950">Photo Scavenger Hunt</span>
-            <span className="mt-1 block text-stone-600">Guests choose prompts and upload photos throughout the event.</span>
-          </button>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+          {CHALLENGE_PACKS.map((pack) => (
+            <button
+              type="button"
+              className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.type === pack.mode ? "border-stone-950 bg-white shadow-sm" : "border-stone-200 bg-white/70 hover:border-amber-300")}
+              onClick={() => updateType(pack.mode)}
+              key={pack.slug}
+            >
+              <span className="block text-xs font-bold uppercase tracking-wide text-amber-800">{pack.badge}</span>
+              <span className="mt-2 block font-bold text-stone-950">{pack.name}</span>
+              <span className="mt-1 block text-stone-600">{pack.shortDescription}</span>
+              <span className="mt-3 inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-600">{pack.setupComplexity} setup</span>
+            </button>
+          ))}
         </div>
       </div>
 
-      {draft.type === "COLOR_HUNT" && (
+      {draft.type === "NONE" && (
+        <div className="mt-5 rounded-3xl bg-white p-5">
+          <StatusPill>Classic album</StatusPill>
+          <h3 className="mt-3 font-display text-lg font-bold">No extra setup needed</h3>
+          <p className="mt-2 text-sm text-stone-600">{selectedPack.guestInstructions}</p>
+        </div>
+      )}
+
+      {draft.type === CHALLENGE_TYPES.COLOR_HUNT && (
         <div className="mt-5 grid gap-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -621,7 +471,7 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
         </div>
       )}
 
-      {draft.type === "PHOTO_SCAVENGER_HUNT" && (
+      {draft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (
         <div className="mt-5 grid gap-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -666,6 +516,65 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
           )}
         </div>
       )}
+
+      {draft.type === CHALLENGE_TYPES.EVENT_AWARDS && (
+        <div className="mt-5 grid gap-4">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 className="font-display text-lg font-bold">Set up Event Awards</h3>
+              <p className="text-sm text-stone-600">Guests submit photos into award categories now. Voting can be added later without changing the upload idea.</p>
+              <p className="mt-2 text-sm font-bold text-stone-800">{validCategoryCount} categories ready</p>
+            </div>
+            <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={useDefaultAwards}>Use default awards</SecondaryButton>
+          </div>
+
+          <div className="rounded-2xl bg-white p-3">
+            <button type="button" className="flex w-full items-center justify-between gap-3 rounded-xl px-2 py-2 text-left font-bold text-stone-900" onClick={() => setIsAwardEditorOpen((isOpen) => !isOpen)} aria-expanded={isAwardEditorOpen}>
+              <span>Edit award categories</span>
+              <span className="text-sm text-stone-500">{isAwardEditorOpen ? "Hide" : "Show"}</span>
+            </button>
+            {isAwardEditorOpen && (
+              <div className="mt-3 grid gap-3">
+                {draft.categories.map((category, index) => (
+                  <div className="grid gap-3 rounded-2xl bg-stone-50 p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center" key={category.id || index}>
+                    <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-sm font-bold text-stone-600">{index + 1}</span>
+                    <TextInput value={category.label} onChange={(event) => updateCategory(index, event.target.value)} placeholder="Award category" />
+                    <div className="flex gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
+                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => moveCategory(index, -1)} disabled={index === 0}>Up</button>
+                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => moveCategory(index, 1)} disabled={index === draft.categories.length - 1}>Down</button>
+                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700" onClick={() => removeCategory(index)} disabled={draft.categories.length <= 1}>Remove</button>
+                    </div>
+                  </div>
+                ))}
+                <SecondaryButton type="button" className="justify-self-start" onClick={addCategory}>Add category</SecondaryButton>
+              </div>
+            )}
+          </div>
+
+          {draft.categories.length < 2 && <p className="rounded-2xl bg-amber-100 p-3 text-sm font-bold text-amber-900">Add at least 2 award categories.</p>}
+          {draft.categories.some((category) => !category.label.trim()) && <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">Award categories cannot be empty.</p>}
+          {showDuplicateCategoryWarning && <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">Remove duplicate award categories before saving.</p>}
+        </div>
+      )}
+
+      {draft.type === CHALLENGE_TYPES.MEMORY_CAPSULE && (
+        <div className="mt-5 grid gap-4">
+          <div>
+            <h3 className="font-display text-lg font-bold">Frame the reveal</h3>
+            <p className="text-sm text-stone-600">This mode uses the event reveal time, with intentional copy for the locked album state.</p>
+          </div>
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Reveal title
+            <TextInput value={draft.memoryCapsule.revealTitle} onChange={(event) => updateCapsule("revealTitle", event.target.value)} placeholder="The album unlocks after the event" />
+          </label>
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Reveal note
+            <TextArea rows={3} value={draft.memoryCapsule.revealNote} onChange={(event) => updateCapsule("revealNote", event.target.value)} placeholder="Tell guests when and why to come back." />
+          </label>
+        </div>
+      )}
+
+      {validationError && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">{validationError}</p>}
     </div>
   );
 }
@@ -1225,8 +1134,10 @@ function ManageEvent() {
       setGalleryFilter("all");
       return;
     }
-    if (event.challenge.type === "COLOR_HUNT" && galleryFilter.startsWith("prompt:")) setGalleryFilter("all");
-    if (event.challenge.type === "PHOTO_SCAVENGER_HUNT" && (galleryFilter.startsWith("color:") || galleryFilter.startsWith("participant:"))) setGalleryFilter("all");
+    if (event.challenge.type === CHALLENGE_TYPES.COLOR_HUNT && (galleryFilter.startsWith("prompt:") || galleryFilter.startsWith("item:"))) setGalleryFilter("all");
+    if (event.challenge.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (galleryFilter.startsWith("color:") || galleryFilter.startsWith("participant:") || galleryFilter.startsWith("item:"))) setGalleryFilter("all");
+    if (event.challenge.type === CHALLENGE_TYPES.EVENT_AWARDS && !galleryFilter.startsWith("award:")) setGalleryFilter("all");
+    if (event.challenge.type === CHALLENGE_TYPES.MEMORY_CAPSULE) setGalleryFilter("all");
   }, [event?.challenge, galleryFilter]);
 
   async function deletePhoto(photoId: string) {
@@ -1236,7 +1147,8 @@ function ManageEvent() {
   }
 
   async function downloadZip() {
-    const response = await fetch(`${API_BASE_URL}/api/host/events/${eventId}/download`, {
+    if (!eventId) return;
+    const response = await fetch(eventFilmApi.getHostEventDownloadUrl(eventId), {
       headers: { Authorization: `Bearer ${auth.token}` },
     });
     if (!response.ok) throw new Error("Download failed");
@@ -1270,11 +1182,13 @@ function ManageEvent() {
   const challengeParticipants = event?.challenge?.participants || [];
   const challengeColors = Array.from(new Map(challengeParticipants.map((participant) => [participant.colorSlug, participant])).values());
   const challengePrompts = promptsFromChallenge(event?.challenge);
+  const challengeAwards = categoriesFromChallenge(event?.challenge);
   const filteredPhotos = event?.photos.filter((photo) => {
     if (galleryFilter === "all") return true;
     if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
     if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
     if (galleryFilter.startsWith("prompt:")) return photo.challengePromptId === galleryFilter.replace("prompt:", "");
+    if (galleryFilter.startsWith("award:")) return photo.challengeItemId === galleryFilter.replace("award:", "");
     return true;
   }) || [];
 
@@ -1355,18 +1269,21 @@ function ManageEvent() {
                 <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
                   <div className="flex min-w-max gap-2 sm:min-w-0 sm:flex-wrap">
                     <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === "all" ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter("all")}>All photos</button>
-                    {event.challenge.type === "COLOR_HUNT" && challengeColors.map((participant) => (
+                    {event.challenge.type === CHALLENGE_TYPES.COLOR_HUNT && challengeColors.map((participant) => (
                       <button className={cx("inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `color:${participant.colorSlug}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`color:${participant.colorSlug}`)} key={participant.colorSlug}>
                         <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
                         {participant.colorName}
                       </button>
                     ))}
-                    {event.challenge.type === "PHOTO_SCAVENGER_HUNT" && challengePrompts.map((prompt) => (
+                    {event.challenge.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && challengePrompts.map((prompt) => (
                       <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `prompt:${prompt.id}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`prompt:${prompt.id}`)} key={prompt.id}>{prompt.text}</button>
+                    ))}
+                    {event.challenge.type === CHALLENGE_TYPES.EVENT_AWARDS && challengeAwards.map((category) => (
+                      <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `award:${category.id}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`award:${category.id}`)} key={category.id}>{category.label}</button>
                     ))}
                   </div>
                 </div>
-                {event.challenge.type === "COLOR_HUNT" && (
+                {event.challenge.type === CHALLENGE_TYPES.COLOR_HUNT && (
                   <div className="flex flex-wrap gap-2">
                     {challengeParticipants.map((participant) => (
                       <button className={cx("rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `participant:${participant.id}` ? "bg-amber-500 text-stone-950" : "bg-amber-50 text-[#653e00]")} onClick={() => setGalleryFilter(`participant:${participant.id}`)} key={participant.id}>{participant.displayName}</button>
@@ -1389,6 +1306,9 @@ function ManageEvent() {
                     {photo.challengePromptText && (
                       <p className="mt-2 text-sm font-semibold text-[#653e00]">Prompt: {photo.challengePromptText}</p>
                     )}
+                    {photo.challengeItemLabel && !photo.challengeColorName && !photo.challengePromptText && (
+                      <p className="mt-2 text-sm font-semibold text-[#653e00]">{photo.challengeItemKind === "award" ? "Award" : "Mode"}: {photo.challengeItemLabel}</p>
+                    )}
                     <p className="mt-1 text-stone-600">{formatDateTime(photo.createdAt)}</p>
                     <button className="mt-3 inline-flex min-h-10 items-center rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
                   </div>
@@ -1410,8 +1330,10 @@ function GuestEvent() {
   const [nickname, setNickname] = useState(session.nickname);
   const [selectedParticipantId, setSelectedParticipantId] = useState(() => localStorage.getItem(getChallengeParticipantSession(slug)) || "");
   const [selectedPromptId, setSelectedPromptId] = useState(() => localStorage.getItem(getChallengePromptSession(slug)) || "");
+  const [selectedItemId, setSelectedItemId] = useState(() => localStorage.getItem(getChallengeItemSession(slug)) || "");
   const participantSelectRef = useRef<HTMLSelectElement | null>(null);
   const promptSelectRef = useRef<HTMLSelectElement | null>(null);
+  const itemSelectRef = useRef<HTMLSelectElement | null>(null);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -1426,7 +1348,7 @@ function GuestEvent() {
     setEvent(eventData.event);
     const status = await api<{ remainingUploads: number; nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
     setRemaining(status.remainingUploads);
-    if (eventData.event.challenge?.type !== "COLOR_HUNT" && status.nickname && !nickname) setNickname(status.nickname);
+    if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && status.nickname && !nickname) setNickname(status.nickname);
     if (eventData.event.isRevealed) {
       const photoData = await api<{ photos: Photo[] }>(`/api/events/${slug}/photos`);
       setPhotos(photoData.photos);
@@ -1440,7 +1362,7 @@ function GuestEvent() {
   }, [slug]);
 
   useEffect(() => {
-    if (event?.challenge?.type !== "COLOR_HUNT") return;
+    if (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT) return;
     const isValidParticipant = event.challenge.participants.some((participant) => participant.id === selectedParticipantId);
     if (!isValidParticipant) {
       setSelectedParticipantId("");
@@ -1449,13 +1371,22 @@ function GuestEvent() {
   }, [event, selectedParticipantId, slug]);
 
   useEffect(() => {
-    if (event?.challenge?.type !== "PHOTO_SCAVENGER_HUNT") return;
+    if (event?.challenge?.type !== CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) return;
     const isValidPrompt = promptsFromChallenge(event.challenge).some((prompt) => prompt.id === selectedPromptId);
     if (!isValidPrompt) {
       setSelectedPromptId("");
       localStorage.removeItem(getChallengePromptSession(slug));
     }
   }, [event, selectedPromptId, slug]);
+
+  useEffect(() => {
+    if (event?.challenge?.type !== CHALLENGE_TYPES.EVENT_AWARDS) return;
+    const isValidItem = categoriesFromChallenge(event.challenge).some((category) => category.id === selectedItemId);
+    if (!isValidItem) {
+      setSelectedItemId("");
+      localStorage.removeItem(getChallengeItemSession(slug));
+    }
+  }, [event, selectedItemId, slug]);
 
   useEffect(() => {
     if (!file) {
@@ -1495,6 +1426,13 @@ function GuestEvent() {
     else localStorage.removeItem(getChallengePromptSession(slug));
   }
 
+  function saveSelectedItem(itemId: string) {
+    setSelectedItemId(itemId);
+    setMessage("");
+    if (itemId) localStorage.setItem(getChallengeItemSession(slug), itemId);
+    else localStorage.removeItem(getChallengeItemSession(slug));
+  }
+
   async function uploadPhoto(uploadEvent: React.FormEvent) {
     uploadEvent.preventDefault();
     setMessage("");
@@ -1503,9 +1441,10 @@ function GuestEvent() {
 
     if (!file) return setError("Choose a photo first");
     if (!file.type.startsWith("image/")) return setError("Only image files are allowed");
-    if (event?.challenge?.type === "COLOR_HUNT" && !selectedParticipant) return setError("Select your Color Hunt name first");
-    if (event?.challenge?.type === "PHOTO_SCAVENGER_HUNT" && !selectedPrompt) return setError("Choose a Photo Scavenger Hunt prompt first");
-    if (event?.challenge?.type !== "COLOR_HUNT" && !nickname.trim()) return setError("Enter your name or nickname first");
+    if (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Select your Color Hunt name first");
+    if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a Photo Scavenger Hunt prompt first");
+    if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an Event Awards category first");
+    if (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim()) return setError("Enter your name or nickname first");
 
     const formData = new FormData();
     formData.append("photo", file);
@@ -1513,15 +1452,18 @@ function GuestEvent() {
     formData.append("clientId", session.clientId);
     if (selectedParticipant?.id) formData.append("challengeParticipantId", selectedParticipant.id);
     if (selectedPrompt?.id) formData.append("challengePromptId", selectedPrompt.id);
+    if (selectedAward?.id) formData.append("challengeItemId", selectedAward.id);
 
     setLoading(true);
     try {
       const data = await api<{ remainingUploads: number }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
       setFile(null);
       setRemaining(data.remainingUploads);
-      if (event?.challenge?.type === "PHOTO_SCAVENGER_HUNT") {
+      if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
         setMessage("Photo uploaded. Want to complete another prompt?");
         setShowScavengerSuccessActions(true);
+      } else if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
+        setMessage("Photo submitted for the award category.");
       } else {
         setMessage("Photo uploaded");
       }
@@ -1535,7 +1477,11 @@ function GuestEvent() {
 
   const selectedParticipant = event?.challenge?.participants.find((participant) => participant.id === selectedParticipantId);
   const guestPrompts = promptsFromChallenge(event?.challenge);
+  const guestAwards = categoriesFromChallenge(event?.challenge);
   const selectedPrompt = guestPrompts.find((prompt) => prompt.id === selectedPromptId);
+  const selectedAward = guestAwards.find((category) => category.id === selectedItemId);
+  const activePack = getChallengePack(event?.challenge?.type || "NONE");
+  const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
 
   function uploadAnotherForPrompt() {
     setShowScavengerSuccessActions(false);
@@ -1561,18 +1507,18 @@ function GuestEvent() {
       {event && (
         <div className="mx-auto max-w-2xl">
           <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-center text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
-            <StatusPill>No app download. No account needed.</StatusPill>
+            <StatusPill>{activePack.badge}</StatusPill>
             <h1 className="mt-5 font-display text-4xl font-bold">{event.name}</h1>
             {event.description && <p className="mt-3 text-stone-200">{event.description}</p>}
             <p className="mt-3 text-sm text-stone-300">Reveal: {formatDateTime(event.revealAt)}</p>
             {!event.isRevealed && (
               <p className="mt-5 rounded-3xl bg-amber-100 p-4 text-sm font-semibold text-amber-950">
-                Photos are hidden until the reveal. Keep uploading throughout the event.
+                {capsuleCopy ? capsuleCopy.revealNote : "Photos are hidden until the reveal. Keep uploading throughout the event."}
               </p>
             )}
           </section>
 
-          {event.challenge?.type === "COLOR_HUNT" && (
+          {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && (
             <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Color Hunt</StatusPill>
               <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Your group is playing Color Hunt.</h2>
@@ -1598,7 +1544,7 @@ function GuestEvent() {
             </section>
           )}
 
-          {event.challenge?.type === "PHOTO_SCAVENGER_HUNT" && (
+          {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (
             <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Photo Scavenger Hunt</StatusPill>
               <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Photo Scavenger Hunt</h2>
@@ -1621,16 +1567,50 @@ function GuestEvent() {
             </section>
           )}
 
+          {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
+            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <StatusPill>Event Awards</StatusPill>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Submit to an award category.</h2>
+              <p className="mt-2 text-stone-700">{activePack.guestInstructions}</p>
+              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
+                Choose an award
+                <select ref={itemSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedItemId} onChange={(selectEvent) => saveSelectedItem(selectEvent.target.value)} required>
+                  <option value="">Select an award category</option>
+                  {guestAwards.map((category) => (
+                    <option value={category.id} key={category.id}>{category.label}</option>
+                  ))}
+                </select>
+              </label>
+              {selectedAward && (
+                <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-stone-800">
+                  <p className="text-xs font-bold uppercase tracking-wide text-stone-500">Current award</p>
+                  <p className="mt-1 font-display text-xl font-bold text-[#653e00]">{selectedAward.label}</p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && capsuleCopy && (
+            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <StatusPill>Memory Capsule</StatusPill>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">{capsuleCopy.revealTitle}</h2>
+              <p className="mt-2 text-stone-700">{capsuleCopy.revealNote}</p>
+            </section>
+          )}
+
           <form className="mt-6 rounded-3xl border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)] sm:p-6" onSubmit={uploadPhoto}>
             <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
-            <p className="mt-2 text-stone-600">{event.challenge?.type === "COLOR_HUNT" ? "Pick a photo and send it to the private album." : "Add your name, pick a photo, and send it to the private album."}</p>
-            {event.challenge?.type === "COLOR_HUNT" && selectedParticipant && (
+            <p className="mt-2 text-stone-600">{event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT ? "Pick a photo and send it to the private album." : "Add your name, pick a photo, and send it to the private album."}</p>
+            {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && selectedParticipant && (
               <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p>
             )}
-            {event.challenge?.type === "PHOTO_SCAVENGER_HUNT" && selectedPrompt && (
+            {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && selectedPrompt && (
               <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Uploading for: {selectedPrompt.text}</p>
             )}
-            {event.challenge?.type !== "COLOR_HUNT" && (
+            {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && selectedAward && (
+              <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Submitting for: {selectedAward.label}</p>
+            )}
+            {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && (
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
                 Name or nickname
                 <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
@@ -1674,8 +1654,8 @@ function GuestEvent() {
 
           {!event.isRevealed && (
             <section className="mt-8 rounded-3xl border border-amber-200 bg-amber-50 p-5">
-              <h2 className="font-display text-2xl font-bold text-[#653e00]">Album</h2>
-              <p className="mt-2 text-sm font-semibold text-amber-900">Photos are hidden until the reveal. Keep uploading throughout the event.</p>
+              <h2 className="font-display text-2xl font-bold text-[#653e00]">{capsuleCopy?.revealTitle || "Album"}</h2>
+              <p className="mt-2 text-sm font-semibold text-amber-900">{capsuleCopy?.revealNote || "Photos are hidden until the reveal. Keep uploading throughout the event."}</p>
             </section>
           )}
 
@@ -1689,9 +1669,7 @@ function GuestEvent() {
                     {photo.challengeParticipantName && (
                       <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengeParticipantName} - {photo.challengeColorName}</p>
                     )}
-                    {photo.challengePromptText && (
-                      <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengePromptText}</p>
-                    )}
+                    {photoChallengeLabel(photo) && <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photoChallengeLabel(photo)}</p>}
                   </div>
                 ))}
               </div>

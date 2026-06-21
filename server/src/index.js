@@ -66,10 +66,26 @@ function publicEventUrl(slug) {
 
 const CHALLENGE_TYPE_COLOR_HUNT = "COLOR_HUNT";
 const CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT = "PHOTO_SCAVENGER_HUNT";
+const CHALLENGE_TYPE_EVENT_AWARDS = "EVENT_AWARDS";
+const CHALLENGE_TYPE_MEMORY_CAPSULE = "MEMORY_CAPSULE";
+const SUPPORTED_CHALLENGE_TYPES = [
+  CHALLENGE_TYPE_COLOR_HUNT,
+  CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT,
+  CHALLENGE_TYPE_EVENT_AWARDS,
+  CHALLENGE_TYPE_MEMORY_CAPSULE,
+];
 const COLOR_HUNT_TITLE = "Color Hunt";
 const COLOR_HUNT_INSTRUCTIONS = "Assign each person a color. Guests will upload photos of things they find in their color.";
 const PHOTO_SCAVENGER_HUNT_TITLE = "Photo Scavenger Hunt";
 const PHOTO_SCAVENGER_HUNT_INSTRUCTIONS = "Pick a prompt, take a photo, and upload it to the event album.";
+const EVENT_AWARDS_TITLE = "Event Awards";
+const EVENT_AWARDS_INSTRUCTIONS = "Choose an award category, then submit the photo that deserves the title.";
+const MEMORY_CAPSULE_TITLE = "Memory Capsule";
+const MEMORY_CAPSULE_INSTRUCTIONS = "Add photos throughout the event. The full capsule opens at the reveal time.";
+const DEFAULT_MEMORY_CAPSULE = {
+  revealTitle: "The album unlocks after the event",
+  revealNote: "Guests can keep adding photos now. Everyone comes back at reveal time to see the full capsule together.",
+};
 
 const challengeInclude = {
   participants: { orderBy: { createdAt: "asc" } },
@@ -107,6 +123,29 @@ function promptsFromConfig(config) {
   return normalizePrompts(config && typeof config === "object" ? config.prompts : []);
 }
 
+function normalizeCategories(categories) {
+  return (Array.isArray(categories) ? categories : [])
+    .map((category, index) => ({
+      id: typeof category.id === "string" && category.id.trim() ? category.id.trim() : crypto.randomUUID(),
+      label: String(category.label || "").trim(),
+      order: Number.isInteger(Number(category.order)) ? Number(category.order) : index,
+    }))
+    .sort((a, b) => a.order - b.order)
+    .map((category, index) => ({ ...category, order: index }));
+}
+
+function categoriesFromConfig(config) {
+  return normalizeCategories(config && typeof config === "object" ? config.categories : []);
+}
+
+function normalizeMemoryCapsuleConfig(config) {
+  const source = config && typeof config === "object" ? config : {};
+  return {
+    revealTitle: String(source.revealTitle || DEFAULT_MEMORY_CAPSULE.revealTitle).trim() || DEFAULT_MEMORY_CAPSULE.revealTitle,
+    revealNote: String(source.revealNote || DEFAULT_MEMORY_CAPSULE.revealNote).trim() || DEFAULT_MEMORY_CAPSULE.revealNote,
+  };
+}
+
 function challengePayload(challenge) {
   if (!challenge) return null;
   return {
@@ -129,6 +168,7 @@ function challengePayload(challenge) {
       updatedAt: participant.updatedAt,
     })),
     prompts: promptsFromConfig(challenge.config),
+    categories: categoriesFromConfig(challenge.config),
   };
 }
 
@@ -149,6 +189,7 @@ function publicChallengePayload(challenge) {
       colorSlug,
     })),
     prompts: payload.prompts,
+    categories: payload.categories,
   };
 }
 
@@ -167,6 +208,9 @@ function photoPayload(photo) {
     challengeColorName: photo.challengeColorName,
     challengePromptId: photo.challengePromptId,
     challengePromptText: photo.challengePromptText,
+    challengeItemId: photo.challengeItemId,
+    challengeItemLabel: photo.challengeItemLabel,
+    challengeItemKind: photo.challengeItemKind,
     challengeParticipantName: photo.challengeParticipant?.displayName,
     challengeColorHex: photo.challengeParticipant?.colorHex,
     challengeColorSlug: photo.challengeParticipant?.colorSlug || slugifyColor(photo.challengeColorName),
@@ -180,7 +224,7 @@ function requireFields(body, fields) {
 
 function normalizeChallengeSetup(input) {
   if (!input || input.isActive === false) return null;
-  if (input.type && ![CHALLENGE_TYPE_COLOR_HUNT, CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT].includes(input.type)) {
+  if (input.type && !SUPPORTED_CHALLENGE_TYPES.includes(input.type)) {
     throw new Error("Unsupported challenge type");
   }
   const challengeType = input.type || CHALLENGE_TYPE_COLOR_HUNT;
@@ -204,6 +248,49 @@ function normalizeChallengeSetup(input) {
       title: String(input.title || PHOTO_SCAVENGER_HUNT_TITLE).trim() || PHOTO_SCAVENGER_HUNT_TITLE,
       instructions: String(input.instructions || PHOTO_SCAVENGER_HUNT_INSTRUCTIONS).trim() || PHOTO_SCAVENGER_HUNT_INSTRUCTIONS,
       config: { prompts },
+      isActive: true,
+      participants: [],
+    };
+  }
+
+  if (challengeType === CHALLENGE_TYPE_EVENT_AWARDS) {
+    const categories = normalizeCategories(input.categories || input.config?.categories);
+    if (categories.length < 2) {
+      throw new Error("Add at least 2 award categories.");
+    }
+    if (categories.some((category) => !category.label)) {
+      throw new Error("Award categories cannot be empty.");
+    }
+
+    const categoryLabels = categories.map((category) => category.label.toLowerCase());
+    if (new Set(categoryLabels).size !== categoryLabels.length) {
+      throw new Error("Remove duplicate award categories before saving.");
+    }
+
+    return {
+      type: CHALLENGE_TYPE_EVENT_AWARDS,
+      title: String(input.title || EVENT_AWARDS_TITLE).trim() || EVENT_AWARDS_TITLE,
+      instructions: String(input.instructions || EVENT_AWARDS_INSTRUCTIONS).trim() || EVENT_AWARDS_INSTRUCTIONS,
+      config: { categories },
+      isActive: true,
+      participants: [],
+    };
+  }
+
+  if (challengeType === CHALLENGE_TYPE_MEMORY_CAPSULE) {
+    const config = normalizeMemoryCapsuleConfig(input.config);
+    if (!config.revealTitle) {
+      throw new Error("Add a reveal title for Memory Capsule.");
+    }
+    if (!config.revealNote) {
+      throw new Error("Add a reveal note for Memory Capsule.");
+    }
+
+    return {
+      type: CHALLENGE_TYPE_MEMORY_CAPSULE,
+      title: String(input.title || MEMORY_CAPSULE_TITLE).trim() || MEMORY_CAPSULE_TITLE,
+      instructions: String(input.instructions || MEMORY_CAPSULE_INSTRUCTIONS).trim() || MEMORY_CAPSULE_INSTRUCTIONS,
+      config,
       isActive: true,
       participants: [],
     };
@@ -574,7 +661,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
   let uploadedObjectKey;
 
   try {
-    const { nickname, clientId, challengeParticipantId, challengePromptId } = req.body;
+    const { nickname, clientId, challengeParticipantId, challengePromptId, challengeItemId } = req.body;
     if (!clientId) {
       return res.status(400).json({ error: "clientId is required" });
     }
@@ -591,6 +678,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
     const activeChallenge = event.challenges[0];
     let selectedParticipant = null;
     let selectedPrompt = null;
+    let selectedAwardCategory = null;
     if (activeChallenge?.type === CHALLENGE_TYPE_COLOR_HUNT) {
       if (!challengeParticipantId) {
         return res.status(400).json({ error: "Select your Color Hunt participant before uploading" });
@@ -609,6 +697,17 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
       selectedPrompt = promptsFromConfig(activeChallenge.config).find((prompt) => prompt.id === challengePromptId);
       if (!selectedPrompt) {
         return res.status(400).json({ error: "Selected Photo Scavenger Hunt prompt is not valid for this event" });
+      }
+    } else if (activeChallenge?.type === CHALLENGE_TYPE_EVENT_AWARDS) {
+      if (!nickname?.trim()) {
+        return res.status(400).json({ error: "Enter your name or nickname first" });
+      }
+      if (!challengeItemId) {
+        return res.status(400).json({ error: "Choose an Event Awards category before uploading" });
+      }
+      selectedAwardCategory = categoriesFromConfig(activeChallenge.config).find((category) => category.id === challengeItemId);
+      if (!selectedAwardCategory) {
+        return res.status(400).json({ error: "Selected Event Awards category is not valid for this event" });
       }
     } else if (!nickname?.trim()) {
       return res.status(400).json({ error: "Nickname and clientId are required" });
@@ -643,11 +742,14 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
         originalFilename: req.file.originalname,
         mimeType: req.file.mimetype,
         sizeBytes: req.file.size,
-        challengeId: selectedParticipant || selectedPrompt ? activeChallenge.id : null,
+        challengeId: selectedParticipant || selectedPrompt || selectedAwardCategory ? activeChallenge.id : null,
         challengeParticipantId: selectedParticipant?.id || null,
         challengeColorName: selectedParticipant?.colorName || null,
         challengePromptId: selectedPrompt?.id || null,
         challengePromptText: selectedPrompt?.text || null,
+        challengeItemId: selectedParticipant?.id || selectedPrompt?.id || selectedAwardCategory?.id || null,
+        challengeItemLabel: selectedParticipant?.colorName || selectedPrompt?.text || selectedAwardCategory?.label || null,
+        challengeItemKind: selectedParticipant ? "color" : selectedPrompt ? "prompt" : selectedAwardCategory ? "award" : null,
       },
       include: { guest: true, challengeParticipant: true },
     });

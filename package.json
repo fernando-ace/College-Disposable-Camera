@@ -19,6 +19,7 @@
     "check:api": "npm run build -w server",
     "build:api": "npm run build -w server",
     "check:shared": "npm run typecheck -w @eventfilm/shared",
+    "test:shared": "npm run test -w @eventfilm/shared",
     "check:api-client": "npm run typecheck -w @eventfilm/api-client",
     "check:mobile": "npm run typecheck -w @eventfilm/mobile",
     "lint:mobile": "npm run lint -w @eventfilm/mobile"

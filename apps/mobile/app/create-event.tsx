@@ -2,7 +2,7 @@ import * as React from "react";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { router } from "expo-router";
 import { Pressable, Text, View } from "react-native";
-import type { ChallengeParticipant, ChallengePrompt, ChallengeType } from "@eventfilm/shared";
+import type { ChallengeCategory, ChallengeMode, ChallengeParticipant, ChallengePrompt } from "@eventfilm/shared";
 import { CHALLENGE_TYPES, COLOR_HUNT_PALETTE } from "@eventfilm/shared";
 import {
   ActionButton,
@@ -26,15 +26,20 @@ import {
 import { useAuth } from "../src/auth";
 import {
   type ChallengeDraft,
+  CHALLENGE_PACKS,
   buildChallengePayload,
   challengeTypeName,
   colorBySlug,
+  createCategory,
+  createDefaultAwardCategories,
   createEmptyChallengeDraft,
   createPrompt,
   createStarterPrompts,
+  hasDuplicateCategories,
   hasDuplicateParticipantColors,
   hasDuplicateParticipantNames,
   hasDuplicatePrompts,
+  validateChallengeDraft,
 } from "../src/challenges";
 
 type PickerMode = "date" | "time";
@@ -209,25 +214,83 @@ function ScavengerSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
   );
 }
 
+function AwardsSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  const validCategoryCount = draft.categories.filter((category) => category.label.trim()).length;
+
+  function updateCategory(index: number, label: string) {
+    onChange({ ...draft, categories: draft.categories.map((category, categoryIndex) => (categoryIndex === index ? { ...category, label } : category)) });
+  }
+
+  function addCategory() {
+    onChange({ ...draft, categories: [...draft.categories, createCategory("", draft.categories.length)] });
+  }
+
+  function removeCategory(index: number) {
+    onChange({ ...draft, categories: draft.categories.filter((_category, categoryIndex) => categoryIndex !== index).map((category, order) => ({ ...category, order })) });
+  }
+
+  function moveCategory(index: number, direction: -1 | 1) {
+    const nextIndex = index + direction;
+    if (nextIndex < 0 || nextIndex >= draft.categories.length) return;
+    const categories = [...draft.categories];
+    const category = categories[index] as ChallengeCategory;
+    categories[index] = categories[nextIndex] as ChallengeCategory;
+    categories[nextIndex] = category;
+    onChange({ ...draft, categories: categories.map((nextCategory, order) => ({ ...nextCategory, order })) });
+  }
+
+  return (
+    <Card>
+      <SectionHeader title="Award categories" subtitle={`${validCategoryCount} categories ready for guest submissions.`} />
+      {draft.categories.map((category, index) => (
+        <View key={category.id || index} style={{ gap: 10, borderRadius: 20, borderCurve: "continuous", backgroundColor: colors.wash, padding: 12 }}>
+          <FieldGroup label={`Award ${index + 1}`}>
+            <Field placeholder="Award category" value={category.label} onChangeText={(label) => updateCategory(index, label)} />
+          </FieldGroup>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            <ActionButton disabled={index === 0} onPress={() => moveCategory(index, -1)}>Move up</ActionButton>
+            <ActionButton disabled={index === draft.categories.length - 1} onPress={() => moveCategory(index, 1)}>Move down</ActionButton>
+            <ActionButton disabled={draft.categories.length <= 1} onPress={() => removeCategory(index)}>Remove</ActionButton>
+          </View>
+        </View>
+      ))}
+      {draft.categories.length < 2 ? <Body tone="danger">Add at least 2 award categories.</Body> : null}
+      {draft.categories.some((category) => !category.label.trim()) ? <Body tone="danger">Award categories cannot be empty.</Body> : null}
+      {hasDuplicateCategories(draft.categories) ? <Body tone="danger">Remove duplicate award categories before saving.</Body> : null}
+      <View style={{ gap: 10 }}>
+        <Button tone="secondary" onPress={addCategory}>Add category</Button>
+        <Button tone="secondary" onPress={() => onChange({ ...draft, categories: createDefaultAwardCategories() })}>Use default awards</Button>
+      </View>
+    </Card>
+  );
+}
+
+function MemoryCapsuleSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  function update(field: keyof ChallengeDraft["memoryCapsule"], value: string) {
+    onChange({ ...draft, memoryCapsule: { ...draft.memoryCapsule, [field]: value } });
+  }
+
+  return (
+    <Card tone="warm">
+      <Badge tone="amber">Reveal moment</Badge>
+      <SectionHeader title="Frame the reveal" subtitle="Memory Capsule uses the event reveal time, with copy that makes the locked album feel intentional." />
+      <FieldGroup label="Reveal title">
+        <Field value={draft.memoryCapsule.revealTitle} onChangeText={(value) => update("revealTitle", value)} placeholder="The album unlocks after the event" />
+      </FieldGroup>
+      <FieldGroup label="Reveal note">
+        <Field value={draft.memoryCapsule.revealNote} onChangeText={(value) => update("revealNote", value)} placeholder="Tell guests when and why to come back." multiline />
+      </FieldGroup>
+    </Card>
+  );
+}
+
 function createDisabledReason({ name, photoLimitPerGuest, challengeDraft }: { name: string; photoLimitPerGuest: string; challengeDraft: ChallengeDraft }) {
   if (!name.trim()) return "Add an event name to create your event.";
 
   const photoLimit = Number(photoLimitPerGuest);
   if (!Number.isInteger(photoLimit) || photoLimit < 1) return "Set a photo limit of at least 1.";
 
-  if (challengeDraft.type === CHALLENGE_TYPES.COLOR_HUNT) {
-    if (challengeDraft.participants.length < 2) return "Choose at least two color teams.";
-    if (challengeDraft.participants.some((participant) => !participant.displayName.trim())) return "Add a name for each color team.";
-    if (hasDuplicateParticipantNames(challengeDraft.participants)) return "Make each color team name unique.";
-  }
-
-  if (challengeDraft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
-    if (challengeDraft.prompts.length < 3) return "Keep at least 3 scavenger prompts.";
-    if (challengeDraft.prompts.some((prompt) => !prompt.text.trim())) return "Remove empty prompts before creating your event.";
-    if (hasDuplicatePrompts(challengeDraft.prompts)) return "Remove duplicate prompts before creating your event.";
-  }
-
-  return "";
+  return validateChallengeDraft(challengeDraft);
 }
 
 export default function CreateEventScreen() {
@@ -244,7 +307,7 @@ export default function CreateEventScreen() {
   const disabledReason = createDisabledReason({ name, photoLimitPerGuest, challengeDraft });
   const canCreate = !disabledReason;
 
-  function updateType(type: "NONE" | ChallengeType) {
+  function updateType(type: ChallengeMode) {
     setChallengeDraft((draft) => ({ ...draft, type }));
   }
 
@@ -335,27 +398,16 @@ export default function CreateEventScreen() {
       {step === 2 ? (
         <View style={{ gap: 12 }}>
           <SectionHeader title="Choose photo mode" subtitle="Start simple, or add a lightweight game for the room." />
-          <ModeOptionCard
-            title="Classic album"
-            description="Guests upload photos into one private event album."
-            meta="Best for weddings, parties, and low-friction sharing."
-            selected={challengeDraft.type === "NONE"}
-            onPress={() => updateType("NONE")}
-          />
-          <ModeOptionCard
-            title="Color Hunt"
-            description="Guests choose a color team and hunt for moments that match."
-            meta={`${challengeDraft.participants.length} teams ready`}
-            selected={challengeDraft.type === CHALLENGE_TYPES.COLOR_HUNT}
-            onPress={() => updateType(CHALLENGE_TYPES.COLOR_HUNT)}
-          />
-          <ModeOptionCard
-            title="Photo Scavenger Hunt"
-            description="Guests pick prompts and upload photos that complete them."
-            meta={`${challengeDraft.prompts.filter((prompt) => prompt.text.trim()).length} prompts ready`}
-            selected={challengeDraft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT}
-            onPress={() => updateType(CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT)}
-          />
+          {CHALLENGE_PACKS.map((pack) => (
+            <ModeOptionCard
+              key={pack.slug}
+              title={pack.name}
+              description={pack.shortDescription}
+              meta={`${pack.badge} - ${pack.setupComplexity} setup - ${pack.bestFor}`}
+              selected={challengeDraft.type === pack.mode}
+              onPress={() => updateType(pack.mode)}
+            />
+          ))}
         </View>
       ) : null}
 
@@ -369,6 +421,8 @@ export default function CreateEventScreen() {
           ) : null}
           {challengeDraft.type === CHALLENGE_TYPES.COLOR_HUNT ? <ColorHuntSetup draft={challengeDraft} onChange={setChallengeDraft} /> : null}
           {challengeDraft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT ? <ScavengerSetup draft={challengeDraft} onChange={setChallengeDraft} /> : null}
+          {challengeDraft.type === CHALLENGE_TYPES.EVENT_AWARDS ? <AwardsSetup draft={challengeDraft} onChange={setChallengeDraft} /> : null}
+          {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <MemoryCapsuleSetup draft={challengeDraft} onChange={setChallengeDraft} /> : null}
         </View>
       ) : null}
 
@@ -394,6 +448,19 @@ export default function CreateEventScreen() {
               {challengeDraft.prompts.slice(0, 5).map((prompt, index) => (
                 <Caption key={prompt.id || index}>{index + 1}. {prompt.text || "Empty prompt"}</Caption>
               ))}
+            </View>
+          ) : null}
+          {challengeDraft.type === CHALLENGE_TYPES.EVENT_AWARDS ? (
+            <View style={{ gap: 8 }}>
+              {challengeDraft.categories.slice(0, 5).map((category, index) => (
+                <Caption key={category.id || index}>{index + 1}. {category.label || "Empty category"}</Caption>
+              ))}
+            </View>
+          ) : null}
+          {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? (
+            <View style={{ gap: 8 }}>
+              <Caption>{challengeDraft.memoryCapsule.revealTitle}</Caption>
+              <Caption>{challengeDraft.memoryCapsule.revealNote}</Caption>
             </View>
           ) : null}
           <Body tone={canCreate ? "success" : "muted"}>{disabledReason || "Ready to create. You can share the QR link after setup."}</Body>

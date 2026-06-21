@@ -2,8 +2,8 @@ import * as React from "react";
 import * as ImagePicker from "expo-image-picker";
 import { Link, useLocalSearchParams } from "expo-router";
 import { Image, View } from "react-native";
-import type { ChallengeParticipant, ChallengePrompt, PublicEvent } from "@eventfilm/shared";
-import { CHALLENGE_TYPES, challengeLabel, promptsFromChallenge } from "@eventfilm/shared";
+import type { ChallengeCategory, ChallengeParticipant, ChallengePrompt, PublicEvent } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, categoriesFromChallenge, challengeLabel, getChallengePack, memoryCapsuleFromChallenge, promptsFromChallenge } from "@eventfilm/shared";
 import {
   Badge,
   Body,
@@ -33,6 +33,7 @@ export default function UploadScreen() {
   const [clientId, setClientId] = React.useState("");
   const [selectedParticipantId, setSelectedParticipantId] = React.useState("");
   const [selectedPromptId, setSelectedPromptId] = React.useState("");
+  const [selectedItemId, setSelectedItemId] = React.useState("");
   const [asset, setAsset] = React.useState<ImagePicker.ImagePickerAsset | null>(null);
   const [uploadedPreviewUri, setUploadedPreviewUri] = React.useState("");
   const [remaining, setRemaining] = React.useState<number | null>(null);
@@ -43,12 +44,16 @@ export default function UploadScreen() {
 
   const participants = event?.challenge?.participants || [];
   const prompts = promptsFromChallenge(event?.challenge);
+  const awardCategories = categoriesFromChallenge(event?.challenge);
   const selectedParticipant = participants.find((participant) => participant.id === selectedParticipantId);
   const selectedPrompt = prompts.find((prompt) => prompt.id === selectedPromptId);
+  const selectedAward = awardCategories.find((category) => category.id === selectedItemId);
+  const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
   const canUpload = Boolean(event && asset && clientId)
     && remaining !== 0
     && (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT || Boolean(selectedParticipant))
     && (event?.challenge?.type !== CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT || Boolean(selectedPrompt))
+    && (event?.challenge?.type !== CHALLENGE_TYPES.EVENT_AWARDS || Boolean(selectedAward))
     && (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT || Boolean(nickname.trim()));
 
   const loadEvent = React.useCallback(async (nextInput = input) => {
@@ -118,6 +123,7 @@ export default function UploadScreen() {
     if (!clientId) return setError("Could not create a guest upload session.");
     if (event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Choose your Color Hunt team first.");
     if (event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a scavenger prompt first.");
+    if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an award category first.");
     if (event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim()) return setError("Enter your name or nickname first.");
 
     setLoading(true);
@@ -134,11 +140,12 @@ export default function UploadScreen() {
         clientId,
         challengeParticipantId: selectedParticipant?.id,
         challengePromptId: selectedPrompt?.id,
+        challengeItemId: selectedAward?.id,
       });
       setUploadedPreviewUri(asset.uri);
       setAsset(null);
       setRemaining(data.remainingUploads);
-      setMessage(event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT ? "Photo uploaded. Pick another prompt or upload another angle." : "Photo uploaded.");
+      setMessage(event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT ? "Photo uploaded. Pick another prompt or upload another angle." : event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? "Photo submitted for the award category." : "Photo uploaded.");
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -188,10 +195,16 @@ export default function UploadScreen() {
             prompts={prompts}
             selectedParticipantId={selectedParticipantId}
             selectedPromptId={selectedPromptId}
+            selectedItemId={selectedItemId}
             onSelectParticipant={setSelectedParticipantId}
             onSelectPrompt={setSelectedPromptId}
+            onSelectItem={setSelectedItemId}
             onSelectFirstParticipant={selectFirstParticipant}
             onSelectFirstPrompt={selectFirstPrompt}
+            onSelectFirstItem={() => {
+              const first = awardCategories[0] as ChallengeCategory | undefined;
+              if (first?.id) setSelectedItemId(first.id);
+            }}
           />
 
           <Card>
@@ -211,6 +224,12 @@ export default function UploadScreen() {
               <Card tone="warm" padding={12}>
                 <Badge>Current prompt</Badge>
                 <Body>{selectedPrompt.text}</Body>
+              </Card>
+            ) : null}
+            {selectedAward ? (
+              <Card tone="warm" padding={12}>
+                <Badge>Current award</Badge>
+                <Body>{selectedAward.label}</Body>
               </Card>
             ) : null}
 
@@ -247,7 +266,7 @@ export default function UploadScreen() {
               <Button tone="secondary">View album</Button>
             </Link>
           ) : (
-            <EmptyState title="Album reveal is still locked" body={`Photos stay hidden until ${new Date(event.revealAt).toLocaleString()}. Keep uploading throughout the event.`} />
+            <EmptyState title={capsuleCopy?.revealTitle || "Album reveal is still locked"} body={capsuleCopy?.revealNote || `Photos stay hidden until ${new Date(event.revealAt).toLocaleString()}. Keep uploading throughout the event.`} />
           )}
         </View>
       ) : null}
@@ -261,21 +280,31 @@ function ChallengeInstructions({
   prompts,
   selectedParticipantId,
   selectedPromptId,
+  selectedItemId,
   onSelectParticipant,
   onSelectPrompt,
+  onSelectItem,
   onSelectFirstParticipant,
   onSelectFirstPrompt,
+  onSelectFirstItem,
 }: {
   event: PublicEvent;
   participants: ChallengeParticipant[];
   prompts: ChallengePrompt[];
   selectedParticipantId: string;
   selectedPromptId: string;
+  selectedItemId: string;
   onSelectParticipant: (id: string) => void;
   onSelectPrompt: (id: string) => void;
+  onSelectItem: (id: string) => void;
   onSelectFirstParticipant: () => void;
   onSelectFirstPrompt: () => void;
+  onSelectFirstItem: () => void;
 }) {
+  const awardCategories = categoriesFromChallenge(event.challenge);
+  const activePack = getChallengePack(event.challenge?.type || "NONE");
+  const capsuleCopy = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+
   if (event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT) {
     return (
       <Card tone="accent">
@@ -311,6 +340,32 @@ function ChallengeInstructions({
           ))}
         </View>
         {!selectedPromptId ? <Button tone="secondary" onPress={onSelectFirstPrompt}>Choose first prompt</Button> : null}
+      </Card>
+    );
+  }
+
+  if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
+    return (
+      <Card tone="accent">
+        <Badge tone="dark">Event Awards</Badge>
+        <SectionHeader title="Choose an award" subtitle={activePack.guestInstructions} />
+        <View style={{ gap: 8 }}>
+          {awardCategories.map((category) => (
+            <Button key={category.id} tone={selectedItemId === category.id ? "primary" : "secondary"} onPress={() => category.id && onSelectItem(category.id)}>
+              {category.label}
+            </Button>
+          ))}
+        </View>
+        {!selectedItemId ? <Button tone="secondary" onPress={onSelectFirstItem}>Choose first award</Button> : null}
+      </Card>
+    );
+  }
+
+  if (event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && capsuleCopy) {
+    return (
+      <Card tone="accent">
+        <Badge tone="dark">Memory Capsule</Badge>
+        <SectionHeader title={capsuleCopy.revealTitle} subtitle={capsuleCopy.revealNote} />
       </Card>
     );
   }
