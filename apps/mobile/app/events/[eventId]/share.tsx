@@ -3,6 +3,7 @@ import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams } from "expo-router";
 import { Image, Share, View } from "react-native";
 import type { EventSummary, Photo } from "@eventfilm/shared";
+import { buildHostLaunchKit } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, ErrorState, HeroHeader, LoadingState, Screen, SectionHeader, SuccessState, colors } from "../../../src/components/ui";
 import { useAuth } from "../../../src/auth";
 
@@ -18,16 +19,44 @@ export default function ShareEventScreen() {
     api.getHostEvent(eventId).then((data) => setEvent(data.event)).catch((err) => setError((err as Error).message));
   }, [api, eventId]);
 
+  React.useEffect(() => {
+    if (!event) return;
+    api.trackAnalyticsEvent({
+      name: "host_launch_kit_opened",
+      source: "mobile",
+      path: `/events/${event.id}/share`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "share_screen" },
+    }).catch(() => {});
+  }, [api, event]);
+
   async function copyLink(label: string, url?: string) {
     if (!url) return;
     await Clipboard.setStringAsync(url);
     setMessage(`${label} copied.`);
+    if (label === "Guest link" && event) {
+      api.trackAnalyticsEvent({
+        name: "guest_link_copied",
+        source: "mobile",
+        path: `/events/${event.id}/share`,
+        eventId: event.id,
+        eventSlug: event.slug,
+      }).catch(() => {});
+    }
   }
 
   async function shareLink(label: string, url?: string) {
     if (!event || !url) return;
     await Share.share({ message: `${label} for ${event.name}: ${url}`, url });
   }
+
+  async function copyText(label: string, value: string) {
+    await Clipboard.setStringAsync(value);
+    setMessage(`${label} copied.`);
+  }
+
+  const launchKit = event ? buildHostLaunchKit(event) : null;
 
   return (
     <Screen>
@@ -83,6 +112,29 @@ export default function ShareEventScreen() {
               </View>
             ) : null}
           </Card>
+
+          {launchKit ? (
+            <>
+              <Card tone="warm">
+                <SectionHeader title="Copy-ready invite text" subtitle="Use this in a group chat, Instagram story, or event message." />
+                <Body>{launchKit.inviteText}</Body>
+                <Button tone="secondary" onPress={() => copyText("Guest invite", launchKit.inviteText)}>Copy invite text</Button>
+              </Card>
+
+              <Card>
+                <SectionHeader title="Host instructions" subtitle="Keep the three links in the right moment." />
+                <Body tone="muted">{launchKit.hostInstructions}</Body>
+                <Body tone="muted">{launchKit.modeInstructions}</Body>
+                <Button tone="secondary" onPress={() => copyText("Host instructions", launchKit.hostInstructions)}>Copy host instructions</Button>
+              </Card>
+
+              <Card>
+                <SectionHeader title="Suggested caption" subtitle="Short enough for Instagram or a group chat." />
+                <Body>{launchKit.socialCaption}</Body>
+                <Button tone="secondary" onPress={() => copyText("Caption", launchKit.socialCaption)}>Copy caption</Button>
+              </Card>
+            </>
+          ) : null}
         </>
       ) : null}
     </Screen>

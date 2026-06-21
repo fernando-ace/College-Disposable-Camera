@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const crypto = require("crypto");
+const jwt = require("jsonwebtoken");
 const multer = require("multer");
 const path = require("path");
 const sharp = require("sharp");
@@ -10,7 +11,7 @@ const QRCode = require("qrcode");
 const rateLimit = require("express-rate-limit");
 const prisma = require("./prisma");
 const { signToken, requireAuth } = require("./auth");
-const { port, clientUrl, serverUrl, maxFileSizeBytes, maxFileSizeMb } = require("./config");
+const { port, clientUrl, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt } = require("./config");
 const {
   createPhotoObjectKey,
   getPhotoPreviewUrl,
@@ -31,6 +32,8 @@ const allowedOrigins = new Set([
   normalizeOrigin(clientUrl),
   normalizeOrigin(clientUrl.replace("localhost", "127.0.0.1")),
   normalizeOrigin(clientUrl.replace("127.0.0.1", "localhost")),
+  "http://localhost:5173",
+  "http://127.0.0.1:5173",
 ]);
 
 app.use(cors({
@@ -48,6 +51,42 @@ const uploadLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 });
+
+const analyticsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const ANALYTICS_EVENT_NAMES = new Set([
+  "landing_page_viewed",
+  "cta_clicked",
+  "host_dashboard_opened",
+  "event_created",
+  "event_mode_selected",
+  "guest_link_copied",
+  "live_wall_opened",
+  "recap_opened",
+  "guest_joined_event",
+  "photo_upload_started",
+  "photo_upload_succeeded",
+  "photo_upload_failed",
+  "challenge_item_selected",
+  "host_launch_kit_opened",
+]);
+const ANALYTICS_SOURCES = new Set(["web", "mobile", "api"]);
+const ANALYTICS_METADATA_KEYS = new Set([
+  "label",
+  "mode",
+  "challengeType",
+  "itemKind",
+  "outcome",
+  "route",
+  "surface",
+  "hasChallenge",
+  "photoCount",
+]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -393,7 +432,109 @@ function publicEventBasePayload(event, isRevealed) {
   };
 }
 
+function hashAnonymousId(value) {
+  if (!value || typeof value !== "string") return null;
+  return crypto.createHmac("sha256", analyticsSalt).update(value.slice(0, 200)).digest("hex");
+}
+
+function optionalUserId(req) {
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  if (!token) return null;
+
+  try {
+    return jwt.verify(token, jwtSecret).userId || null;
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeAnalyticsMetadata(input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return {};
+  return Object.fromEntries(
+    Object.entries(input)
+      .filter(([key, value]) => ANALYTICS_METADATA_KEYS.has(key) && (["string", "number", "boolean"].includes(typeof value) || value === null))
+      .map(([key, value]) => [key, typeof value === "string" ? value.slice(0, 160) : value]),
+  );
+}
+
+async function countAnalytics(name, where = {}) {
+  return prisma.analyticsEvent.count({ where: { name, ...where } });
+}
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+app.post("/api/analytics/events", analyticsLimiter, async (req, res) => {
+  const { name, source, path: eventPath, eventId, eventSlug, anonymousId, metadata } = req.body || {};
+  if (!ANALYTICS_EVENT_NAMES.has(name)) return res.status(400).json({ error: "Unsupported analytics event" });
+  if (!ANALYTICS_SOURCES.has(source)) return res.status(400).json({ error: "Unsupported analytics source" });
+
+  try {
+    await prisma.analyticsEvent.create({
+      data: {
+        name,
+        source,
+        path: typeof eventPath === "string" ? eventPath.slice(0, 240) : null,
+        userId: optionalUserId(req),
+        eventId: typeof eventId === "string" ? eventId.slice(0, 100) : null,
+        eventSlug: typeof eventSlug === "string" ? eventSlug.slice(0, 120) : null,
+        anonymousIdHash: hashAnonymousId(anonymousId),
+        metadata: sanitizeAnalyticsMetadata(metadata),
+      },
+    });
+    res.status(201).json({ ok: true });
+  } catch {
+    res.status(202).json({ ok: false });
+  }
+});
+
+app.get("/api/host/analytics/summary", requireAuth, async (req, res) => {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const hostEvents = await prisma.event.findMany({
+    where: { hostId: req.user.userId },
+    select: { id: true, slug: true },
+  });
+  const eventIds = hostEvents.map((event) => event.id);
+  const eventSlugs = hostEvents.map((event) => event.slug);
+  const eventScope = eventIds.length
+    ? { OR: [{ eventId: { in: eventIds } }, { eventSlug: { in: eventSlugs } }] }
+    : { eventId: "__none__" };
+
+  const [eventsCreated, uploads, guestJoins, liveWallOpens, recapOpens, activeHosts, activeGuestRows] = await Promise.all([
+    prisma.event.count({ where: { hostId: req.user.userId } }),
+    prisma.photo.count({ where: { eventId: { in: eventIds }, deletedAt: null } }),
+    countAnalytics("guest_joined_event", eventScope),
+    countAnalytics("live_wall_opened", eventScope),
+    countAnalytics("recap_opened", eventScope),
+    prisma.analyticsEvent.findMany({
+      where: { name: "host_dashboard_opened", createdAt: { gte: since }, userId: { not: null } },
+      distinct: ["userId"],
+      select: { userId: true },
+    }),
+    prisma.analyticsEvent.findMany({
+      where: {
+        name: { in: ["guest_joined_event", "photo_upload_succeeded"] },
+        createdAt: { gte: since },
+        anonymousIdHash: { not: null },
+        ...eventScope,
+      },
+      distinct: ["anonymousIdHash"],
+      select: { anonymousIdHash: true },
+    }),
+  ]);
+
+  res.json({
+    summary: {
+      eventsCreated,
+      guestJoins,
+      uploads,
+      liveWallOpens,
+      recapOpens,
+      activeHosts: activeHosts.length,
+      activeGuests: activeGuestRows.length,
+    },
+  });
+});
 
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password } = req.body;

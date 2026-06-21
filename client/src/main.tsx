@@ -2,11 +2,12 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { createEventFilmApiClient } from "@eventfilm/api-client";
-import type { EventRecapResponse, LiveWallResponse } from "@eventfilm/api-client";
+import type { AnalyticsSummary, EventRecapResponse, LiveWallResponse } from "@eventfilm/api-client";
 import {
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
   COLOR_HUNT_PALETTE,
+  buildHostLaunchKit,
   buildChallengeProgressSummary,
   buildEventRecapMetadata,
   buildChallengePayload,
@@ -28,7 +29,7 @@ import {
   promptsFromChallenge,
   validateChallengeDraft,
 } from "@eventfilm/shared";
-import type { ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, Photo, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, HostLaunchKit, HostLaunchKitLink, Photo, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -62,12 +63,40 @@ type DemoPhoto = {
 const AuthContext = createContext<AuthContextValue | null>(null);
 const eventFilmApi = createEventFilmApiClient({ baseUrl: API_BASE_URL });
 const api = eventFilmApi.request;
+const ANALYTICS_ANON_KEY = "eventfilm_anon_id";
 
 
 function useAuth() {
   const value = useContext(AuthContext);
   if (!value) throw new Error("Auth context is missing");
   return value;
+}
+
+function getAnalyticsAnonymousId() {
+  try {
+    const saved = localStorage.getItem(ANALYTICS_ANON_KEY);
+    if (saved) return saved;
+    const next = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    localStorage.setItem(ANALYTICS_ANON_KEY, next);
+    return next;
+  } catch {
+    return "anonymous";
+  }
+}
+
+function trackAnalytics(name: AnalyticsEventName, input: Omit<AnalyticsEventInput, "name" | "source" | "anonymousId"> = {}) {
+  eventFilmApi
+    .trackAnalyticsEvent(
+      {
+        ...input,
+        name,
+        source: "web",
+        path: input.path || window.location.pathname,
+        anonymousId: getAnalyticsAnonymousId(),
+      },
+      localStorage.getItem("eventfilm_token"),
+    )
+    .catch(() => {});
 }
 
 function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -303,6 +332,7 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
   const validationError = validateChallengeDraft(draft);
 
   function updateType(type: ChallengeDraft["type"]) {
+    trackAnalytics("event_mode_selected", { metadata: { mode: type } });
     onChange({ ...draft, type });
   }
 
@@ -720,29 +750,158 @@ function DemoUploader() {
   );
 }
 
+function LaunchKitCopyBlock({ title, value, onCopy }: { title: string; value: string; onCopy: () => void }) {
+  return (
+    <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+      <p className="text-sm font-bold text-stone-950">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-stone-600">{value}</p>
+      <SecondaryButton type="button" className="mt-3 min-h-10 px-4 py-2" onClick={onCopy}>Copy</SecondaryButton>
+    </div>
+  );
+}
+
+function LaunchKitLinkCard({ link, event }: { link: HostLaunchKitLink; event: EventSummary }) {
+  const [status, setStatus] = useState("");
+
+  async function copyLink() {
+    try {
+      await copyText(link.url);
+      setStatus(`${link.label} copied`);
+      if (link.key === "guest") trackAnalytics("guest_link_copied", { eventId: event.id, eventSlug: event.slug });
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  function openLink() {
+    if (link.key === "live-wall") trackAnalytics("live_wall_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "launch_kit" } });
+    if (link.key === "recap") trackAnalytics("recap_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "launch_kit" } });
+  }
+
+  return (
+    <div className="rounded-3xl bg-stone-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="font-display text-lg font-bold text-stone-950">{link.label}</p>
+          <p className="mt-1 text-sm text-stone-600">{link.purpose}</p>
+        </div>
+        <StatusPill tone={link.key === "guest" ? "amber" : link.key === "live-wall" ? "green" : "stone"}>{link.key === "guest" ? "Guests" : link.key === "live-wall" ? "During" : "After"}</StatusPill>
+      </div>
+      <input className="mt-4 w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700" readOnly value={link.url} />
+      <p className="mt-3 text-sm font-semibold text-stone-700">{link.instruction}</p>
+      {status && <p className="mt-2 text-sm font-semibold text-amber-700">{status}</p>}
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        {link.key === "guest" ? (
+          <Button type="button" className="min-h-10 px-4 py-2" onClick={copyLink}>Copy link</Button>
+        ) : (
+          <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" href={link.url} target="_blank" rel="noreferrer" onClick={openLink}>Open</a>
+        )}
+        <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={copyLink}>Copy</SecondaryButton>
+      </div>
+    </div>
+  );
+}
+
+function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: EventSummary; qrCodeDataUrl?: string; compact?: boolean }) {
+  const kit: HostLaunchKit = buildHostLaunchKit(event);
+  const [copyStatus, setCopyStatus] = useState("");
+
+  useEffect(() => {
+    trackAnalytics("host_launch_kit_opened", { eventId: event.id, eventSlug: event.slug });
+  }, [event.id, event.slug]);
+
+  async function copyLaunchText(label: string, value: string) {
+    try {
+      await copyText(value);
+      setCopyStatus(`${label} copied`);
+    } catch (err) {
+      setCopyStatus((err as Error).message);
+    }
+  }
+
+  return (
+    <Card className={cx("lg:p-8", compact && "shadow-none")}>
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <StatusPill>Host launch kit</StatusPill>
+          <h2 className="mt-4 font-display text-3xl font-bold text-stone-950">Everything to run {kit.eventName}</h2>
+          <p className="mt-2 max-w-2xl text-stone-600">Guest upload, Live Wall, and Recap links each have a different job. Keep them separate and hosting stays simple.</p>
+        </div>
+        <StatusPill tone="stone">{kit.modeLabel}</StatusPill>
+      </div>
+
+      <div className="mt-6 grid gap-3 sm:grid-cols-5">
+        {kit.checklist.map((item, index) => (
+          <div className={cx("rounded-2xl p-3 text-sm font-bold", item.complete ? "bg-emerald-50 text-emerald-800" : "bg-stone-50 text-stone-700")} key={item.key}>
+            <span className="block text-xs uppercase tracking-wide opacity-70">Step {index + 1}</span>
+            {item.label}
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {kit.links.map((link) => <LaunchKitLinkCard key={link.key} link={link} event={event} />)}
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <LaunchKitCopyBlock title="Guest invite text" value={kit.inviteText} onCopy={() => copyLaunchText("Guest invite", kit.inviteText)} />
+        <LaunchKitCopyBlock title="Host instructions" value={kit.hostInstructions} onCopy={() => copyLaunchText("Host instructions", kit.hostInstructions)} />
+        <LaunchKitCopyBlock title="Instagram or group chat caption" value={kit.socialCaption} onCopy={() => copyLaunchText("Caption", kit.socialCaption)} />
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-[220px_1fr]">
+        {qrCodeDataUrl && (
+          <div className="rounded-3xl bg-stone-50 p-4">
+            <img className="mx-auto h-48 w-48 rounded-2xl bg-white" src={qrCodeDataUrl} alt="Event QR code" />
+            <SecondaryButton type="button" className="mt-4 w-full" onClick={() => downloadDataUrl(qrCodeDataUrl, `${event.name}-qr.png`)}>Download QR</SecondaryButton>
+          </div>
+        )}
+        <div className="rounded-3xl bg-amber-50 p-5">
+          <p className="text-sm font-bold uppercase tracking-wide text-amber-900">Mode instructions</p>
+          <p className="mt-2 font-display text-xl font-bold text-[#653e00]">{kit.modeLabel}</p>
+          <p className="mt-2 text-sm font-semibold text-amber-950">{kit.modeInstructions}</p>
+          {copyStatus && <p className="mt-3 text-sm font-bold text-amber-800">{copyStatus}</p>}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function Landing() {
+  useEffect(() => {
+    trackAnalytics("landing_page_viewed");
+  }, []);
+
+  function trackCta(label: string) {
+    trackAnalytics("cta_clicked", { metadata: { label, surface: "landing" } });
+  }
+
   return (
     <Shell wide>
-      <section className="grid items-center gap-8 py-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16 lg:py-20">
+      <section className="grid items-center gap-8 py-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16 lg:py-16">
         <div className="text-center lg:text-left">
           <h1 className="font-display text-4xl font-bold leading-[1.05] tracking-tight text-stone-950 sm:text-6xl">
             Stop chasing <span className="text-[#653e00]">event photos.</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg lg:mx-0">
-            Create one event link, share the QR code, and let guests upload photos from any phone. After the event, you get one clean private album.
+            Create an event, share one QR code, collect guest uploads, run photo challenges, show a Live Wall, and share a recap after.
           </p>
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
-            <Link className="inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-[0_16px_36px_rgba(101,62,0,0.18)] transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup">
-              Create a free beta event
+            <Link className="inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-[0_16px_36px_rgba(101,62,0,0.18)] transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup" onClick={() => trackCta("Create your first event")}>
+              Create your first event
               <Icon>arrow_forward</Icon>
             </Link>
-            <a className="inline-flex min-h-13 items-center justify-center rounded-2xl border border-[#d5c4b2] bg-white px-7 py-4 text-sm font-bold text-[#653e00] transition hover:-translate-y-0.5 hover:border-[#653e00] hover:bg-amber-50" href="#demo">
-              Try the demo first
+            <a className="inline-flex min-h-13 items-center justify-center rounded-2xl border border-[#d5c4b2] bg-white px-7 py-4 text-sm font-bold text-[#653e00] transition hover:-translate-y-0.5 hover:border-[#653e00] hover:bg-amber-50" href="#demo" onClick={() => trackCta("View demo")}>
+              View demo
             </a>
+          </div>
+          <div className="mt-7 grid gap-3 text-sm font-semibold text-stone-600 sm:grid-cols-3">
+            <p className="rounded-2xl bg-white/70 p-3">No guest app required</p>
+            <p className="rounded-2xl bg-white/70 p-3">QR-first sharing</p>
+            <p className="rounded-2xl bg-white/70 p-3">Live Wall and recap included</p>
           </div>
         </div>
         <div className="relative mx-auto w-full max-w-[390px]">
-          <div className="absolute -left-8 bottom-8 h-32 w-32 rounded-full bg-[#ffdbd1] blur-2xl" />
           <div className="relative overflow-hidden rounded-[2rem] shadow-[0_30px_90px_rgba(245,158,11,0.14)]">
             <video className="aspect-[390/844] w-full object-cover" autoPlay muted loop playsInline poster="/demo/guest-upload-poster.webp?v=2" aria-label="Guest upload walkthrough demo">
               <source src="/demo/guest-upload-demo.webm?v=2" type="video/webm" />
@@ -756,6 +915,28 @@ function Landing() {
         </div>
       </section>
 
+      <section className="border-t border-stone-200 py-16">
+        <div className="mx-auto mb-12 max-w-2xl text-center">
+          <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">How it works</h2>
+          <p className="mt-3 text-stone-600">A host-ready flow from first setup to final album share.</p>
+        </div>
+        <div className="grid gap-4 md:grid-cols-5">
+          {[
+            ["Create an event", "Name it, set timing, and choose how guests should participate."],
+            ["Share the QR code", "Put one code where guests already are: invite, table, screen, or group chat."],
+            ["Guests upload photos", "Guests open the link in a browser and upload without making an account."],
+            ["Show the Live Wall", "Open it on a laptop, TV, projector, or iPad during the event."],
+            ["Share the recap", "Send the polished album story after the reveal time."],
+          ].map(([title, body], index) => (
+            <div className="rounded-3xl bg-white p-5 shadow-sm" key={title}>
+              <div className="grid h-12 w-12 place-items-center rounded-full bg-amber-100 font-display text-lg font-bold text-[#653e00]">{index + 1}</div>
+              <h3 className="mt-5 font-display text-lg font-bold text-stone-950">{title}</h3>
+              <p className="mt-2 text-sm leading-6 text-stone-600">{body}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <section className="border-t border-stone-200 px-0 py-16" id="demo">
         <div className="mx-auto mb-10 max-w-2xl text-center">
           <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">See it in action</h2>
@@ -764,34 +945,177 @@ function Landing() {
         <DemoUploader />
       </section>
 
-      <section className="py-16 text-center">
+      <section className="py-16">
         <div className="mx-auto mb-12 max-w-2xl">
-          <h2 className="font-display text-3xl font-bold">Effortless memory collection</h2>
-          <p className="mt-3 text-stone-600">Three simple steps to gather every angle of your special day.</p>
+          <h2 className="text-center font-display text-3xl font-bold">Event modes for the room you are hosting</h2>
+          <p className="mt-3 text-center text-stone-600">Start with a classic album or add a lightweight game that makes guests want to join in.</p>
         </div>
-        <div className="grid gap-10 md:grid-cols-3">
-        {[
-          ["Create", "Set up your event in seconds. EventFilm generates a shareable link and QR code for your celebration."],
-          ["Share", "Display the QR code at the venue. Guests scan and upload instantly with no app download required."],
-          ["Get", "Watch your private album grow, then download the full collection when the event is over."],
-        ].map(([title, body], index) => (
-          <div className="text-center" key={title}>
-            <div className={cx("mx-auto grid h-20 w-20 place-items-center rounded-full font-display text-2xl font-bold shadow-sm", index === 0 ? "bg-[#ffddb8] text-[#2a1700]" : index === 1 ? "bg-[#e5e2e1] text-stone-800" : "bg-[#ffdbd1] text-[#7b2e17]")}>{index + 1}</div>
-            <h3 className="mt-7 font-display text-2xl font-bold text-stone-950">{title}</h3>
-            <p className="mt-3 text-stone-600">{body}</p>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+          {CHALLENGE_PACKS.map((pack) => (
+            <div className="rounded-3xl border border-[#eadfce] bg-white p-5 shadow-sm" key={pack.slug}>
+              <StatusPill>{pack.badge}</StatusPill>
+              <h3 className="mt-4 font-display text-xl font-bold text-stone-950">{pack.name}</h3>
+              <p className="mt-2 text-sm leading-6 text-stone-600">{pack.shortDescription}</p>
+              <p className="mt-4 text-xs font-bold uppercase tracking-wide text-stone-500">{pack.bestFor}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-6 py-16 lg:grid-cols-2">
+        <div className="rounded-[2rem] bg-stone-950 p-6 text-white sm:p-8">
+          <LiveDemoPill />
+          <h2 className="mt-5 font-display text-4xl font-bold">Live Wall for the room.</h2>
+          <p className="mt-3 text-stone-200">Open EventFilm on a TV, projector, laptop, or iPad so guests can scan the code and watch the newest moments appear.</p>
+          <div className="mt-6 grid grid-cols-2 gap-3">
+            {DEFAULT_DEMO_PHOTOS.map((photo) => (
+              <img className="aspect-square rounded-3xl object-cover" src={photo.dataUrl} alt={`Live Wall preview ${photo.name}`} key={photo.id} />
+            ))}
           </div>
-        ))}
+        </div>
+        <div className="rounded-[2rem] border border-[#eadfce] bg-white p-6 shadow-sm sm:p-8">
+          <StatusPill tone="stone">Post-event recap</StatusPill>
+          <h2 className="mt-5 font-display text-4xl font-bold text-stone-950">A shareable story after the event.</h2>
+          <p className="mt-3 text-stone-600">When the reveal time arrives, hosts can send one recap link with highlights, contributors, challenge progress, and the full album.</p>
+          <div className="mt-6 grid gap-3 rounded-3xl bg-stone-50 p-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-3xl bg-white p-5">
+                <p className="text-sm font-bold uppercase tracking-wide text-[#653e00]">Photos</p>
+                <p className="mt-2 font-display text-4xl font-bold">42</p>
+              </div>
+              <div className="rounded-3xl bg-white p-5">
+                <p className="text-sm font-bold uppercase tracking-wide text-[#653e00]">Contributors</p>
+                <p className="mt-2 font-display text-4xl font-bold">18</p>
+              </div>
+            </div>
+            <p className="rounded-2xl bg-amber-100 p-4 text-sm font-bold text-amber-950">Share this after the event so everyone can view the final album and highlights.</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16">
+        <div className="mx-auto mb-10 max-w-2xl text-center">
+          <h2 className="font-display text-3xl font-bold">Made for social events</h2>
+          <p className="mt-3 text-stone-600">EventFilm fits the moments where photos are everywhere, but the host never gets them all.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {["Birthdays", "Weddings", "Greek life", "Student orgs", "Camps", "Retreats", "Graduation parties", "Friend trips"].map((useCase) => (
+            <p className="rounded-2xl bg-white p-4 text-center font-bold text-stone-800 shadow-sm" key={useCase}>{useCase}</p>
+          ))}
+        </div>
+      </section>
+
+      <section className="grid gap-6 rounded-[2rem] bg-[#fff1ec] p-6 sm:p-8 lg:grid-cols-[0.8fr_1.2fr]">
+        <div>
+          <StatusPill>Beta credibility</StatusPill>
+          <h2 className="mt-4 font-display text-3xl font-bold text-stone-950">Built for real event hosts.</h2>
+          <p className="mt-3 text-stone-700">This beta section is ready for future event stats, testimonials, and real examples once Fernando has permission to share them.</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {["Future stat", "Future testimonial", "Future event example"].map((label) => (
+            <div className="rounded-3xl bg-white/80 p-5" key={label}>
+              <p className="text-sm font-bold uppercase tracking-wide text-stone-500">{label}</p>
+              <p className="mt-3 text-sm text-stone-600">Placeholder reserved for verified beta proof. No fake quote here.</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="py-16">
+        <div className="mx-auto mb-8 max-w-2xl text-center">
+          <h2 className="font-display text-3xl font-bold">FAQ</h2>
+        </div>
+        <div className="mx-auto grid max-w-4xl gap-4">
+          {[
+            ["Do guests need an account?", "No. Guests can upload from the event link in a browser without creating an account."],
+            ["Can I show photos during the event?", "Yes. Use the Live Wall link on a laptop, TV, projector, or iPad."],
+            ["What happens after the event?", "Share the Recap link so everyone can view the final album and highlights."],
+            ["Is this a legal privacy policy?", "No. The trust pages use simple beta copy and placeholders Fernando should finalize before a broad public launch."],
+          ].map(([question, answer]) => (
+            <div className="rounded-3xl bg-white p-5 shadow-sm" key={question}>
+              <h3 className="font-display text-lg font-bold text-stone-950">{question}</h3>
+              <p className="mt-2 text-stone-600">{answer}</p>
+            </div>
+          ))}
         </div>
       </section>
 
       <section className="grid items-center gap-8 rounded-t-[3rem] bg-stone-200 p-8 text-center sm:p-12 lg:grid-cols-[1fr_0.8fr] lg:text-left">
         <div>
           <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">Ready to collect the moments that matter?</h2>
-          <p className="mt-4 max-w-2xl text-stone-600">Stop relying on messy group chats and compressed social media posts. Give your memories a beautiful home.</p>
+          <p className="mt-4 max-w-2xl text-stone-600">Create one event, share one QR code, and stop asking everyone to text you photos afterward.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-          <Link className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup">Create a free beta event</Link>
-          <p className="rounded-2xl bg-white/60 p-4 text-sm text-stone-600">Disposable camera mode is still available as an optional reveal-style setting for events that want the surprise.</p>
+          <Link className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup" onClick={() => trackCta("Create your first event bottom")}>Create your first event</Link>
+          <p className="rounded-2xl bg-white/60 p-4 text-sm text-stone-600">Guests can upload without an account. Hosts get the QR, Live Wall, and Recap from one event hub.</p>
+        </div>
+      </section>
+
+      <footer className="grid gap-4 border-t border-stone-200 py-8 text-sm text-stone-600 sm:grid-cols-[1fr_auto]">
+        <p className="font-bold text-[#653e00]">EventFilm</p>
+        <nav className="flex flex-wrap gap-4">
+          <Link to="/privacy" className="font-semibold hover:text-stone-950">Privacy</Link>
+          <Link to="/terms" className="font-semibold hover:text-stone-950">Terms</Link>
+          <Link to="/support" className="font-semibold hover:text-stone-950">Contact</Link>
+          <Link to="/login" className="font-semibold hover:text-stone-950">Host login</Link>
+          <Link to="/signup" className="font-semibold hover:text-stone-950">Create event</Link>
+        </nav>
+      </footer>
+    </Shell>
+  );
+}
+
+function TrustPage({ kind }: { kind: "privacy" | "terms" | "support" }) {
+  const content = {
+    privacy: {
+      title: "Privacy",
+      intro: "Simple beta privacy notes for EventFilm hosts and guests. Fernando should replace this with final legal copy before broad public launch.",
+      sections: [
+        ["Guests can upload without an account", "Guests use the event link to add photos. They do not need to create an EventFilm account to participate."],
+        ["What EventFilm stores", "EventFilm stores event details, guest nicknames, uploaded photo files, and basic usage analytics needed to operate and improve the product."],
+        ["Photo safety", "Hosts should only share event links with invited guests. Hosts can delete photos from their event dashboard. Do not upload private, harmful, or illegal content."],
+        ["Analytics", "EventFilm uses privacy-conscious internal analytics. It does not store photo content, filenames, guest names, or private captions in analytics events."],
+      ],
+    },
+    terms: {
+      title: "Terms",
+      intro: "Plain-language beta terms. This is not legal advice and should be reviewed before a larger public launch.",
+      sections: [
+        ["Use EventFilm responsibly", "Hosts are responsible for how they share event links and for moderating photos in their event albums."],
+        ["Guest uploads", "Guests should only upload photos they have the right to share with the event host and other invited guests."],
+        ["Beta product", "EventFilm is under active development. Features, limits, and availability may change as the product improves."],
+        ["No payments yet", "EventFilm does not add payments in this beta flow."],
+      ],
+    },
+    support: {
+      title: "Contact and Support",
+      intro: "Need help with an event, upload link, Live Wall, or Recap? Use the placeholder contact details below until Fernando adds final support channels.",
+      sections: [
+        ["Contact", "Placeholder: Fernando should add a final support email, phone number, or contact form link here."],
+        ["Running an event", "Create your event, choose a mode, copy the guest link or QR code, open the Live Wall during the event, and share the Recap afterward."],
+        ["Guests do not need an account", "If a guest is confused, send them the guest upload link directly. It opens in the browser."],
+        ["Photo safety", "If a photo should not be in an album, the host can remove it from the event dashboard."],
+      ],
+    },
+  }[kind];
+
+  return (
+    <Shell>
+      <section className="mx-auto max-w-3xl">
+        <StatusPill>Beta trust page</StatusPill>
+        <h1 className="mt-4 font-display text-4xl font-bold text-stone-950">{content.title}</h1>
+        <p className="mt-3 text-lg leading-8 text-stone-600">{content.intro}</p>
+        <div className="mt-8 grid gap-4">
+          {content.sections.map(([title, body]) => (
+            <Card key={title}>
+              <h2 className="font-display text-xl font-bold text-[#653e00]">{title}</h2>
+              <p className="mt-2 leading-7 text-stone-600">{body}</p>
+            </Card>
+          ))}
+        </div>
+        <div className="mt-8 flex flex-wrap gap-3">
+          <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950" to="/signup">Create your first event</Link>
+          <Link className="inline-flex min-h-12 items-center justify-center rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900" to="/">Back to home</Link>
         </div>
       </section>
     </Shell>
@@ -893,13 +1217,19 @@ function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: s
 function Dashboard() {
   const auth = useAuth();
   const [events, setEvents] = useState<EventSummary[]>([]);
+  const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
   const [error, setError] = useState("");
   const previewLoadIds = useRef(new Set<string>());
 
   useEffect(() => {
+    trackAnalytics("host_dashboard_opened");
     api<{ events: EventSummary[] }>("/api/host/events", { token: auth.token })
       .then((data) => setEvents(data.events))
       .catch((err) => setError((err as Error).message));
+    eventFilmApi
+      .getAnalyticsSummary(auth.token)
+      .then((data) => setAnalyticsSummary(data.summary))
+      .catch(() => {});
   }, [auth.token]);
 
   useEffect(() => {
@@ -953,6 +1283,29 @@ function Dashboard() {
           <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{totalPhotos}</p>
         </Card>
       </div>
+      {analyticsSummary && (
+        <section className="mt-8">
+          <div className="mb-4">
+            <h2 className="font-display text-2xl font-bold">Launch signals</h2>
+            <p className="text-sm text-stone-600">Privacy-conscious usage signals from your events and recent product activity.</p>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Guest joins", analyticsSummary.guestJoins],
+              ["Uploads", analyticsSummary.uploads],
+              ["Live Wall opens", analyticsSummary.liveWallOpens],
+              ["Recap opens", analyticsSummary.recapOpens],
+              ["Active hosts", analyticsSummary.activeHosts],
+              ["Active guests", analyticsSummary.activeGuests],
+            ].map(([label, value]) => (
+              <Card key={label}>
+                <p className="text-sm font-bold uppercase tracking-wide text-stone-500">{label}</p>
+                <p className="mt-3 font-display text-3xl font-bold text-[#653e00]">{value}</p>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
       <section className="mt-8">
         <div className="mb-4">
           <h2 className="font-display text-2xl font-bold">Your events</h2>
@@ -1004,7 +1357,6 @@ function CreateEvent() {
   const [created, setCreated] = useState<EventSummary | null>(null);
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = useState("");
-  const [copyStatus, setCopyStatus] = useState("");
 
   function update(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -1026,6 +1378,11 @@ function CreateEvent() {
           challenge,
         }),
       });
+      trackAnalytics("event_created", {
+        eventId: data.event.id,
+        eventSlug: data.event.slug,
+        metadata: { mode: challengeDraft.type, hasChallenge: challengeDraft.type !== "NONE" },
+      });
       setCreated(data.event);
     } catch (err) {
       setError((err as Error).message);
@@ -1035,34 +1392,12 @@ function CreateEvent() {
   if (created) {
     return (
       <Shell>
-        <Card className="mx-auto max-w-2xl">
-          <StatusPill tone="green">Event ready</StatusPill>
-          <h1 className="mt-4 font-display text-3xl font-bold">Share your EventFilm link</h1>
-          <p className="mt-2 text-stone-600">Guests can scan the QR code or open the link to upload photos without an account.</p>
-          <input className="mt-5 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700" readOnly value={created.eventLink} />
-          {copyStatus && <p className="mt-2 text-sm font-semibold text-amber-700">{copyStatus}</p>}
-          <div className="mt-5 grid gap-6 sm:grid-cols-[220px_1fr] sm:items-center">
-            <div className="rounded-3xl bg-stone-50 p-4">
-              <img className="mx-auto h-48 w-48 rounded-2xl bg-white" src={created.qrCodeDataUrl} alt="Event QR code" />
-            </div>
-            <div className="grid gap-3">
-              <Button
-                onClick={async () => {
-                  try {
-                    await copyText(created.eventLink);
-                    setCopyStatus("Link copied");
-                  } catch (err) {
-                    setCopyStatus((err as Error).message);
-                  }
-                }}
-              >
-                Copy link
-              </Button>
-              <SecondaryButton onClick={() => downloadDataUrl(created.qrCodeDataUrl || "", `${created.name}-qr.png`)}>Download QR</SecondaryButton>
-              <SecondaryButton onClick={() => navigate(`/dashboard/events/${created.id}`)}>Manage event</SecondaryButton>
-            </div>
+        <div className="mx-auto max-w-5xl">
+          <HostLaunchKitPanel event={created} qrCodeDataUrl={created.qrCodeDataUrl} />
+          <div className="mt-5 flex justify-center">
+            <SecondaryButton onClick={() => navigate(`/dashboard/events/${created.id}`)}>Manage event</SecondaryButton>
           </div>
-        </Card>
+        </div>
       </Shell>
     );
   }
@@ -1119,7 +1454,6 @@ function ManageEvent() {
   const [galleryFilter, setGalleryFilter] = useState("all");
   const [error, setError] = useState("");
   const [challengeStatus, setChallengeStatus] = useState("");
-  const [copyStatus, setCopyStatus] = useState("");
 
   async function load() {
     const data = await api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${eventId}`, { token: auth.token });
@@ -1194,9 +1528,6 @@ function ManageEvent() {
     if (galleryFilter.startsWith("award:")) return photo.challengeItemId === galleryFilter.replace("award:", "");
     return true;
   }) || [];
-  const liveWallLink = event?.liveWallLink || (event ? `${window.location.origin}/wall/${event.slug}` : "");
-  const recapLink = event?.recapLink || (event ? `${window.location.origin}/recap/${event.slug}` : "");
-
   return (
     <Shell wide>
       {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -1215,80 +1546,11 @@ function ManageEvent() {
             <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
           </section>
 
-          <section className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-            <Card className="lg:p-8">
-              <div className="flex items-center gap-3">
-                <div className="grid h-12 w-12 place-items-center rounded-full bg-amber-100 text-[#653e00]"><Icon>qr_code_2</Icon></div>
-                <div>
-                  <h2 className="font-display text-2xl font-bold">Share and invite</h2>
-                  <p className="text-sm text-stone-600">Invite guests to upload photos by sharing this link or displaying the QR code.</p>
-                </div>
-              </div>
-              <input className="mt-5 w-full rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-700" readOnly value={event.eventLink} />
-              {copyStatus && <p className="mt-2 text-sm font-semibold text-amber-700">{copyStatus}</p>}
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
-                <Button
-                  onClick={async () => {
-                    try {
-                      await copyText(event.eventLink);
-                      setCopyStatus("Event link copied");
-                    } catch (err) {
-                      setCopyStatus((err as Error).message);
-                    }
-                  }}
-                >
-                  Copy link
-                </Button>
-                <SecondaryButton onClick={() => downloadDataUrl(event.qrCodeDataUrl || "", `${event.name}-qr.png`)}>Download QR</SecondaryButton>
-                <SecondaryButton onClick={downloadZip}>Download ZIP</SecondaryButton>
-              </div>
-              <div className="mt-5 grid gap-3 rounded-3xl bg-stone-50 p-4 lg:grid-cols-2">
-                <div>
-                  <p className="text-sm font-bold text-stone-950">Live Wall</p>
-                  <p className="mt-1 text-sm text-stone-600">Open this on a laptop, TV, projector, or iPad while guests are uploading.</p>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" href={liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a>
-                    <SecondaryButton
-                      className="min-h-10 px-4 py-2"
-                      onClick={async () => {
-                        try {
-                          await copyText(liveWallLink);
-                          setCopyStatus("Live Wall link copied");
-                        } catch (err) {
-                          setCopyStatus((err as Error).message);
-                        }
-                      }}
-                    >
-                      Copy wall link
-                    </SecondaryButton>
-                  </div>
-                </div>
-                <div>
-                  <p className="text-sm font-bold text-stone-950">Recap</p>
-                  <p className="mt-1 text-sm text-stone-600">Share the polished event story after the reveal time.</p>
-                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                    <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" href={recapLink} target="_blank" rel="noreferrer">Open Recap</a>
-                    <SecondaryButton
-                      className="min-h-10 px-4 py-2"
-                      onClick={async () => {
-                        try {
-                          await copyText(recapLink);
-                          setCopyStatus("Recap link copied");
-                        } catch (err) {
-                          setCopyStatus((err as Error).message);
-                        }
-                      }}
-                    >
-                      Copy recap link
-                    </SecondaryButton>
-                  </div>
-                </div>
-              </div>
-            </Card>
-            <Card className="grid place-items-center">
-              <img className="h-56 w-56 rounded-3xl bg-white p-2" src={event.qrCodeDataUrl} alt="Event QR code" />
-              <p className="mt-3 text-sm font-bold uppercase tracking-wide text-stone-500">Scan to upload photos</p>
-            </Card>
+          <section className="mt-8">
+            <HostLaunchKitPanel event={event} qrCodeDataUrl={event.qrCodeDataUrl} />
+            <div className="mt-4 flex justify-end">
+              <SecondaryButton onClick={downloadZip}>Download ZIP</SecondaryButton>
+            </div>
           </section>
 
           <section className="mt-8">
@@ -1444,6 +1706,7 @@ function LiveWall() {
   }
 
   useEffect(() => {
+    trackAnalytics("live_wall_opened", { eventSlug: slug, path: `/wall/${slug}` });
     let isMounted = true;
     async function loadIfMounted() {
       try {
@@ -1538,6 +1801,7 @@ function EventRecap() {
   const [copyStatus, setCopyStatus] = useState("");
 
   useEffect(() => {
+    trackAnalytics("recap_opened", { eventSlug: slug, path: `/recap/${slug}` });
     api<EventRecapResponse>(`/api/events/${slug}/recap`)
       .then((nextData) => {
         setData(nextData);
@@ -1649,6 +1913,7 @@ function GuestEvent() {
   const participantSelectRef = useRef<HTMLSelectElement | null>(null);
   const promptSelectRef = useRef<HTMLSelectElement | null>(null);
   const itemSelectRef = useRef<HTMLSelectElement | null>(null);
+  const joinedTrackedRef = useRef(false);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -1661,6 +1926,14 @@ function GuestEvent() {
   async function load() {
     const eventData = await api<{ event: PublicEvent }>(`/api/events/${slug}`);
     setEvent(eventData.event);
+    if (!joinedTrackedRef.current) {
+      joinedTrackedRef.current = true;
+      trackAnalytics("guest_joined_event", {
+        eventId: eventData.event.id,
+        eventSlug: eventData.event.slug,
+        metadata: { mode: eventData.event.challenge?.type || "NONE", hasChallenge: Boolean(eventData.event.challenge) },
+      });
+    }
     const status = await api<{ remainingUploads: number; nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
     setRemaining(status.remainingUploads);
     if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && status.nickname && !nickname) setNickname(status.nickname);
@@ -1726,6 +1999,7 @@ function GuestEvent() {
     setSelectedParticipantId(participantId);
     if (participantId) localStorage.setItem(getChallengeParticipantSession(slug), participantId);
     else localStorage.removeItem(getChallengeParticipantSession(slug));
+    if (participantId) trackAnalytics("challenge_item_selected", { eventId: event?.id, eventSlug: event?.slug, metadata: { itemKind: "color" } });
   }
 
   function switchParticipant() {
@@ -1739,6 +2013,7 @@ function GuestEvent() {
     setMessage("");
     if (promptId) localStorage.setItem(getChallengePromptSession(slug), promptId);
     else localStorage.removeItem(getChallengePromptSession(slug));
+    if (promptId) trackAnalytics("challenge_item_selected", { eventId: event?.id, eventSlug: event?.slug, metadata: { itemKind: "prompt" } });
   }
 
   function saveSelectedItem(itemId: string) {
@@ -1746,6 +2021,7 @@ function GuestEvent() {
     setMessage("");
     if (itemId) localStorage.setItem(getChallengeItemSession(slug), itemId);
     else localStorage.removeItem(getChallengeItemSession(slug));
+    if (itemId) trackAnalytics("challenge_item_selected", { eventId: event?.id, eventSlug: event?.slug, metadata: { itemKind: "award" } });
   }
 
   async function uploadPhoto(uploadEvent: React.FormEvent) {
@@ -1770,8 +2046,10 @@ function GuestEvent() {
     if (selectedAward?.id) formData.append("challengeItemId", selectedAward.id);
 
     setLoading(true);
+    trackAnalytics("photo_upload_started", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
     try {
       const data = await api<{ remainingUploads: number }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
+      trackAnalytics("photo_upload_succeeded", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
       setFile(null);
       setRemaining(data.remainingUploads);
       if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
@@ -1784,6 +2062,7 @@ function GuestEvent() {
       }
       await load();
     } catch (err) {
+      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: "error" } });
       setError((err as Error).message);
     } finally {
       setLoading(false);
@@ -2005,6 +2284,9 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Landing />} />
+          <Route path="/privacy" element={<TrustPage kind="privacy" />} />
+          <Route path="/terms" element={<TrustPage kind="terms" />} />
+          <Route path="/support" element={<TrustPage kind="support" />} />
           <Route path="/signup" element={<AuthForm mode="signup" />} />
           <Route path="/login" element={<AuthForm mode="login" />} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />

@@ -10,6 +10,7 @@ function normalizeBaseUrl(value) {
 module.exports = {
   port: Number(process.env.PORT || 4000),
   jwtSecret: process.env.JWT_SECRET || "dev-change-me",
+  analyticsSalt: process.env.ANALYTICS_SALT || process.env.JWT_SECRET || "dev-change-me",
   clientUrl: normalizeBaseUrl(process.env.CLIENT_URL || "http://localhost:5173"),
   serverUrl: normalizeBaseUrl(process.env.SERVER_URL || "http://localhost:4000"),
   maxFileSizeMb,

@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
+  ANALYTICS_EVENT_NAMES,
+  buildHostLaunchKit,
   buildChallengeProgressSummary,
   buildChallengePayload,
   buildEventRecapMetadata,
@@ -67,6 +69,12 @@ test("upload metadata requirements are registry-driven", () => {
   assert.equal(getChallengePack(CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT).uploadRequirement, "prompt");
   assert.equal(getChallengePack(CHALLENGE_TYPES.EVENT_AWARDS).uploadRequirement, "award");
   assert.equal(getChallengePack(CHALLENGE_TYPES.MEMORY_CAPSULE).uploadRequirement, "none");
+});
+
+test("analytics event registry is stable and unique", () => {
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("landing_page_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("host_launch_kit_opened"), true);
+  assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
 });
 
 function photo(input: Partial<Photo>): Photo {
@@ -183,4 +191,25 @@ test("recap metadata counts contributors and highlights recent photos", () => {
   assert.equal(metadata.totalPhotos, 3);
   assert.equal(metadata.contributorCount, 2);
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["new", "same", "old"]);
+});
+
+test("host launch kit separates guest, live wall, and recap jobs", () => {
+  const kit = buildHostLaunchKit({
+    id: "event",
+    name: "Spring Formal",
+    slug: "spring-formal",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/spring-formal",
+    liveWallLink: "https://example.com/wall/spring-formal",
+    recapLink: "https://example.com/recap/spring-formal",
+    photoCount: 0,
+    challenge: null,
+  });
+
+  assert.deepEqual(kit.links.map((link) => link.key), ["guest", "live-wall", "recap"]);
+  assert.match(kit.inviteText, /No app download needed/);
+  assert.match(kit.links[1].instruction, /laptop, TV, projector, or iPad/);
+  assert.equal(kit.checklist.length, 5);
 });

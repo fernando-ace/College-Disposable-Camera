@@ -123,3 +123,21 @@ model Photo {
   @@index([challengePromptId])
   @@index([challengeItemId])
 }
+
+model AnalyticsEvent {
+  id              String   @id @default(cuid())
+  name            String
+  source          String
+  path            String?
+  userId          String?
+  eventId         String?
+  eventSlug       String?
+  anonymousIdHash String?
+  metadata        Json
+  createdAt       DateTime @default(now())
+
+  @@index([name])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([eventId])
+}

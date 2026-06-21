@@ -355,6 +355,14 @@ export default function CreateEventScreen() {
         photoLimitPerGuest: photoLimit,
         challenge: buildChallengePayload(challengeDraft),
       });
+      api.trackAnalyticsEvent({
+        name: "event_created",
+        source: "mobile",
+        path: "/create-event",
+        eventId: data.event.id,
+        eventSlug: data.event.slug,
+        metadata: { mode: challengeDraft.type, hasChallenge: challengeDraft.type !== "NONE" },
+      }).catch(() => {});
       router.replace(`/events/${data.event.id}`);
     } catch (err) {
       setError((err as Error).message);

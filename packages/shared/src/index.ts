@@ -131,6 +131,61 @@ export type EventRecapMetadata = {
   recentPhotos: Photo[];
 };
 
+export type HostLaunchKitLink = {
+  key: "guest" | "live-wall" | "recap";
+  label: string;
+  url: string;
+  purpose: string;
+  instruction: string;
+};
+
+export type HostLaunchKitChecklistItem = {
+  key: "create-event" | "choose-mode" | "copy-guest-link" | "open-live-wall" | "share-recap";
+  label: string;
+  complete: boolean;
+};
+
+export type HostLaunchKit = {
+  eventName: string;
+  modeLabel: string;
+  links: HostLaunchKitLink[];
+  inviteText: string;
+  hostInstructions: string;
+  socialCaption: string;
+  modeInstructions: string;
+  checklist: HostLaunchKitChecklistItem[];
+};
+
+export const ANALYTICS_EVENT_NAMES = [
+  "landing_page_viewed",
+  "cta_clicked",
+  "host_dashboard_opened",
+  "event_created",
+  "event_mode_selected",
+  "guest_link_copied",
+  "live_wall_opened",
+  "recap_opened",
+  "guest_joined_event",
+  "photo_upload_started",
+  "photo_upload_succeeded",
+  "photo_upload_failed",
+  "challenge_item_selected",
+  "host_launch_kit_opened",
+] as const;
+
+export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
+export type AnalyticsSource = "web" | "mobile" | "api";
+
+export type AnalyticsEventInput = {
+  name: AnalyticsEventName;
+  source: AnalyticsSource;
+  path?: string;
+  eventId?: string;
+  eventSlug?: string;
+  anonymousId?: string;
+  metadata?: Record<string, string | number | boolean | null>;
+};
+
 export type EventSummary = {
   id: string;
   name: string;
@@ -332,6 +387,56 @@ export const CHALLENGE_PACKS: ChallengePackDefinition[] = [
 
 export function getChallengePack(type?: ChallengeMode | ChallengeType | null) {
   return CHALLENGE_PACKS.find((pack) => pack.mode === (type || "NONE")) || CHALLENGE_PACKS[0];
+}
+
+export function isAnalyticsEventName(value: string): value is AnalyticsEventName {
+  return (ANALYTICS_EVENT_NAMES as readonly string[]).includes(value);
+}
+
+export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge">): HostLaunchKit {
+  const pack = getChallengePack(event.challenge?.type || "NONE");
+  const guestLink = event.eventLink;
+  const liveWallLink = event.liveWallLink || "";
+  const recapLink = event.recapLink || "";
+
+  return {
+    eventName: event.name,
+    modeLabel: pack.name,
+    links: [
+      {
+        key: "guest",
+        label: "Guest upload link",
+        url: guestLink,
+        purpose: "Share this with guests so they can upload photos without an account or app download.",
+        instruction: "Upload your photos from tonight here: " + guestLink + ". No app download needed.",
+      },
+      {
+        key: "live-wall",
+        label: "Live Wall link",
+        url: liveWallLink,
+        purpose: "Open this during the event so the room can see photos appear.",
+        instruction: "Open this on a laptop, TV, projector, or iPad during the event so guests can scan the QR code and watch photos appear.",
+      },
+      {
+        key: "recap",
+        label: "Recap link",
+        url: recapLink,
+        purpose: "Share this after the reveal so everyone can view the final album and highlights.",
+        instruction: "Share this after the event so everyone can view the final album and highlights.",
+      },
+    ],
+    inviteText: "Upload your photos from tonight here: " + guestLink + ". No app download needed.",
+    hostInstructions: "Create the event, confirm the photo mode, copy the guest link or QR code, open the Live Wall during the event, then share the Recap afterward.",
+    socialCaption: "Drop your favorite photos from " + event.name + " here: " + guestLink,
+    modeInstructions: pack.guestInstructions,
+    checklist: [
+      { key: "create-event", label: "Create event", complete: true },
+      { key: "choose-mode", label: "Choose event mode", complete: true },
+      { key: "copy-guest-link", label: "Copy guest link or QR code", complete: false },
+      { key: "open-live-wall", label: "Open Live Wall", complete: false },
+      { key: "share-recap", label: "Share Recap after event", complete: false },
+    ],
+  };
 }
 
 export function createChallengeItemId(prefix: string) {

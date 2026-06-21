@@ -1,4 +1,5 @@
 import type {
+  AnalyticsEventInput,
   CreateEventInput,
   EventChallenge,
   EventChallengeInput,
@@ -63,6 +64,16 @@ export type EventRecapResponse = {
   recapLink: string;
   isLocked: boolean;
   photos: Photo[];
+};
+
+export type AnalyticsSummary = {
+  eventsCreated: number;
+  guestJoins: number;
+  uploads: number;
+  liveWallOpens: number;
+  recapOpens: number;
+  activeHosts: number;
+  activeGuests: number;
 };
 
 export type EventFilmApiClientOptions = {
@@ -158,6 +169,17 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     },
     getCurrentUser(token?: string | null) {
       return request<{ user: User }>("/api/me", { auth: !token, token });
+    },
+    trackAnalyticsEvent(input: AnalyticsEventInput, token?: string | null) {
+      return request<{ ok: boolean }>("/api/analytics/events", {
+        method: "POST",
+        auth: Boolean(!token && options.tokenProvider),
+        token,
+        body: JSON.stringify(input),
+      });
+    },
+    getAnalyticsSummary(token?: string | null) {
+      return request<{ summary: AnalyticsSummary }>("/api/host/analytics/summary", { auth: !token, token });
     },
     getHostEvents(token?: string | null) {
       return request<{ events: EventSummary[] }>("/api/host/events", { auth: !token, token });

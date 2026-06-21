@@ -2,7 +2,7 @@ import * as React from "react";
 import { Link, useLocalSearchParams } from "expo-router";
 import { Linking, View } from "react-native";
 import type { EventSummary, Photo } from "@eventfilm/shared";
-import { challengeLabel } from "@eventfilm/shared";
+import { buildHostLaunchKit, challengeLabel } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -49,6 +49,20 @@ export default function EventDetailScreen() {
     };
   }, [api, eventId]);
 
+  React.useEffect(() => {
+    if (!event) return;
+    api.trackAnalyticsEvent({
+      name: "host_launch_kit_opened",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+  }, [api, event]);
+
+  const launchKit = event ? buildHostLaunchKit(event) : null;
+
   return (
     <Screen bottomPadding={96} wide>
       {event ? (
@@ -93,6 +107,19 @@ export default function EventDetailScreen() {
               <SectionHeader title="Three links, three jobs" subtitle="Guest link is for uploads. Live Wall is for the room during the event. Recap is the polished album story to share after reveal." />
               <Body tone="muted">Open the Live Wall on a laptop, TV, projector, or iPad while guests are uploading.</Body>
             </Card>
+            {launchKit ? (
+              <Card>
+                <SectionHeader title="Host checklist" subtitle="A quick run-of-show for the first event." />
+                <View style={{ gap: 10 }}>
+                  {launchKit.checklist.map((item, index) => (
+                    <View key={item.key} style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+                      <Badge tone={item.complete ? "green" : "stone"}>{index + 1}</Badge>
+                      <Body tone={item.complete ? "success" : "muted"}>{item.label}</Body>
+                    </View>
+                  ))}
+                </View>
+              </Card>
+            ) : null}
             <Button tone="secondary" loading={loading} onPress={loadEvent}>Refresh photos</Button>
           </View>
 
