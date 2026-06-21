@@ -12,7 +12,10 @@
   "scripts": {
     "dev:web": "npm run dev -w client",
     "dev:api": "npm run dev -w server",
-    "dev:mobile": "npm run start -w @eventfilm/mobile",
+    "dev:mobile": "npm run mobile:start",
+    "mobile:start": "expo start apps/mobile",
+    "mobile:start:clear": "expo start apps/mobile --clear",
+    "expo:start": "npm run mobile:start",
     "check": "npm run check:shared && npm run check:api-client && npm run check:web && npm run check:api && npm run check:mobile",
     "check:web": "npm run build -w client",
     "build:web": "npm run build -w client",

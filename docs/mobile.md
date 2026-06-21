@@ -34,7 +34,24 @@ Start the Expo app:
 
 ```bash
 copy apps\mobile\.env.example apps\mobile\.env
-npm run dev:mobile
+npm run mobile:start
+```
+
+If Metro needs a clean cache, run:
+
+```bash
+npm run mobile:start:clear
+```
+
+Do not run raw `npx expo start` from the repo root. Expo will treat the
+monorepo root as the app and look for a root `App` file. The supported root
+command is `npm run mobile:start`.
+
+Running from the mobile app directory is still supported:
+
+```bash
+cd apps/mobile
+npx expo start
 ```
 
 `apps/mobile/.env` uses:

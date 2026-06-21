@@ -195,10 +195,14 @@ Open `http://localhost:5173`.
 8. Start the Expo mobile app in another terminal.
 
 ```bash
-cd apps/mobile
-copy .env.example .env
-npm run start
+copy apps\mobile\.env.example apps\mobile\.env
+npm run mobile:start
 ```
+
+Do not run raw `npx expo start` from the repo root. Expo will treat the
+monorepo root as the app and look for a root `App` file. Use
+`npm run mobile:start` from the repo root, `npm run mobile:start:clear` when
+you need a clean Metro cache, or run `npx expo start` after `cd apps/mobile`.
 
 See `docs/mobile.md` for Expo, EAS Build, EAS Update, and cross-platform feature workflow notes.
 
