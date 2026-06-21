@@ -14,6 +14,18 @@ enum ChallengeType {
   MEMORY_CAPSULE
 }
 
+enum PhotoVisibilityStatus {
+  VISIBLE
+  HIDDEN
+}
+
+enum PhotoReportReason {
+  INAPPROPRIATE
+  PRIVACY
+  SPAM
+  OTHER
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -38,6 +50,7 @@ model Event {
   guests Guest[]
   photos Photo[]
   challenges EventChallenge[]
+  photoReports PhotoReport[]
 
   @@index([hostId])
 }
@@ -110,18 +123,45 @@ model Photo {
   challengeItemId        String?
   challengeItemLabel     String?
   challengeItemKind      String?
+  visibilityStatus       PhotoVisibilityStatus @default(VISIBLE)
+  hiddenAt               DateTime?
+  hiddenReason           String?
+  isFeatured             Boolean               @default(false)
+  featuredAt             DateTime?
 
   event                Event                 @relation(fields: [eventId], references: [id], onDelete: Cascade)
   guest                Guest                 @relation(fields: [guestId], references: [id], onDelete: Cascade)
   challenge            EventChallenge?       @relation("PhotoChallenge", fields: [challengeId], references: [id], onDelete: SetNull)
   challengeParticipant ChallengeParticipant? @relation(fields: [challengeParticipantId], references: [id], onDelete: SetNull)
+  reports              PhotoReport[]
 
   @@index([eventId])
+  @@index([eventId, visibilityStatus])
+  @@index([eventId, isFeatured])
   @@index([guestId])
   @@index([challengeId])
   @@index([challengeParticipantId])
   @@index([challengePromptId])
   @@index([challengeItemId])
+}
+
+model PhotoReport {
+  id              String            @id @default(cuid())
+  photoId         String
+  eventId         String
+  reason          PhotoReportReason
+  note            String?
+  reporterHash    String?
+  createdAt       DateTime          @default(now())
+  reviewedAt      DateTime?
+  dismissedAt     DateTime?
+
+  photo           Photo             @relation(fields: [photoId], references: [id], onDelete: Cascade)
+  event           Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([photoId])
+  @@index([eventId])
+  @@index([eventId, createdAt])
 }
 
 model AnalyticsEvent {

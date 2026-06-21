@@ -72,9 +72,26 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "photo_upload_started",
   "photo_upload_succeeded",
   "photo_upload_failed",
+  "photo_upload_retry_clicked",
   "challenge_item_selected",
   "host_launch_kit_opened",
+  "photo_hidden",
+  "photo_restored",
+  "photo_featured",
+  "photo_unfeatured",
+  "photo_reported",
+  "album_downloaded",
+  "photo_lightbox_opened",
 ]);
+const PHOTO_VISIBILITY_VISIBLE = "VISIBLE";
+const PHOTO_VISIBILITY_HIDDEN = "HIDDEN";
+const PHOTO_REPORT_REASON_MAP = new Map([
+  ["inappropriate", "INAPPROPRIATE"],
+  ["privacy", "PRIVACY"],
+  ["spam", "SPAM"],
+  ["other", "OTHER"],
+]);
+const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const ANALYTICS_SOURCES = new Set(["web", "mobile", "api"]);
 const ANALYTICS_METADATA_KEYS = new Set([
   "label",
@@ -82,18 +99,22 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "challengeType",
   "itemKind",
   "outcome",
+  "reason",
   "route",
+  "scope",
   "surface",
   "hasChallenge",
   "photoCount",
+  "photoId",
+  "visibilityStatus",
 ]);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: maxFileSizeBytes },
   fileFilter: (_req, file, cb) => {
-    if (!file.mimetype.startsWith("image/")) {
-      return cb(new Error("Only image uploads are allowed"));
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(String(file.mimetype || "").toLowerCase())) {
+      return cb(new Error("Upload a JPG, PNG, WebP, HEIC, or HEIF image."));
     }
     cb(null, true);
   },
@@ -240,7 +261,25 @@ function publicChallengePayload(challenge) {
   };
 }
 
-function photoPayload(photo) {
+function visiblePhotoWhere(extra = {}) {
+  return { deletedAt: null, visibilityStatus: PHOTO_VISIBILITY_VISIBLE, ...extra };
+}
+
+function activePhotoWhere(extra = {}) {
+  return { deletedAt: null, ...extra };
+}
+
+function photoReportPayload(report) {
+  return {
+    id: report.id,
+    reason: String(report.reason || "").toLowerCase(),
+    note: report.note,
+    createdAt: report.createdAt,
+  };
+}
+
+function photoPayload(photo, { includeModeration = false } = {}) {
+  const reportCount = photo._count?.reports ?? photo.reportCount ?? (Array.isArray(photo.reports) ? photo.reports.length : 0);
   return {
     id: photo.id,
     url: `${serverUrl}${getPhotoUrl(photo.id)}`,
@@ -261,6 +300,13 @@ function photoPayload(photo) {
     challengeParticipantName: photo.challengeParticipant?.displayName,
     challengeColorHex: photo.challengeParticipant?.colorHex,
     challengeColorSlug: photo.challengeParticipant?.colorSlug || slugifyColor(photo.challengeColorName),
+    visibilityStatus: includeModeration ? photo.visibilityStatus || PHOTO_VISIBILITY_VISIBLE : undefined,
+    hiddenAt: includeModeration ? photo.hiddenAt : undefined,
+    hiddenReason: includeModeration ? photo.hiddenReason : undefined,
+    isFeatured: Boolean(photo.isFeatured),
+    featuredAt: photo.featuredAt,
+    reportCount: includeModeration ? reportCount : undefined,
+    reports: includeModeration && Array.isArray(photo.reports) ? photo.reports.map(photoReportPayload) : undefined,
   };
 }
 
@@ -399,7 +445,7 @@ function challengeCreateData(eventId, challengeSetup) {
   };
 }
 
-function eventPayload(event, { includePhotos = false } = {}) {
+function eventPayload(event, { includePhotos = false, includeModeration = false } = {}) {
   const challenge = event.challenges?.[0] || null;
   return {
     ...event,
@@ -408,8 +454,8 @@ function eventPayload(event, { includePhotos = false } = {}) {
     recapLink: recapUrl(event.slug),
     photoCount: event._count?.photos ?? event.photoCount ?? 0,
     challenge: challengePayload(challenge),
-    previewPhotos: event.photos && !includePhotos ? event.photos.map(photoPayload) : event.previewPhotos,
-    photos: includePhotos && event.photos ? event.photos.map(photoPayload) : undefined,
+    previewPhotos: event.photos && !includePhotos ? event.photos.map((photo) => photoPayload(photo, { includeModeration })) : event.previewPhotos,
+    photos: includePhotos && event.photos ? event.photos.map((photo) => photoPayload(photo, { includeModeration })) : undefined,
     challenges: undefined,
     _count: undefined,
   };
@@ -462,6 +508,24 @@ async function countAnalytics(name, where = {}) {
   return prisma.analyticsEvent.count({ where: { name, ...where } });
 }
 
+function trackApiAnalytics(name, input = {}) {
+  if (!ANALYTICS_EVENT_NAMES.has(name)) return;
+  prisma.analyticsEvent.create({
+    data: {
+      name,
+      source: "api",
+      path: input.path || null,
+      userId: input.userId || null,
+      eventId: input.eventId || null,
+      eventSlug: input.eventSlug || null,
+      anonymousIdHash: hashAnonymousId(input.anonymousId),
+      metadata: sanitizeAnalyticsMetadata(input.metadata),
+    },
+  }).catch((error) => {
+    console.warn(`Analytics write skipped for ${name}: ${error.message}`);
+  });
+}
+
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 app.post("/api/analytics/events", analyticsLimiter, async (req, res) => {
@@ -483,7 +547,8 @@ app.post("/api/analytics/events", analyticsLimiter, async (req, res) => {
       },
     });
     res.status(201).json({ ok: true });
-  } catch {
+  } catch (error) {
+    console.warn(`Analytics write failed: ${error.message}`);
     res.status(202).json({ ok: false });
   }
 });
@@ -575,13 +640,13 @@ app.get("/api/host/events", requireAuth, async (req, res) => {
     orderBy: { createdAt: "desc" },
     include: {
       photos: {
-        where: { deletedAt: null },
+        where: visiblePhotoWhere(),
         orderBy: { createdAt: "desc" },
         take: 6,
         include: { guest: true, challengeParticipant: true },
       },
       challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: { deletedAt: null } } } },
+      _count: { select: { photos: { where: visiblePhotoWhere() } } },
     },
   });
   res.json({
@@ -636,12 +701,12 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
     where: { id: req.params.eventId, hostId: req.user.userId },
     include: {
       photos: {
-        where: { deletedAt: null },
-        orderBy: { createdAt: "desc" },
-        include: { guest: true, challengeParticipant: true },
+        where: activePhotoWhere(),
+        orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+        include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
       },
       challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: { deletedAt: null } } } },
+      _count: { select: { photos: { where: visiblePhotoWhere() } } },
     },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
@@ -650,7 +715,7 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
   const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 320 });
   res.json({
     event: {
-      ...eventPayload(event, { includePhotos: true }),
+      ...eventPayload(event, { includePhotos: true, includeModeration: true }),
       qrCodeDataUrl,
     },
   });
@@ -749,6 +814,100 @@ app.put("/api/host/events/:eventId/challenge", requireAuth, async (req, res) => 
   res.json({ challenge: challengePayload(challenge) });
 });
 
+app.get("/api/host/events/:eventId/photos", requireAuth, async (req, res) => {
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.eventId, hostId: req.user.userId },
+    select: { id: true },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const where = activePhotoWhere({ eventId: event.id });
+  if ([PHOTO_VISIBILITY_VISIBLE, PHOTO_VISIBILITY_HIDDEN].includes(req.query.visibility)) {
+    where.visibilityStatus = req.query.visibility;
+  }
+  if (req.query.featured === "true") where.isFeatured = true;
+  if (req.query.featured === "false") where.isFeatured = false;
+  if (typeof req.query.challengeItemId === "string" && req.query.challengeItemId.trim()) {
+    where.OR = [
+      { challengeItemId: req.query.challengeItemId },
+      { challengePromptId: req.query.challengeItemId },
+      { challengeParticipantId: req.query.challengeItemId },
+    ];
+  }
+  if (req.query.reported === "true") {
+    where.reports = { some: {} };
+  }
+
+  const photos = await prisma.photo.findMany({
+    where,
+    orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+    include: {
+      guest: true,
+      challengeParticipant: true,
+      reports: { orderBy: { createdAt: "desc" } },
+      _count: { select: { reports: true } },
+    },
+  });
+
+  res.json({ photos: photos.map((photo) => photoPayload(photo, { includeModeration: true })) });
+});
+
+app.patch("/api/host/events/:eventId/photos/:photoId/visibility", requireAuth, async (req, res) => {
+  const nextStatus = req.body?.visibilityStatus;
+  if (![PHOTO_VISIBILITY_VISIBLE, PHOTO_VISIBILITY_HIDDEN].includes(nextStatus)) {
+    return res.status(400).json({ error: "Unsupported photo visibility" });
+  }
+
+  const photo = await prisma.photo.findFirst({
+    where: { id: req.params.photoId, eventId: req.params.eventId, event: { hostId: req.user.userId }, deletedAt: null },
+    include: { event: { select: { slug: true } } },
+  });
+  if (!photo) return res.status(404).json({ error: "Photo not found" });
+
+  const updated = await prisma.photo.update({
+    where: { id: photo.id },
+    data: {
+      visibilityStatus: nextStatus,
+      hiddenAt: nextStatus === PHOTO_VISIBILITY_HIDDEN ? new Date() : null,
+      hiddenReason: nextStatus === PHOTO_VISIBILITY_HIDDEN ? String(req.body?.hiddenReason || "").slice(0, 160) || "Hidden by host" : null,
+    },
+    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
+  });
+
+  trackApiAnalytics(nextStatus === PHOTO_VISIBILITY_HIDDEN ? "photo_hidden" : "photo_restored", {
+    userId: req.user.userId,
+    eventId: req.params.eventId,
+    eventSlug: photo.event.slug,
+    metadata: { photoId: photo.id, visibilityStatus: nextStatus },
+  });
+
+  res.json({ photo: photoPayload(updated, { includeModeration: true }) });
+});
+
+app.patch("/api/host/events/:eventId/photos/:photoId/featured", requireAuth, async (req, res) => {
+  const isFeatured = Boolean(req.body?.isFeatured);
+  const photo = await prisma.photo.findFirst({
+    where: { id: req.params.photoId, eventId: req.params.eventId, event: { hostId: req.user.userId }, deletedAt: null },
+    include: { event: { select: { slug: true } } },
+  });
+  if (!photo) return res.status(404).json({ error: "Photo not found" });
+
+  const updated = await prisma.photo.update({
+    where: { id: photo.id },
+    data: { isFeatured, featuredAt: isFeatured ? new Date() : null },
+    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
+  });
+
+  trackApiAnalytics(isFeatured ? "photo_featured" : "photo_unfeatured", {
+    userId: req.user.userId,
+    eventId: req.params.eventId,
+    eventSlug: photo.event.slug,
+    metadata: { photoId: photo.id },
+  });
+
+  res.json({ photo: photoPayload(updated, { includeModeration: true }) });
+});
+
 app.delete("/api/host/events/:eventId/photos/:photoId", requireAuth, async (req, res) => {
   const photo = await prisma.photo.findFirst({
     where: { id: req.params.photoId, eventId: req.params.eventId, event: { hostId: req.user.userId }, deletedAt: null },
@@ -761,14 +920,21 @@ app.delete("/api/host/events/:eventId/photos/:photoId", requireAuth, async (req,
 });
 
 app.get("/api/host/events/:eventId/download", requireAuth, async (req, res) => {
+  const includeAll = req.query.scope === "all";
   const event = await prisma.event.findFirst({
     where: { id: req.params.eventId, hostId: req.user.userId },
-    include: { photos: { where: { deletedAt: null }, include: { guest: true }, orderBy: { createdAt: "asc" } } },
+    include: { photos: { where: includeAll ? activePhotoWhere() : visiblePhotoWhere(), include: { guest: true }, orderBy: { createdAt: "asc" } } },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
   const safeName = event.name.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "event";
-  res.attachment(`${safeName}-photos.zip`);
+  res.attachment(`${safeName}-${includeAll ? "all" : "visible"}-photos.zip`);
+  trackApiAnalytics("album_downloaded", {
+    userId: req.user.userId,
+    eventId: event.id,
+    eventSlug: event.slug,
+    metadata: { scope: includeAll ? "all" : "visible", photoCount: event.photos.length },
+  });
 
   const archive = new ZipArchive({ zlib: { level: 9 } });
   archive.on("error", () => res.status(500).end());
@@ -788,7 +954,7 @@ app.get("/api/events/:slug", async (req, res) => {
     where: { slug: req.params.slug },
     include: {
       challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: { deletedAt: null } } } },
+      _count: { select: { photos: { where: visiblePhotoWhere() } } },
     },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
@@ -807,12 +973,12 @@ app.get("/api/events/:slug/live-wall", async (req, res) => {
     where: { slug: req.params.slug },
     include: {
       photos: {
-        where: { deletedAt: null },
-        orderBy: { createdAt: "desc" },
+        where: visiblePhotoWhere(),
+        orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
         include: { guest: true, challengeParticipant: true },
       },
       challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: { deletedAt: null } } } },
+      _count: { select: { photos: { where: visiblePhotoWhere() } } },
     },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
@@ -842,12 +1008,12 @@ app.get("/api/events/:slug/recap", async (req, res) => {
     where: { slug: req.params.slug },
     include: {
       photos: {
-        where: { deletedAt: null },
-        orderBy: { createdAt: "desc" },
+        where: visiblePhotoWhere(),
+        orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
         include: { guest: true, challengeParticipant: true },
       },
       challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: { deletedAt: null } } } },
+      _count: { select: { photos: { where: visiblePhotoWhere() } } },
     },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
@@ -876,7 +1042,7 @@ app.get("/api/events/:slug/guest-status", async (req, res) => {
 
   const guest = await prisma.guest.findUnique({
     where: { eventId_clientId: { eventId: event.id, clientId: String(clientId) } },
-    include: { _count: { select: { photos: { where: { deletedAt: null } } } } },
+    include: { _count: { select: { photos: { where: activePhotoWhere() } } } },
   });
   const used = guest?._count.photos || 0;
   res.json({ uploadedCount: used, remainingUploads: Math.max(event.photoLimitPerGuest - used, 0), nickname: guest?.nickname || null });
@@ -946,7 +1112,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
       create: { eventId: event.id, clientId, nickname: uploadNickname },
     });
 
-    const used = await prisma.photo.count({ where: { eventId: event.id, guestId: guest.id, deletedAt: null } });
+    const used = await prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, guestId: guest.id }) });
     if (used >= event.photoLimitPerGuest) {
       return res.status(403).json({ error: "You have used all uploads for this event" });
     }
@@ -996,7 +1162,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
 app.get("/api/events/:slug/photos", async (req, res) => {
   const event = await prisma.event.findUnique({
     where: { slug: req.params.slug },
-    include: { photos: { where: { deletedAt: null }, orderBy: { createdAt: "desc" }, include: { guest: true, challengeParticipant: true } } },
+    include: { photos: { where: visiblePhotoWhere(), orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }], include: { guest: true, challengeParticipant: true } } },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
   if (event.revealAt > new Date()) {
@@ -1005,8 +1171,38 @@ app.get("/api/events/:slug/photos", async (req, res) => {
   res.json({ photos: event.photos.map(photoPayload) });
 });
 
+app.post("/api/photos/:photoId/reports", async (req, res) => {
+  const reason = PHOTO_REPORT_REASON_MAP.get(String(req.body?.reason || "").toLowerCase());
+  if (!reason) return res.status(400).json({ error: "Choose a report reason" });
+
+  const photo = await prisma.photo.findFirst({
+    where: visiblePhotoWhere({ id: req.params.photoId }),
+    include: { event: { select: { id: true, slug: true } } },
+  });
+  if (!photo) return res.status(404).json({ error: "Photo not found" });
+
+  await prisma.photoReport.create({
+    data: {
+      photoId: photo.id,
+      eventId: photo.eventId,
+      reason,
+      note: typeof req.body?.note === "string" && req.body.note.trim() ? req.body.note.trim().slice(0, 500) : null,
+      reporterHash: hashAnonymousId(req.body?.reporterId),
+    },
+  });
+
+  trackApiAnalytics("photo_reported", {
+    eventId: photo.eventId,
+    eventSlug: photo.event.slug,
+    anonymousId: req.body?.reporterId,
+    metadata: { photoId: photo.id, reason: String(req.body?.reason || "").toLowerCase() },
+  });
+
+  res.status(201).json({ ok: true });
+});
+
 app.get("/api/photos/:photoId/file", async (req, res) => {
-  const photo = await prisma.photo.findFirst({ where: { id: req.params.photoId, deletedAt: null } });
+  const photo = await prisma.photo.findFirst({ where: visiblePhotoWhere({ id: req.params.photoId }) });
   if (!photo) return res.status(404).json({ error: "Photo not found" });
   res.type(photo.mimeType);
   const stream = await createPhotoReadStream(photo.filePath);
@@ -1015,7 +1211,7 @@ app.get("/api/photos/:photoId/file", async (req, res) => {
 });
 
 app.get("/api/photos/:photoId/preview", async (req, res) => {
-  const photo = await prisma.photo.findFirst({ where: { id: req.params.photoId, deletedAt: null } });
+  const photo = await prisma.photo.findFirst({ where: visiblePhotoWhere({ id: req.params.photoId }) });
   if (!photo) return res.status(404).json({ error: "Photo not found" });
 
   try {

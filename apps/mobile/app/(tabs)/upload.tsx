@@ -3,7 +3,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Link, useLocalSearchParams } from "expo-router";
 import { Image, View } from "react-native";
 import type { ChallengeCategory, ChallengeParticipant, ChallengePrompt, PublicEvent } from "@eventfilm/shared";
-import { CHALLENGE_TYPES, categoriesFromChallenge, challengeLabel, getChallengePack, memoryCapsuleFromChallenge, promptsFromChallenge } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, categoriesFromChallenge, challengeLabel, getChallengePack, memoryCapsuleFromChallenge, promptsFromChallenge, validateUploadFile } from "@eventfilm/shared";
 import {
   Badge,
   Body,
@@ -106,11 +106,18 @@ export default function UploadScreen() {
 
       const result =
         source === "camera"
-          ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.9 })
-          : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.9 });
+          ? await ImagePicker.launchCameraAsync({ mediaTypes: ["images"], quality: 0.82 })
+          : await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.82 });
 
       if (!result.canceled) {
-        setAsset(result.assets[0]);
+        const nextAsset = result.assets[0];
+        const validation = validateUploadFile({ type: nextAsset.mimeType || "image/jpeg", size: nextAsset.fileSize || 0 });
+        if (!validation.ok) {
+          setAsset(null);
+          setError(validation.message);
+          return;
+        }
+        setAsset(nextAsset);
         setUploadedPreviewUri("");
       }
     } catch (err) {
@@ -120,6 +127,9 @@ export default function UploadScreen() {
 
   async function upload() {
     if (!event || !asset) return setError("Choose an event and photo first.");
+    if (loading) return;
+    const validation = validateUploadFile({ type: asset.mimeType || "image/jpeg", size: asset.fileSize || 0 });
+    if (!validation.ok) return setError(validation.message);
     if (!clientId) return setError("Could not create a guest upload session.");
     if (event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Choose your Color Hunt team first.");
     if (event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a scavenger prompt first.");
@@ -147,7 +157,7 @@ export default function UploadScreen() {
       setRemaining(data.remainingUploads);
       setMessage(event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT ? "Photo uploaded. Pick another prompt or upload another angle." : event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? "Photo submitted for the award category." : "Photo uploaded.");
     } catch (err) {
-      setError((err as Error).message);
+      setError(`${(err as Error).message}. Check your connection or choose a smaller image, then try again.`);
     } finally {
       setLoading(false);
     }

@@ -1,8 +1,9 @@
 import * as React from "react";
 import { useLocalSearchParams } from "expo-router";
+import { Alert, View } from "react-native";
 import type { Photo, PublicEvent } from "@eventfilm/shared";
 import { CHALLENGE_TYPES, memoryCapsuleFromChallenge } from "@eventfilm/shared";
-import { Badge, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
+import { Badge, Button, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader, SuccessState } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 export default function AlbumScreen() {
@@ -11,6 +12,7 @@ export default function AlbumScreen() {
   const [event, setEvent] = React.useState<PublicEvent | null>(null);
   const [photos, setPhotos] = React.useState<Photo[]>([]);
   const [error, setError] = React.useState("");
+  const [reportStatus, setReportStatus] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
 
@@ -29,6 +31,25 @@ export default function AlbumScreen() {
       .finally(() => setLoading(false));
   }, [api, slug]);
 
+  function reportPhoto(photo: Photo) {
+    const submit = async (reason: "inappropriate" | "privacy" | "spam" | "other") => {
+      try {
+        await api.reportPhoto(photo.id, { reason });
+        setReportStatus("Thanks. The host can review this report.");
+      } catch (err) {
+        setError((err as Error).message);
+      }
+    };
+
+    Alert.alert("Report photo", "Choose a reason.", [
+      { text: "Inappropriate", onPress: () => submit("inappropriate") },
+      { text: "Privacy concern", onPress: () => submit("privacy") },
+      { text: "Spam", onPress: () => submit("spam") },
+      { text: "Other", onPress: () => submit("other") },
+      { text: "Cancel", style: "cancel" },
+    ]);
+  }
+
   return (
     <Screen bottomPadding={96} wide>
       <HeroHeader
@@ -41,6 +62,7 @@ export default function AlbumScreen() {
 
       {loading ? <LoadingState label="Loading album..." /> : null}
       {error ? <ErrorState message={error} /> : null}
+      {reportStatus ? <SuccessState message={reportStatus} /> : null}
 
       {event && !event.isRevealed ? (
         <EmptyState
@@ -52,7 +74,12 @@ export default function AlbumScreen() {
       {event?.isRevealed ? (
         <>
           <SectionHeader title="Shared photos" subtitle={`${photos.length} photos in this album.`} />
-          {photos.length ? photos.map((photo) => <PhotoCard key={photo.id} photo={photo} />) : (
+          {photos.length ? photos.map((photo) => (
+            <View key={photo.id} style={{ gap: 10 }}>
+              <PhotoCard photo={photo} />
+              <Button tone="secondary" onPress={() => reportPhoto(photo)}>Report photo</Button>
+            </View>
+          )) : (
             <EmptyState title="No photos have been shared yet" body="Once guests upload, their photos will appear here after the reveal." />
           )}
         </>

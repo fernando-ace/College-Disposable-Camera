@@ -24,12 +24,14 @@ import {
   hasDuplicateCategories,
   hasDuplicateParticipantColors,
   hasDuplicatePrompts,
+  isPhotoVisible,
   memoryCapsuleFromChallenge,
   photoChallengeLabel,
   promptsFromChallenge,
+  validateUploadFile,
   validateChallengeDraft,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, HostLaunchKit, HostLaunchKitLink, Photo, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, HostLaunchKit, HostLaunchKitLink, Photo, PhotoReportReason, PhotoVisibilityStatus, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -132,6 +134,19 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
 }
+
+function formatBytes(value: number) {
+  if (!Number.isFinite(value)) return "";
+  if (value < 1024 * 1024) return `${Math.max(1, Math.round(value / 1024))} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+const REPORT_REASONS: Array<{ value: PhotoReportReason; label: string }> = [
+  { value: "inappropriate", label: "Inappropriate" },
+  { value: "privacy", label: "Privacy concern" },
+  { value: "spam", label: "Spam" },
+  { value: "other", label: "Other" },
+];
 
 function toDateTimeLocal(date = new Date()) {
   const offset = date.getTimezoneOffset();
@@ -317,6 +332,135 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
       <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
       {participant.colorName}
     </span>
+  );
+}
+
+function PhotoStatusBadges({ photo, host = false }: { photo: Photo; host?: boolean }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {photo.isFeatured && <StatusPill tone="amber">Featured</StatusPill>}
+      {host && photo.visibilityStatus === "HIDDEN" && <StatusPill tone="red">Hidden</StatusPill>}
+      {host && Boolean(photo.reportCount) && <StatusPill tone="red">{photo.reportCount} reported</StatusPill>}
+      {photoChallengeLabel(photo) && <StatusPill tone="stone">{photoChallengeLabel(photo)}</StatusPill>}
+    </div>
+  );
+}
+
+function PhotoDetailModal({
+  photo,
+  mode,
+  onClose,
+  onReport,
+  reportStatus,
+  onHostAction,
+}: {
+  photo: Photo | null;
+  mode: "public" | "host";
+  onClose: () => void;
+  onReport?: (reason: PhotoReportReason, note: string) => Promise<void>;
+  reportStatus?: string;
+  onHostAction?: (action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) => Promise<void>;
+}) {
+  const [reason, setReason] = useState<PhotoReportReason>("inappropriate");
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState("");
+  const [localStatus, setLocalStatus] = useState("");
+
+  useEffect(() => {
+    setReason("inappropriate");
+    setNote("");
+    setBusy("");
+    setLocalStatus("");
+  }, [photo?.id]);
+
+  if (!photo) return null;
+  const currentPhoto = photo;
+
+  async function runHostAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete") {
+    if (!onHostAction) return;
+    setBusy(action);
+    try {
+      await onHostAction(action, currentPhoto);
+      if (action !== "delete") setLocalStatus("Updated");
+    } catch (err) {
+      setLocalStatus((err as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function submitReport() {
+    if (!onReport) return;
+    setBusy("report");
+    try {
+      await onReport(reason, note);
+      setNote("");
+    } catch (err) {
+      setLocalStatus((err as Error).message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-stone-950/80 p-4" role="dialog" aria-modal="true">
+      <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[2rem] bg-white p-4 shadow-2xl sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <PhotoStatusBadges photo={photo} host={mode === "host"} />
+            <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{photo.challengeParticipantName || photo.guestNickname || "Guest photo"}</h2>
+            <p className="mt-1 text-sm text-stone-600">{formatDateTime(photo.createdAt)} {photo.sizeBytes ? `- ${formatBytes(photo.sizeBytes)}` : ""}</p>
+          </div>
+          <button className="rounded-full bg-stone-100 p-3 text-stone-700 hover:bg-stone-200" onClick={onClose} aria-label="Close photo detail"><Icon>close</Icon></button>
+        </div>
+        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_320px]">
+          <img className="max-h-[68vh] w-full rounded-[1.5rem] bg-stone-100 object-contain" src={photo.url} alt={photo.originalFilename} />
+          <aside className="grid content-start gap-4">
+            <Card className="shadow-none">
+              <p className="text-sm font-bold text-stone-950">Photo details</p>
+              <div className="mt-3 grid gap-2 text-sm text-stone-600">
+                <p><strong className="text-stone-900">Guest:</strong> {photo.challengeParticipantName || photo.guestNickname || "Guest"}</p>
+                <p><strong className="text-stone-900">Uploaded:</strong> {formatDateTime(photo.createdAt)}</p>
+                {photoChallengeLabel(photo) && <p><strong className="text-stone-900">Challenge:</strong> {photoChallengeLabel(photo)}</p>}
+                {mode === "host" && photo.hiddenReason && <p><strong className="text-stone-900">Hidden reason:</strong> {photo.hiddenReason}</p>}
+                {mode === "host" && Boolean(photo.reports?.length) && <p><strong className="text-stone-900">Latest report:</strong> {photo.reports?.[0]?.reason}</p>}
+              </div>
+            </Card>
+            {mode === "host" && onHostAction && (
+              <Card className="shadow-none">
+                <p className="text-sm font-bold text-stone-950">Host controls</p>
+                <div className="mt-3 grid gap-2">
+                  {photo.visibilityStatus === "HIDDEN" ? (
+                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("restore")}>Restore photo</SecondaryButton>
+                  ) : (
+                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</SecondaryButton>
+                  )}
+                  {photo.isFeatured ? (
+                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove feature</SecondaryButton>
+                  ) : (
+                    <Button disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Feature photo</Button>
+                  )}
+                  <button className="min-h-12 rounded-full bg-red-700 px-5 py-3 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete permanently</button>
+                </div>
+              </Card>
+            )}
+            {mode === "public" && onReport && (
+              <Card className="shadow-none">
+                <p className="text-sm font-bold text-stone-950">Report photo</p>
+                <div className="mt-3 grid gap-3">
+                  <select className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-sm font-bold text-stone-800" value={reason} onChange={(event) => setReason(event.target.value as PhotoReportReason)}>
+                    {REPORT_REASONS.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
+                  </select>
+                  <TextArea rows={3} maxLength={500} placeholder="Optional note" value={note} onChange={(event) => setNote(event.target.value)} />
+                  <SecondaryButton disabled={busy === "report"} onClick={submitReport}>{busy === "report" ? "Sending..." : "Submit report"}</SecondaryButton>
+                </div>
+              </Card>
+            )}
+            {(reportStatus || localStatus) && <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-[#653e00]">{reportStatus || localStatus}</p>}
+          </aside>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1452,6 +1596,8 @@ function ManageEvent() {
   const [event, setEvent] = useState<(EventSummary & { photos: Photo[] }) | null>(null);
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [galleryFilter, setGalleryFilter] = useState("all");
+  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [downloadStatus, setDownloadStatus] = useState("");
   const [error, setError] = useState("");
   const [challengeStatus, setChallengeStatus] = useState("");
 
@@ -1467,6 +1613,7 @@ function ManageEvent() {
 
   useEffect(() => {
     if (galleryFilter === "all") return;
+    if (["visible", "hidden", "featured", "reported"].includes(galleryFilter)) return;
     if (!event?.challenge) {
       setGalleryFilter("all");
       return;
@@ -1477,15 +1624,35 @@ function ManageEvent() {
     if (event.challenge.type === CHALLENGE_TYPES.MEMORY_CAPSULE) setGalleryFilter("all");
   }, [event?.challenge, galleryFilter]);
 
+  async function refreshAfterPhotoAction(nextPhoto?: Photo) {
+    await load();
+    if (nextPhoto) setSelectedPhoto(nextPhoto);
+  }
+
+  async function updatePhotoVisibility(photo: Photo, visibilityStatus: PhotoVisibilityStatus) {
+    const hiddenReason = visibilityStatus === "HIDDEN" ? prompt("Why hide this photo? This note stays host-only.", "Hidden by host") || "Hidden by host" : undefined;
+    const data = await eventFilmApi.updatePhotoVisibility(eventId || "", photo.id, visibilityStatus, hiddenReason, auth.token);
+    trackAnalytics(visibilityStatus === "HIDDEN" ? "photo_hidden" : "photo_restored", { eventId, eventSlug: event?.slug, metadata: { photoId: photo.id, visibilityStatus } });
+    await refreshAfterPhotoAction(data.photo);
+  }
+
+  async function updatePhotoFeatured(photo: Photo, isFeatured: boolean) {
+    const data = await eventFilmApi.updatePhotoFeatured(eventId || "", photo.id, isFeatured, auth.token);
+    trackAnalytics(isFeatured ? "photo_featured" : "photo_unfeatured", { eventId, eventSlug: event?.slug, metadata: { photoId: photo.id } });
+    await refreshAfterPhotoAction(data.photo);
+  }
+
   async function deletePhoto(photoId: string) {
-    if (!confirm("Delete this photo?")) return;
+    if (!confirm("Delete this photo permanently? Hidden photos can be restored, but deleted photos are removed from storage.")) return;
     await api(`/api/host/events/${eventId}/photos/${photoId}`, { method: "DELETE", token: auth.token });
+    setSelectedPhoto(null);
     await load();
   }
 
-  async function downloadZip() {
+  async function downloadZip(scope: "visible" | "all" = "visible") {
     if (!eventId) return;
-    const response = await fetch(eventFilmApi.getHostEventDownloadUrl(eventId), {
+    setDownloadStatus("");
+    const response = await fetch(`${eventFilmApi.getHostEventDownloadUrl(eventId)}?scope=${scope}`, {
       headers: { Authorization: `Bearer ${auth.token}` },
     });
     if (!response.ok) throw new Error("Download failed");
@@ -1493,9 +1660,11 @@ function ManageEvent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${event?.name || "event"}-photos.zip`;
+    a.download = `${event?.name || "event"}-${scope}-photos.zip`;
     a.click();
     URL.revokeObjectURL(url);
+    trackAnalytics("album_downloaded", { eventId, eventSlug: event?.slug, metadata: { scope, photoCount: scope === "visible" ? visiblePhotos.length : event?.photos.length || 0 } });
+    setDownloadStatus(scope === "visible" ? "Visible photo ZIP downloaded. Hidden and reported photos were excluded." : "All non-deleted photo ZIP downloaded for host review.");
   }
 
   async function saveChallenge() {
@@ -1522,12 +1691,29 @@ function ManageEvent() {
   const challengeAwards = categoriesFromChallenge(event?.challenge);
   const filteredPhotos = event?.photos.filter((photo) => {
     if (galleryFilter === "all") return true;
+    if (galleryFilter === "visible") return isPhotoVisible(photo);
+    if (galleryFilter === "hidden") return photo.visibilityStatus === "HIDDEN";
+    if (galleryFilter === "featured") return Boolean(photo.isFeatured);
+    if (galleryFilter === "reported") return Boolean(photo.reportCount);
     if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
     if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
     if (galleryFilter.startsWith("prompt:")) return photo.challengePromptId === galleryFilter.replace("prompt:", "");
     if (galleryFilter.startsWith("award:")) return photo.challengeItemId === galleryFilter.replace("award:", "");
     return true;
   }) || [];
+  const visiblePhotos = event?.photos.filter(isPhotoVisible) || [];
+  const hiddenCount = event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0;
+  const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
+  const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
+
+  async function handleHostPhotoAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) {
+    if (action === "hide") return updatePhotoVisibility(photo, "HIDDEN");
+    if (action === "restore") return updatePhotoVisibility(photo, "VISIBLE");
+    if (action === "feature") return updatePhotoFeatured(photo, true);
+    if (action === "unfeature") return updatePhotoFeatured(photo, false);
+    return deletePhoto(photo.id);
+  }
+
   return (
     <Shell wide>
       {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -1548,9 +1734,12 @@ function ManageEvent() {
 
           <section className="mt-8">
             <HostLaunchKitPanel event={event} qrCodeDataUrl={event.qrCodeDataUrl} />
-            <div className="mt-4 flex justify-end">
-              <SecondaryButton onClick={downloadZip}>Download ZIP</SecondaryButton>
+            <div className="mt-4 grid gap-3 rounded-3xl bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
+              <p className="text-sm font-semibold text-stone-600">Visible export excludes hidden and reported photos by default.</p>
+              <SecondaryButton onClick={() => downloadZip("visible")}>Download visible ZIP</SecondaryButton>
+              <SecondaryButton onClick={() => downloadZip("all")}>Download all ZIP</SecondaryButton>
             </div>
+            {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
           </section>
 
           <section className="mt-8">
@@ -1570,14 +1759,27 @@ function ManageEvent() {
             <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h2 className="font-display text-3xl font-bold">Recent uploads</h2>
-                <p className="text-stone-600">The latest memories from your guests.</p>
+                <p className="text-stone-600">Review, feature, hide, restore, or delete guest uploads.</p>
               </div>
             </div>
-            {event.challenge && (
-              <div className="mb-5 grid gap-3 rounded-3xl bg-white p-4 shadow-sm">
+            <div className="mb-5 grid gap-3 rounded-3xl bg-white p-4 shadow-sm">
+              <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
+                <div className="flex min-w-max gap-2 sm:min-w-0 sm:flex-wrap">
+                  {[
+                    ["all", `All photos (${event.photos.length})`],
+                    ["visible", `Visible (${visiblePhotos.length})`],
+                    ["hidden", `Hidden (${hiddenCount})`],
+                    ["featured", `Featured (${featuredCount})`],
+                    ["reported", `Reported (${reportedCount})`],
+                  ].map(([key, label]) => (
+                    <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === key ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(key)} key={key}>{label}</button>
+                  ))}
+                </div>
+              </div>
+              {event.challenge && (
+                <>
                 <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
                   <div className="flex min-w-max gap-2 sm:min-w-0 sm:flex-wrap">
-                    <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === "all" ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter("all")}>All photos</button>
                     {event.challenge.type === CHALLENGE_TYPES.COLOR_HUNT && challengeColors.map((participant) => (
                       <button className={cx("inline-flex shrink-0 items-center gap-2 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === `color:${participant.colorSlug}` ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(`color:${participant.colorSlug}`)} key={participant.colorSlug}>
                         <span className="h-3 w-3 rounded-full border border-black/10" style={{ backgroundColor: participant.colorHex }} />
@@ -1599,13 +1801,20 @@ function ManageEvent() {
                     ))}
                   </div>
                 )}
-              </div>
-            )}
+                </>
+              )}
+            </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {filteredPhotos.map((photo) => (
-                <div className="overflow-hidden rounded-3xl border border-stone-200 bg-white p-2 shadow-sm" key={photo.id}>
-                  <img className="aspect-square w-full rounded-2xl object-cover" src={photo.url} alt={photo.originalFilename} />
+                <div className={cx("overflow-hidden rounded-3xl border bg-white p-2 shadow-sm", photo.visibilityStatus === "HIDDEN" ? "border-red-200 opacity-80" : "border-stone-200")} key={photo.id}>
+                  <button className="block w-full text-left" onClick={() => {
+                    setSelectedPhoto(photo);
+                    trackAnalytics("photo_lightbox_opened", { eventId, eventSlug: event.slug, metadata: { surface: "host", photoId: photo.id } });
+                  }}>
+                    <img className="aspect-square w-full rounded-2xl object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                  </button>
                   <div className="p-3 text-sm">
+                    <PhotoStatusBadges photo={photo} host />
                     <p className="truncate font-bold">{photo.challengeParticipantName || photo.guestNickname || "Guest"}</p>
                     {photo.challengeColorName && (
                       <div className="mt-2">
@@ -1619,13 +1828,24 @@ function ManageEvent() {
                       <p className="mt-2 text-sm font-semibold text-[#653e00]">{photo.challengeItemKind === "award" ? "Award" : "Mode"}: {photo.challengeItemLabel}</p>
                     )}
                     <p className="mt-1 text-stone-600">{formatDateTime(photo.createdAt)}</p>
-                    <button className="mt-3 inline-flex min-h-10 items-center rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
+                    <div className="mt-3 grid gap-2">
+                      {photo.visibilityStatus === "HIDDEN" ? (
+                        <SecondaryButton className="min-h-10 px-4 py-2" onClick={() => updatePhotoVisibility(photo, "VISIBLE")}>Restore</SecondaryButton>
+                      ) : (
+                        <SecondaryButton className="min-h-10 px-4 py-2" onClick={() => updatePhotoVisibility(photo, "HIDDEN")}>Hide</SecondaryButton>
+                      )}
+                      <button className={cx("min-h-10 rounded-full px-4 py-2 text-sm font-bold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-amber-500 text-stone-950")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)} disabled={photo.visibilityStatus === "HIDDEN"}>
+                        {photo.isFeatured ? "Unfeature" : "Feature"}
+                      </button>
+                      <button className="min-h-10 rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
+                    </div>
                   </div>
                 </div>
               ))}
             </div>
             {!filteredPhotos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos match this view yet.</p></Card>}
           </section>
+          <PhotoDetailModal photo={selectedPhoto} mode="host" onClose={() => setSelectedPhoto(null)} onHostAction={handleHostPhotoAction} />
         </>
       )}
     </Shell>
@@ -1665,7 +1885,7 @@ function ProgressSummaryPanel({ summary, dark = false }: { summary: ReturnType<t
   );
 }
 
-function PhotoMosaic({ photos, dark = false }: { photos: Photo[]; dark?: boolean }) {
+function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; dark?: boolean; onPhotoClick?: (photo: Photo) => void }) {
   if (!photos.length) {
     return (
       <div className={cx("grid min-h-72 place-items-center rounded-[2rem] p-8 text-center", dark ? "bg-white/10 text-stone-200" : "border border-[#eadfce] bg-white text-stone-600")}>
@@ -1681,7 +1901,9 @@ function PhotoMosaic({ photos, dark = false }: { photos: Photo[]; dark?: boolean
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {photos.map((photo, index) => (
         <figure className={cx("group overflow-hidden rounded-[1.5rem]", index === 0 ? "col-span-2 row-span-2" : "", dark ? "bg-white/10" : "bg-white shadow-sm")} key={photo.id}>
-          <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+          <button className="block h-full w-full text-left" type="button" onClick={() => onPhotoClick?.(photo)}>
+            <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+          </button>
           <figcaption className={cx("p-3 text-xs font-bold", dark ? "text-stone-100" : "text-stone-700")}>
             <span className="block truncate">{photo.challengeParticipantName || photo.guestNickname || "Guest"}</span>
             {photoChallengeLabel(photo) && <span className={cx("mt-1 block truncate", dark ? "text-amber-200" : "text-[#653e00]")}>{photoChallengeLabel(photo)}</span>}
@@ -1799,6 +2021,8 @@ function EventRecap() {
   const [data, setData] = useState<EventRecapResponse | null>(null);
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
+  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [reportStatus, setReportStatus] = useState("");
 
   useEffect(() => {
     trackAnalytics("recap_opened", { eventSlug: slug, path: `/recap/${slug}` });
@@ -1814,6 +2038,19 @@ function EventRecap() {
   const summary = event ? buildChallengeProgressSummary(event.challenge, data.photos) : null;
   const recap = event ? buildEventRecapMetadata(event, data.photos) : null;
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+
+  async function reportSelectedPhoto(reason: PhotoReportReason, note: string) {
+    if (!selectedPhoto) return;
+    await eventFilmApi.reportPhoto(selectedPhoto.id, { reason, note, reporterId: getAnalyticsAnonymousId() });
+    setReportStatus("Thanks. The host can review this report.");
+    trackAnalytics("photo_reported", { eventId: event?.id, eventSlug: event?.slug, metadata: { photoId: selectedPhoto.id, reason } });
+  }
+
+  function openPublicPhoto(photo: Photo) {
+    setSelectedPhoto(photo);
+    setReportStatus("");
+    trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "recap", photoId: photo.id } });
+  }
 
   return (
     <main className="min-h-screen bg-[#fff8ed] text-stone-950">
@@ -1877,7 +2114,7 @@ function EventRecap() {
                     <h2 className="font-display text-3xl font-bold">Highlights</h2>
                     <p className="text-stone-600">A first look at the moments guests added most recently.</p>
                   </div>
-                  <PhotoMosaic photos={recap?.highlightPhotos || []} />
+                  <PhotoMosaic photos={recap?.highlightPhotos || []} onPhotoClick={openPublicPhoto} />
                 </section>
 
                 {summary && (
@@ -1891,10 +2128,11 @@ function EventRecap() {
                     <h2 className="font-display text-3xl font-bold">Full album</h2>
                     <p className="text-stone-600">Every revealed photo from the event.</p>
                   </div>
-                  <PhotoMosaic photos={data.photos} />
+                  <PhotoMosaic photos={data.photos} onPhotoClick={openPublicPhoto} />
                 </section>
               </>
             )}
+            <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
           </>
         )}
       </div>
@@ -1922,6 +2160,8 @@ function GuestEvent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showScavengerSuccessActions, setShowScavengerSuccessActions] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [reportStatus, setReportStatus] = useState("");
 
   async function load() {
     const eventData = await api<{ event: PublicEvent }>(`/api/events/${slug}`);
@@ -2030,8 +2270,13 @@ function GuestEvent() {
     setError("");
     setShowScavengerSuccessActions(false);
 
+    if (loading) return;
+    const validation = validateUploadFile(file);
+    if (!validation.ok) {
+      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: validation.reason } });
+      return setError(validation.message);
+    }
     if (!file) return setError("Choose a photo first");
-    if (!file.type.startsWith("image/")) return setError("Only image files are allowed");
     if (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Select your Color Hunt name first");
     if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a Photo Scavenger Hunt prompt first");
     if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an Event Awards category first");
@@ -2062,7 +2307,8 @@ function GuestEvent() {
       }
       await load();
     } catch (err) {
-      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: "error" } });
+      const message = (err as Error).message || "Upload failed. Check your connection and try again.";
+      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: message.includes("used all uploads") ? "event_limit" : "error" } });
       setError((err as Error).message);
     } finally {
       setLoading(false);
@@ -2078,6 +2324,7 @@ function GuestEvent() {
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
 
   function uploadAnotherForPrompt() {
+    trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
     setShowScavengerSuccessActions(false);
     setMessage("");
     setError("");
@@ -2089,6 +2336,13 @@ function GuestEvent() {
     setMessage("");
     setError("");
     setTimeout(() => promptSelectRef.current?.focus(), 0);
+  }
+
+  async function reportSelectedPhoto(reason: PhotoReportReason, note: string) {
+    if (!selectedPhoto) return;
+    await eventFilmApi.reportPhoto(selectedPhoto.id, { reason, note, reporterId: session.clientId });
+    setReportStatus("Thanks. The host can review this report.");
+    trackAnalytics("photo_reported", { eventId: event?.id, eventSlug: event?.slug, metadata: { photoId: selectedPhoto.id, reason } });
   }
 
   return (
@@ -2231,7 +2485,7 @@ function GuestEvent() {
                 <img className="h-24 w-24 rounded-2xl object-cover" src={photoPreviewUrl} alt="Selected photo preview" />
                 <div className="min-w-0">
                   <p className="truncate text-sm font-bold text-stone-900">{file.name || "Selected photo"}</p>
-                  <p className="mt-1 text-sm text-stone-600">Ready to upload</p>
+                  <p className="mt-1 text-sm text-stone-600">Ready to upload - {formatBytes(file.size)} {file.type || "image"}</p>
                 </div>
               </div>
             )}
@@ -2242,7 +2496,11 @@ function GuestEvent() {
                 <SecondaryButton type="button" onClick={chooseNewPrompt}>Choose a new prompt</SecondaryButton>
               </div>
             )}
-            {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+            {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error} {file ? "Try again or choose a smaller image." : ""}</p>}
+            {error && file && <SecondaryButton type="button" className="mt-3 w-full" onClick={() => {
+              trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
+              setError("");
+            }}>Try again</SecondaryButton>}
             <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Uploading..." : "Upload photo"}</Button>
           </form>
 
@@ -2259,7 +2517,13 @@ function GuestEvent() {
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {photos.map((photo) => (
                   <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={photo.id}>
-                    <img className="aspect-square w-full rounded-2xl object-cover" src={photo.url} alt={photo.originalFilename} />
+                    <button type="button" className="block w-full text-left" onClick={() => {
+                      setSelectedPhoto(photo);
+                      setReportStatus("");
+                      trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_album", photoId: photo.id } });
+                    }}>
+                      <img className="aspect-square w-full rounded-2xl object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                    </button>
                     {photo.challengeParticipantName && (
                       <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengeParticipantName} - {photo.challengeColorName}</p>
                     )}
@@ -2270,6 +2534,7 @@ function GuestEvent() {
               {!photos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos yet.</p></Card>}
             </section>
           )}
+          <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
         </div>
       )}
       {!event && !error && <p>Loading event...</p>}

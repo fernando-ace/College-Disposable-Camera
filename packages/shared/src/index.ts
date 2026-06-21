@@ -12,6 +12,17 @@ export type ChallengeMode = "NONE" | ChallengeType;
 export type ChallengeItemKind = "color" | "prompt" | "award" | "capsule";
 export type UploadMetadataRequirement = "none" | "participant" | "prompt" | "award";
 export type SetupComplexity = "None" | "Easy" | "Medium";
+export type PhotoVisibilityStatus = "VISIBLE" | "HIDDEN";
+export type PhotoReportReason = "inappropriate" | "privacy" | "spam" | "other";
+
+export const PHOTO_REPORT_REASONS: PhotoReportReason[] = ["inappropriate", "privacy", "spam", "other"];
+export const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"] as const;
+export const DEFAULT_MAX_UPLOAD_SIZE_MB = 10;
+export const DEFAULT_MAX_UPLOAD_SIZE_BYTES = DEFAULT_MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+
+export type UploadValidationResult =
+  | { ok: true }
+  | { ok: false; reason: "missing" | "unsupported_type" | "too_large"; message: string };
 
 export type User = {
   id: string;
@@ -101,6 +112,20 @@ export type Photo = {
   challengeParticipantName?: string | null;
   challengeColorHex?: string | null;
   challengeColorSlug?: string | null;
+  visibilityStatus?: PhotoVisibilityStatus;
+  hiddenAt?: ISODateString | null;
+  hiddenReason?: string | null;
+  isFeatured?: boolean;
+  featuredAt?: ISODateString | null;
+  reportCount?: number;
+  reports?: PhotoReport[];
+};
+
+export type PhotoReport = {
+  id: string;
+  reason: PhotoReportReason;
+  note?: string | null;
+  createdAt: ISODateString;
 };
 
 export type ChallengeProgressRow = {
@@ -169,8 +194,16 @@ export const ANALYTICS_EVENT_NAMES = [
   "photo_upload_started",
   "photo_upload_succeeded",
   "photo_upload_failed",
+  "photo_upload_retry_clicked",
   "challenge_item_selected",
   "host_launch_kit_opened",
+  "photo_hidden",
+  "photo_restored",
+  "photo_featured",
+  "photo_unfeatured",
+  "photo_reported",
+  "album_downloaded",
+  "photo_lightbox_opened",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
@@ -391,6 +424,39 @@ export function getChallengePack(type?: ChallengeMode | ChallengeType | null) {
 
 export function isAnalyticsEventName(value: string): value is AnalyticsEventName {
   return (ANALYTICS_EVENT_NAMES as readonly string[]).includes(value);
+}
+
+export function normalizeReportReason(value: string): PhotoReportReason | null {
+  return PHOTO_REPORT_REASONS.includes(value as PhotoReportReason) ? (value as PhotoReportReason) : null;
+}
+
+export function validateUploadFile(input: { type?: string | null; size?: number | null } | null | undefined, maxBytes = DEFAULT_MAX_UPLOAD_SIZE_BYTES): UploadValidationResult {
+  if (!input) return { ok: false, reason: "missing", message: "Choose a photo first." };
+  const type = String(input.type || "").toLowerCase();
+  if (!type || !ALLOWED_IMAGE_MIME_TYPES.includes(type as (typeof ALLOWED_IMAGE_MIME_TYPES)[number])) {
+    return { ok: false, reason: "unsupported_type", message: "Upload a JPG, PNG, WebP, HEIC, or HEIF image." };
+  }
+  const size = Number(input.size || 0);
+  if (size > maxBytes) {
+    return { ok: false, reason: "too_large", message: `Photo must be ${Math.round(maxBytes / 1024 / 1024)}MB or smaller.` };
+  }
+  return { ok: true };
+}
+
+export function isPhotoVisible(photo: Pick<Photo, "visibilityStatus">) {
+  return (photo.visibilityStatus || "VISIBLE") === "VISIBLE";
+}
+
+export function visiblePhotos(photos: Photo[]) {
+  return photos.filter(isPhotoVisible);
+}
+
+export function sortPhotosForRecap(photos: Photo[]) {
+  return [...photos].sort((a, b) => {
+    const featuredDelta = Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured));
+    if (featuredDelta) return featuredDelta;
+    return byCreatedAtDesc(a, b);
+  });
 }
 
 export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge">): HostLaunchKit {
@@ -784,11 +850,11 @@ export function buildChallengeProgressSummary(challenge: EventChallenge | null |
 }
 
 export function buildEventRecapMetadata(event: Pick<EventSummary | PublicEvent, "challenge">, photos: Photo[]): EventRecapMetadata {
-  const sortedPhotos = [...photos].sort(byCreatedAtDesc);
+  const sortedPhotos = sortPhotosForRecap(visiblePhotos(photos));
   return {
     modeLabel: challengeLabel(event.challenge),
-    totalPhotos: photos.length,
-    contributorCount: countUniqueContributors(photos),
+    totalPhotos: sortedPhotos.length,
+    contributorCount: countUniqueContributors(sortedPhotos),
     highlightPhotos: sortedPhotos.slice(0, 5),
     recentPhotos: sortedPhotos.slice(0, 8),
   };

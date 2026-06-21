@@ -12,6 +12,9 @@ import {
   createEmptyChallengeDraft,
   createStarterPrompts,
   getChallengePack,
+  normalizeReportReason,
+  validateUploadFile,
+  visiblePhotos,
   validateChallengeDraft,
 } from "./index.ts";
 import type { EventChallenge, EventSummary, Photo } from "./index.ts";
@@ -74,7 +77,18 @@ test("upload metadata requirements are registry-driven", () => {
 test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("landing_page_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_launch_kit_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("photo_reported"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("album_downloaded"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
+});
+
+test("report reasons and upload validation stay beta-safe", () => {
+  assert.equal(normalizeReportReason("privacy"), "privacy");
+  assert.equal(normalizeReportReason("bad"), null);
+  assert.deepEqual(validateUploadFile({ type: "image/jpeg", size: 500 }), { ok: true });
+  assert.equal(validateUploadFile(null).reason, "missing");
+  assert.equal(validateUploadFile({ type: "application/pdf", size: 500 }).reason, "unsupported_type");
+  assert.equal(validateUploadFile({ type: "image/png", size: 11 * 1024 * 1024 }).reason, "too_large");
 });
 
 function photo(input: Partial<Photo>): Photo {
@@ -191,6 +205,28 @@ test("recap metadata counts contributors and highlights recent photos", () => {
   assert.equal(metadata.totalPhotos, 3);
   assert.equal(metadata.contributorCount, 2);
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["new", "same", "old"]);
+});
+
+test("recap metadata excludes hidden photos and leads with featured photos", () => {
+  const event = {
+    id: "event",
+    name: "Spring Formal",
+    slug: "spring-formal",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/spring-formal",
+    photoCount: 3,
+    challenge: null,
+  } satisfies EventSummary;
+  const hidden = photo({ id: "hidden", visibilityStatus: "HIDDEN", guestNickname: "Mia", createdAt: "2026-01-01T03:00:00.000Z" });
+  const featured = photo({ id: "featured", isFeatured: true, guestNickname: "Alex", createdAt: "2026-01-01T01:00:00.000Z" });
+  const recent = photo({ id: "recent", guestNickname: "Sam", createdAt: "2026-01-01T02:00:00.000Z" });
+  const metadata = buildEventRecapMetadata(event, [hidden, featured, recent]);
+
+  assert.deepEqual(visiblePhotos([hidden, featured, recent]).map((item) => item.id), ["featured", "recent"]);
+  assert.equal(metadata.totalPhotos, 2);
+  assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["featured", "recent"]);
 });
 
 test("host launch kit separates guest, live wall, and recap jobs", () => {

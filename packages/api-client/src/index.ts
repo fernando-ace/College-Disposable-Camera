@@ -6,6 +6,8 @@ import type {
   EventSummary,
   GuestStatus,
   Photo,
+  PhotoReportReason,
+  PhotoVisibilityStatus,
   PublicEvent,
   UploadPhotoMetadata,
   User,
@@ -36,6 +38,12 @@ export type ReactNativeUploadAsset = {
 
 export type UploadPhotoInput = UploadPhotoMetadata & {
   photo: File | Blob | ReactNativeUploadAsset;
+};
+
+export type ReportPhotoInput = {
+  reason: PhotoReportReason;
+  note?: string;
+  reporterId?: string;
 };
 
 export type LiveWallResponse = {
@@ -206,6 +214,34 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
         body: JSON.stringify({ challenge }),
       });
     },
+    getHostPhotos(eventId: string, query: { visibility?: PhotoVisibilityStatus | "ALL"; featured?: boolean; reported?: boolean; challengeItemId?: string } = {}, token?: string | null) {
+      const params = new URLSearchParams();
+      if (query.visibility && query.visibility !== "ALL") params.set("visibility", query.visibility);
+      if (query.featured !== undefined) params.set("featured", String(query.featured));
+      if (query.reported !== undefined) params.set("reported", String(query.reported));
+      if (query.challengeItemId) params.set("challengeItemId", query.challengeItemId);
+      const suffix = params.toString() ? `?${params.toString()}` : "";
+      return request<{ photos: Photo[] }>(`/api/host/events/${encodeURIComponent(eventId)}/photos${suffix}`, {
+        auth: !token,
+        token,
+      });
+    },
+    updatePhotoVisibility(eventId: string, photoId: string, visibilityStatus: PhotoVisibilityStatus, hiddenReason?: string, token?: string | null) {
+      return request<{ photo: Photo }>(`/api/host/events/${encodeURIComponent(eventId)}/photos/${encodeURIComponent(photoId)}/visibility`, {
+        method: "PATCH",
+        auth: !token,
+        token,
+        body: JSON.stringify({ visibilityStatus, hiddenReason }),
+      });
+    },
+    updatePhotoFeatured(eventId: string, photoId: string, isFeatured: boolean, token?: string | null) {
+      return request<{ photo: Photo }>(`/api/host/events/${encodeURIComponent(eventId)}/photos/${encodeURIComponent(photoId)}/featured`, {
+        method: "PATCH",
+        auth: !token,
+        token,
+        body: JSON.stringify({ isFeatured }),
+      });
+    },
     deletePhoto(eventId: string, photoId: string, token?: string | null) {
       return request<{ ok: true }>(`/api/host/events/${encodeURIComponent(eventId)}/photos/${encodeURIComponent(photoId)}`, {
         method: "DELETE",
@@ -235,6 +271,12 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
       return request<GuestStatus>(`/api/events/${encodeURIComponent(slug)}/guest-status?clientId=${encodeURIComponent(clientId)}`);
     },
     uploadPhoto,
+    reportPhoto(photoId: string, input: ReportPhotoInput) {
+      return request<{ ok: true }>(`/api/photos/${encodeURIComponent(photoId)}/reports`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
     getAlbumPhotos(slug: string) {
       return request<{ photos: Photo[] }>(`/api/events/${encodeURIComponent(slug)}/photos`);
     },

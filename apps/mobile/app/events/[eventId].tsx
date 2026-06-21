@@ -1,7 +1,7 @@
 import * as React from "react";
 import { Link, useLocalSearchParams } from "expo-router";
-import { Linking, View } from "react-native";
-import type { EventSummary, Photo } from "@eventfilm/shared";
+import { Alert, Linking, View } from "react-native";
+import type { EventSummary, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
 import { buildHostLaunchKit, challengeLabel } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
@@ -29,6 +29,45 @@ export default function EventDetailScreen() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function updateVisibility(photo: Photo, visibilityStatus: PhotoVisibilityStatus) {
+    if (!eventId) return;
+    try {
+      const data = await api.updatePhotoVisibility(eventId, photo.id, visibilityStatus, visibilityStatus === "HIDDEN" ? "Hidden by host" : undefined);
+      setEvent((current) => current ? { ...current, photos: current.photos.map((item) => item.id === photo.id ? data.photo : item) } : current);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  async function updateFeatured(photo: Photo, isFeatured: boolean) {
+    if (!eventId) return;
+    try {
+      const data = await api.updatePhotoFeatured(eventId, photo.id, isFeatured);
+      setEvent((current) => current ? { ...current, photos: current.photos.map((item) => item.id === photo.id ? data.photo : item) } : current);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  function confirmDelete(photo: Photo) {
+    Alert.alert("Delete photo?", "Hidden photos can be restored. Deleted photos are removed from storage.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          if (!eventId) return;
+          try {
+            await api.deletePhoto(eventId, photo.id);
+            setEvent((current) => current ? { ...current, photos: current.photos.filter((item) => item.id !== photo.id) } : current);
+          } catch (err) {
+            setError((err as Error).message);
+          }
+        },
+      },
+    ]);
   }
 
   React.useEffect(() => {
@@ -127,7 +166,31 @@ export default function EventDetailScreen() {
             <SectionHeader title="Album activity" subtitle="Recent uploads from guests appear first." />
             {event.photos.length ? (
               <View style={{ gap: 14 }}>
-                {event.photos.map((photo) => <PhotoCard key={photo.id} photo={photo} />)}
+                {event.photos.map((photo) => (
+                  <View key={photo.id} style={{ gap: 10 }}>
+                    <PhotoCard photo={photo} compact />
+                    <Card>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                        {photo.isFeatured ? <Badge>Featured</Badge> : null}
+                        {photo.visibilityStatus === "HIDDEN" ? <Badge tone="red">Hidden</Badge> : null}
+                        {photo.reportCount ? <Badge tone="red">{photo.reportCount} reported</Badge> : null}
+                      </View>
+                      <View style={{ flexDirection: "row", gap: 8 }}>
+                        <View style={{ flex: 1 }}>
+                          {photo.visibilityStatus === "HIDDEN" ? (
+                            <Button tone="secondary" onPress={() => updateVisibility(photo, "VISIBLE")}>Restore</Button>
+                          ) : (
+                            <Button tone="secondary" onPress={() => updateVisibility(photo, "HIDDEN")}>Hide</Button>
+                          )}
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Button tone="secondary" disabled={photo.visibilityStatus === "HIDDEN"} onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Unfeature" : "Feature"}</Button>
+                        </View>
+                      </View>
+                      <Button tone="danger" onPress={() => confirmDelete(photo)}>Delete</Button>
+                    </Card>
+                  </View>
+                ))}
               </View>
             ) : (
               <EmptyState
