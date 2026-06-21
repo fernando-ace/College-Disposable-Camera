@@ -84,8 +84,12 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_launch_kit_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("photo_reported"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("album_downloaded"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("event_template_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("event_template_selected"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("prompt_pack_selected"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("prompts_customized"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("event_created_from_template"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("template_skipped"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
 });
 
@@ -96,6 +100,42 @@ test("template and prompt pack registries expose requested presets", () => {
   assert.equal(new Set(PROMPT_PACKS.map((pack) => pack.slug)).size, PROMPT_PACKS.length);
   assert.equal(getEventTemplate("birthday-party")?.name, "Birthday Party");
   assert.deepEqual(getPromptPack("birthday").items.slice(0, 3), ["Best group selfie", "Funniest moment", "Best outfit"]);
+  assert.deepEqual(
+    EVENT_TEMPLATES.map((template) => template.name),
+    [
+      "Birthday Party",
+      "Wedding / Engagement",
+      "Greek Life Event",
+      "Student Org Event",
+      "Graduation Party",
+      "Friend Trip",
+      "Camp / Retreat",
+      "Club Banquet",
+      "Family Gathering",
+      "Open Custom Event",
+    ],
+  );
+  assert.deepEqual(
+    PROMPT_PACKS.map((pack) => pack.slug),
+    ["birthday", "wedding-engagement", "greek-life", "student-org", "graduation", "friend-trip", "camp-retreat", "club-banquet", "custom"],
+  );
+});
+
+test("prompt packs contain the requested default items", () => {
+  const expectedPacks: Record<string, string[]> = {
+    birthday: ["Best group selfie", "Funniest moment", "Best outfit", "Photo with the birthday person", "Most chaotic photo", "Best candid", "Main character moment", "Final group photo"],
+    "wedding-engagement": ["Best candid", "Best couple photo", "Best dance floor moment", "Funniest guest photo", "Most wholesome moment", "Best family photo", "Best detail shot", "Final celebration photo"],
+    "greek-life": ["Best group photo", "Best fit", "Funniest candid", "Big/little moment", "Best chant or dance moment", "Most school spirit", "Best table photo", "Main character moment"],
+    "student-org": ["Best team photo", "Best speaker moment", "Funniest candid", "Best behind-the-scenes photo", "Most wholesome moment", "Best group activity", "Best food photo", "Final group photo"],
+    graduation: ["Best cap and gown photo", "Family photo", "Friend group photo", "Best candid", "Most emotional moment", "Best campus photo", "Funniest photo", "Final group photo"],
+    "friend-trip": ["Best view", "Best food photo", "Funniest moment", "Best candid", "Best group selfie", "Most chaotic photo", "Main character moment", "Photo that sums up the trip"],
+    "camp-retreat": ["Best team photo", "Best activity photo", "Funniest moment", "Best nature photo", "Most wholesome moment", "Best cabin/group photo", "Best challenge photo", "Final group photo"],
+    "club-banquet": ["Best table photo", "Best outfit", "Best award moment", "Funniest candid", "Best speaker photo", "Most wholesome moment", "Best group photo", "Final celebration photo"],
+  };
+
+  for (const [slug, items] of Object.entries(expectedPacks)) {
+    assert.deepEqual(getPromptPack(slug).items, items);
+  }
 });
 
 test("event templates apply mode and prompt pack defaults", () => {
@@ -108,6 +148,47 @@ test("event templates apply mode and prompt pack defaults", () => {
   const weddingDraft = applyEventTemplateToDraft("wedding-engagement");
   assert.equal(weddingDraft.type, CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT);
   assert.deepEqual(weddingDraft.prompts.map((prompt) => prompt.text), getPromptPack("wedding-engagement").items);
+});
+
+test("every event template resolves to a valid prompt pack and editable copy", () => {
+  for (const template of EVENT_TEMPLATES) {
+    assert.equal(getPromptPack(template.promptPackSlug).slug, template.promptPackSlug);
+    assert.ok(template.shortDescription);
+    assert.ok(template.bestFor);
+    assert.ok(template.revealTiming);
+    assert.ok(template.inviteCopy);
+    assert.ok(template.liveWallCopy);
+    assert.ok(template.recapFraming);
+    assert.ok(template.icon);
+    assert.ok(template.badge);
+  }
+});
+
+test("unknown templates and old events use safe fallbacks", () => {
+  const unknownTemplateDraft = applyEventTemplateToDraft("missing-template");
+  assert.equal(unknownTemplateDraft.eventTemplateSlug, null);
+  assert.equal(unknownTemplateDraft.promptPackSlug, null);
+  assert.equal(getPromptPack("missing-pack").slug, "custom");
+
+  const metadata = buildEventRecapMetadata(
+    {
+      id: "event",
+      name: "Old Event",
+      slug: "old-event",
+      eventDate: "2026-01-01T00:00:00.000Z",
+      revealAt: "2026-01-02T00:00:00.000Z",
+      photoLimitPerGuest: 5,
+      eventLink: "https://example.com/e/old-event",
+      photoCount: 0,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      challenge: null,
+    },
+    [],
+  );
+  assert.equal(metadata.templateName, undefined);
+  assert.equal(metadata.recapTitle, "Event recap");
+  assert.equal(metadata.recapSubtitle, "A shared album from the people who were there.");
 });
 
 test("report reasons and upload validation stay beta-safe", () => {

@@ -499,7 +499,7 @@ export default function CreateEventScreen() {
         eventSlug: data.event.slug,
         metadata,
       }).catch(() => {});
-      if (challengeDraft.eventTemplateSlug) {
+      if (challengeDraft.eventTemplateSlug && challengeDraft.eventTemplateSlug !== "open-custom-event") {
         api.trackAnalyticsEvent({
           name: "event_created_from_template",
           source: "mobile",

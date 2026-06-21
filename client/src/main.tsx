@@ -1813,7 +1813,7 @@ function CreateEvent() {
         eventSlug: data.event.slug,
         metadata,
       });
-      if (challengeDraft.eventTemplateSlug) {
+      if (challengeDraft.eventTemplateSlug && challengeDraft.eventTemplateSlug !== "open-custom-event") {
         trackAnalytics("event_created_from_template", { eventId: data.event.id, eventSlug: data.event.slug, metadata });
       }
       setCreated(data.event);
