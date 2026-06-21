@@ -4,7 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Image, Share, View } from "react-native";
 import type { LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo } from "@eventfilm/shared";
-import { buildHostLaunchKit } from "@eventfilm/shared";
+import { buildHostLaunchKit, getEventTemplate } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, ErrorState, HeroHeader, LoadingState, Screen, SectionHeader, SuccessState, colors } from "../../../src/components/ui";
 import { useAuth } from "../../../src/auth";
 
@@ -67,13 +67,14 @@ export default function ShareEventScreen() {
   }
 
   const launchKit = event ? buildHostLaunchKit(event) : null;
+  const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
 
   return (
     <Screen>
       <HeroHeader
         eyebrow="Share event"
         title={event ? `Invite guests to ${event.name}` : "Preparing share link"}
-        body="Guests can scan the QR code or open the link from any browser. No account needed."
+        body={template ? `${template.name} template: ${template.liveWallCopy}` : "Guests can scan the QR code or open the link from any browser. No account needed."}
       />
       {error ? <ErrorState message={error} /> : null}
       {!event ? <LoadingState label="Loading sharing details..." /> : null}

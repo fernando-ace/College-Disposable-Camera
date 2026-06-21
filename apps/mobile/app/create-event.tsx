@@ -26,15 +26,24 @@ import {
 import { useAuth } from "../src/auth";
 import {
   type ChallengeDraft,
+  type EventTemplateSlug,
+  type PromptPackSlug,
   CHALLENGE_PACKS,
+  EVENT_TEMPLATES,
+  PROMPT_PACKS,
+  applyEventTemplateToDraft,
   buildChallengePayload,
   challengeTypeName,
+  createCategoriesFromPack,
   colorBySlug,
+  createPromptsFromPack,
   createCategory,
   createDefaultAwardCategories,
   createEmptyChallengeDraft,
   createPrompt,
   createStarterPrompts,
+  getChallengePack,
+  getPromptPack,
   hasDuplicateCategories,
   hasDuplicateParticipantColors,
   hasDuplicateParticipantNames,
@@ -45,11 +54,12 @@ import {
 type PickerMode = "date" | "time";
 
 const wizardLabels = [
-  "Step 1 of 5: Event basics",
-  "Step 2 of 5: Timing and uploads",
-  "Step 3 of 5: Photo mode",
-  "Step 4 of 5: Customize mode",
-  "Step 5 of 5: Review and create",
+  "Step 1 of 6: Event template",
+  "Step 2 of 6: Event basics",
+  "Step 3 of 6: Timing and uploads",
+  "Step 4 of 6: Photo mode",
+  "Step 5 of 6: Customize mode",
+  "Step 6 of 6: Review and create",
 ];
 
 function formatDateTime(value: Date) {
@@ -164,17 +174,30 @@ function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
 }
 
 function ScavengerSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  const { api } = useAuth();
   const validPromptCount = draft.prompts.filter((prompt) => prompt.text.trim()).length;
 
+  function trackCustomized() {
+    api.trackAnalyticsEvent({
+      name: "prompts_customized",
+      source: "mobile",
+      path: "/create-event",
+      metadata: { itemKind: "prompt", promptPackSlug: draft.promptPackSlug || "custom" },
+    }).catch(() => {});
+  }
+
   function updatePrompt(index: number, text: string) {
+    trackCustomized();
     onChange({ ...draft, prompts: draft.prompts.map((prompt, promptIndex) => (promptIndex === index ? { ...prompt, text } : prompt)) });
   }
 
   function addPrompt() {
+    trackCustomized();
     onChange({ ...draft, prompts: [...draft.prompts, createPrompt("", draft.prompts.length)] });
   }
 
   function removePrompt(index: number) {
+    trackCustomized();
     onChange({ ...draft, prompts: draft.prompts.filter((_prompt, promptIndex) => promptIndex !== index).map((prompt, order) => ({ ...prompt, order })) });
   }
 
@@ -185,6 +208,7 @@ function ScavengerSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
     const prompt = prompts[index] as ChallengePrompt;
     prompts[index] = prompts[nextIndex] as ChallengePrompt;
     prompts[nextIndex] = prompt;
+    trackCustomized();
     onChange({ ...draft, prompts: prompts.map((nextPrompt, order) => ({ ...nextPrompt, order })) });
   }
 
@@ -208,24 +232,40 @@ function ScavengerSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
       {hasDuplicatePrompts(draft.prompts) ? <Body tone="danger">Remove duplicate prompts before saving.</Body> : null}
       <View style={{ gap: 10 }}>
         <Button tone="secondary" onPress={addPrompt}>Add prompt</Button>
-        <Button tone="secondary" onPress={() => onChange({ ...draft, prompts: createStarterPrompts() })}>Use starter prompts</Button>
+        <Button tone="secondary" onPress={() => {
+          trackCustomized();
+          onChange({ ...draft, promptPackSlug: null, prompts: createStarterPrompts() });
+        }}>Use starter prompts</Button>
       </View>
     </Card>
   );
 }
 
 function AwardsSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  const { api } = useAuth();
   const validCategoryCount = draft.categories.filter((category) => category.label.trim()).length;
 
+  function trackCustomized() {
+    api.trackAnalyticsEvent({
+      name: "prompts_customized",
+      source: "mobile",
+      path: "/create-event",
+      metadata: { itemKind: "award", promptPackSlug: draft.promptPackSlug || "custom" },
+    }).catch(() => {});
+  }
+
   function updateCategory(index: number, label: string) {
+    trackCustomized();
     onChange({ ...draft, categories: draft.categories.map((category, categoryIndex) => (categoryIndex === index ? { ...category, label } : category)) });
   }
 
   function addCategory() {
+    trackCustomized();
     onChange({ ...draft, categories: [...draft.categories, createCategory("", draft.categories.length)] });
   }
 
   function removeCategory(index: number) {
+    trackCustomized();
     onChange({ ...draft, categories: draft.categories.filter((_category, categoryIndex) => categoryIndex !== index).map((category, order) => ({ ...category, order })) });
   }
 
@@ -236,6 +276,7 @@ function AwardsSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (dr
     const category = categories[index] as ChallengeCategory;
     categories[index] = categories[nextIndex] as ChallengeCategory;
     categories[nextIndex] = category;
+    trackCustomized();
     onChange({ ...draft, categories: categories.map((nextCategory, order) => ({ ...nextCategory, order })) });
   }
 
@@ -259,7 +300,10 @@ function AwardsSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (dr
       {hasDuplicateCategories(draft.categories) ? <Body tone="danger">Remove duplicate award categories before saving.</Body> : null}
       <View style={{ gap: 10 }}>
         <Button tone="secondary" onPress={addCategory}>Add category</Button>
-        <Button tone="secondary" onPress={() => onChange({ ...draft, categories: createDefaultAwardCategories() })}>Use default awards</Button>
+        <Button tone="secondary" onPress={() => {
+          trackCustomized();
+          onChange({ ...draft, promptPackSlug: null, categories: createDefaultAwardCategories() });
+        }}>Use default awards</Button>
       </View>
     </Card>
   );
@@ -280,6 +324,64 @@ function MemoryCapsuleSetup({ draft, onChange }: { draft: ChallengeDraft; onChan
       <FieldGroup label="Reveal note">
         <Field value={draft.memoryCapsule.revealNote} onChangeText={(value) => update("revealNote", value)} placeholder="Tell guests when and why to come back." multiline />
       </FieldGroup>
+    </Card>
+  );
+}
+
+function TemplateSetup({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
+  return (
+    <View style={{ gap: 12 }}>
+      <SectionHeader title="Choose event type" subtitle="Start with a polished setup. You can customize the mode and prompts before create." />
+      {EVENT_TEMPLATES.map((template) => {
+        const promptPack = getPromptPack(template.promptPackSlug);
+        const mode = getChallengePack(template.recommendedMode);
+        return (
+          <ModeOptionCard
+            key={template.slug}
+            title={template.name}
+            description={template.shortDescription}
+            meta={`${template.badge} - ${mode.name} - ${promptPack.items.slice(0, 3).join(" / ")}`}
+            selected={draft.eventTemplateSlug === template.slug}
+            onPress={() => onSelect(template.slug)}
+          />
+        );
+      })}
+      <Button tone="secondary" onPress={onSkip}>Open custom event</Button>
+    </View>
+  );
+}
+
+function PromptPackPicker({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+  const { api } = useAuth();
+
+  function selectPromptPack(promptPackSlug: PromptPackSlug) {
+    const pack = getPromptPack(promptPackSlug);
+    api.trackAnalyticsEvent({
+      name: "prompt_pack_selected",
+      source: "mobile",
+      path: "/create-event",
+      metadata: { promptPackSlug, itemKind: pack.kind },
+    }).catch(() => {});
+    if (pack.kind === "award") {
+      onChange({ ...draft, type: CHALLENGE_TYPES.EVENT_AWARDS, promptPackSlug, categories: createCategoriesFromPack(promptPackSlug) });
+    } else {
+      onChange({ ...draft, type: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT, promptPackSlug, prompts: createPromptsFromPack(promptPackSlug) });
+    }
+  }
+
+  return (
+    <Card>
+      <SectionHeader title="Prompt pack library" subtitle="Swap in a high-quality prompt set, then edit every line." />
+      {PROMPT_PACKS.filter((pack) => pack.kind !== "custom").map((pack) => (
+        <ModeOptionCard
+          key={pack.slug}
+          title={pack.name}
+          description={pack.description}
+          meta={`${pack.kind === "award" ? "Event Awards" : "Scavenger Hunt"} - ${pack.items.slice(0, 3).join(" / ")}`}
+          selected={draft.promptPackSlug === pack.slug}
+          onPress={() => selectPromptPack(pack.slug)}
+        />
+      ))}
     </Card>
   );
 }
@@ -307,17 +409,48 @@ export default function CreateEventScreen() {
   const disabledReason = createDisabledReason({ name, photoLimitPerGuest, challengeDraft });
   const canCreate = !disabledReason;
 
+  React.useEffect(() => {
+    api.trackAnalyticsEvent({
+      name: "event_template_viewed",
+      source: "mobile",
+      path: "/create-event",
+      metadata: { surface: "create_event" },
+    }).catch(() => {});
+  }, [api]);
+
+  function selectTemplate(templateSlug: EventTemplateSlug) {
+    const template = EVENT_TEMPLATES.find((item) => item.slug === templateSlug);
+    setChallengeDraft((draft) => applyEventTemplateToDraft(templateSlug, draft));
+    if (template?.suggestedUploadLimit) setPhotoLimitPerGuest(String(template.suggestedUploadLimit));
+    api.trackAnalyticsEvent({
+      name: "event_template_selected",
+      source: "mobile",
+      path: "/create-event",
+      metadata: { templateSlug, mode: template?.recommendedMode || "NONE", promptPackSlug: template?.promptPackSlug || null },
+    }).catch(() => {});
+  }
+
+  function skipTemplate() {
+    setChallengeDraft((draft) => ({ ...draft, eventTemplateSlug: "open-custom-event", promptPackSlug: "custom" }));
+    api.trackAnalyticsEvent({
+      name: "template_skipped",
+      source: "mobile",
+      path: "/create-event",
+      metadata: { templateSlug: "open-custom-event" },
+    }).catch(() => {});
+  }
+
   function updateType(type: ChallengeMode) {
     setChallengeDraft((draft) => ({ ...draft, type }));
   }
 
   function stepProblem(nextStep = step) {
-    if (nextStep > 0 && !name.trim()) return "Add an event name before continuing.";
-    if (nextStep > 2) {
+    if (nextStep > 1 && !name.trim()) return "Add an event name before continuing.";
+    if (nextStep > 3) {
       const photoLimit = Number(photoLimitPerGuest);
       if (!Number.isInteger(photoLimit) || photoLimit < 1) return "Set a photo limit of at least 1.";
     }
-    if (nextStep > 4) return disabledReason;
+    if (nextStep > 5) return disabledReason;
     return "";
   }
 
@@ -328,7 +461,7 @@ export default function CreateEventScreen() {
       return;
     }
     setError("");
-    setStep((current) => Math.min(current + 1, 4));
+    setStep((current) => Math.min(current + 1, 5));
   }
 
   function goBack() {
@@ -353,16 +486,29 @@ export default function CreateEventScreen() {
         eventDate: eventDate.toISOString(),
         revealAt: revealAt.toISOString(),
         photoLimitPerGuest: photoLimit,
+        eventTemplateSlug: challengeDraft.eventTemplateSlug,
+        promptPackSlug: challengeDraft.promptPackSlug,
         challenge: buildChallengePayload(challengeDraft),
       });
+      const metadata = { mode: challengeDraft.type, hasChallenge: challengeDraft.type !== "NONE", templateSlug: challengeDraft.eventTemplateSlug, promptPackSlug: challengeDraft.promptPackSlug };
       api.trackAnalyticsEvent({
         name: "event_created",
         source: "mobile",
         path: "/create-event",
         eventId: data.event.id,
         eventSlug: data.event.slug,
-        metadata: { mode: challengeDraft.type, hasChallenge: challengeDraft.type !== "NONE" },
+        metadata,
       }).catch(() => {});
+      if (challengeDraft.eventTemplateSlug) {
+        api.trackAnalyticsEvent({
+          name: "event_created_from_template",
+          source: "mobile",
+          path: "/create-event",
+          eventId: data.event.id,
+          eventSlug: data.event.slug,
+          metadata,
+        }).catch(() => {});
+      }
       router.replace(`/events/${data.event.id}`);
     } catch (err) {
       setError((err as Error).message);
@@ -381,6 +527,10 @@ export default function CreateEventScreen() {
       <ProgressSteps current={step} total={5} labels={wizardLabels} />
 
       {step === 0 ? (
+        <TemplateSetup draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} />
+      ) : null}
+
+      {step === 1 ? (
         <Card>
           <SectionHeader title="Event basics" subtitle="Give guests a name and a little context before they upload." />
           <FieldGroup label="Event name" helper="Use the name guests will recognize on the QR page.">
@@ -392,7 +542,7 @@ export default function CreateEventScreen() {
         </Card>
       ) : null}
 
-      {step === 1 ? (
+      {step === 2 ? (
         <Card>
           <SectionHeader title="Timing and uploads" subtitle="Set when the event happens and when guests can see the album." />
           <DateTimeField label="Event date and time" helper="This helps hosts spot upcoming and active events." value={eventDate} onChange={setEventDate} />
@@ -403,7 +553,7 @@ export default function CreateEventScreen() {
         </Card>
       ) : null}
 
-      {step === 2 ? (
+      {step === 3 ? (
         <View style={{ gap: 12 }}>
           <SectionHeader title="Choose photo mode" subtitle="Start simple, or add a lightweight game for the room." />
           {CHALLENGE_PACKS.map((pack) => (
@@ -416,10 +566,11 @@ export default function CreateEventScreen() {
               onPress={() => updateType(pack.mode)}
             />
           ))}
+          <PromptPackPicker draft={challengeDraft} onChange={setChallengeDraft} />
         </View>
       ) : null}
 
-      {step === 3 ? (
+      {step === 4 ? (
         <View style={{ gap: 12 }}>
           {challengeDraft.type === "NONE" ? (
             <Card tone="warm">
@@ -434,11 +585,12 @@ export default function CreateEventScreen() {
         </View>
       ) : null}
 
-      {step === 4 ? (
+      {step === 5 ? (
         <Card>
           <SectionHeader title="Review" subtitle="One last look before EventFilm creates the share link and QR code." />
           <View style={{ gap: 10 }}>
             <ReviewRow label="Event" value={name.trim() || "Untitled event"} />
+            <ReviewRow label="Template" value={EVENT_TEMPLATES.find((template) => template.slug === challengeDraft.eventTemplateSlug)?.name || "Custom event"} />
             <ReviewRow label="Mode" value={challengeTypeName(challengeDraft.type)} />
             <ReviewRow label="Event date" value={formatDateTime(eventDate)} />
             <ReviewRow label="Reveal" value={formatDateTime(revealAt)} />
@@ -481,7 +633,7 @@ export default function CreateEventScreen() {
         <View style={{ flexDirection: "row", gap: 10 }}>
           {step > 0 ? <View style={{ flex: 1 }}><Button tone="secondary" onPress={goBack}>Back</Button></View> : null}
           <View style={{ flex: 1 }}>
-            {step < 4 ? (
+            {step < 5 ? (
               <Button onPress={goNext}>Continue</Button>
             ) : (
               <Button loading={loading} disabled={!canCreate} onPress={createEvent}>Create event</Button>

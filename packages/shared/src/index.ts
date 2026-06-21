@@ -14,6 +14,28 @@ export type UploadMetadataRequirement = "none" | "participant" | "prompt" | "awa
 export type SetupComplexity = "None" | "Easy" | "Medium";
 export type PhotoVisibilityStatus = "VISIBLE" | "HIDDEN";
 export type PhotoReportReason = "inappropriate" | "privacy" | "spam" | "other";
+export type PromptPackKind = "prompt" | "award" | "custom";
+export type PromptPackSlug =
+  | "birthday"
+  | "wedding-engagement"
+  | "greek-life"
+  | "student-org"
+  | "graduation"
+  | "friend-trip"
+  | "camp-retreat"
+  | "club-banquet"
+  | "custom";
+export type EventTemplateSlug =
+  | "birthday-party"
+  | "wedding-engagement"
+  | "greek-life-event"
+  | "student-org-event"
+  | "graduation-party"
+  | "friend-trip"
+  | "camp-retreat"
+  | "club-banquet"
+  | "family-gathering"
+  | "open-custom-event";
 
 export const PHOTO_REPORT_REASONS: PhotoReportReason[] = ["inappropriate", "privacy", "spam", "other"];
 export const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"] as const;
@@ -150,6 +172,9 @@ export type ChallengeProgressSummary = {
 
 export type EventRecapMetadata = {
   modeLabel: string;
+  templateName?: string;
+  recapTitle: string;
+  recapSubtitle: string;
   totalPhotos: number;
   contributorCount: number;
   highlightPhotos: Photo[];
@@ -187,6 +212,12 @@ export const ANALYTICS_EVENT_NAMES = [
   "host_dashboard_opened",
   "event_created",
   "event_mode_selected",
+  "event_template_viewed",
+  "event_template_selected",
+  "prompt_pack_selected",
+  "prompts_customized",
+  "event_created_from_template",
+  "template_skipped",
   "guest_link_copied",
   "live_wall_opened",
   "recap_opened",
@@ -237,6 +268,8 @@ export type EventSummary = {
   eventDate: ISODateString;
   revealAt: ISODateString;
   photoLimitPerGuest: number;
+  eventTemplateSlug?: EventTemplateSlug | string | null;
+  promptPackSlug?: PromptPackSlug | string | null;
   eventLink: string;
   liveWallLink?: string;
   recapLink?: string;
@@ -255,6 +288,8 @@ export type PublicEvent = {
   eventDate: ISODateString;
   revealAt: ISODateString;
   photoLimitPerGuest: number;
+  eventTemplateSlug?: EventTemplateSlug | string | null;
+  promptPackSlug?: PromptPackSlug | string | null;
   isRevealed: boolean;
   photoCount: number | null;
   challenge?: EventChallenge | null;
@@ -280,6 +315,8 @@ export type CreateEventInput = {
   eventDate: ISODateString;
   revealAt: ISODateString;
   photoLimitPerGuest: number;
+  eventTemplateSlug?: EventTemplateSlug | string | null;
+  promptPackSlug?: PromptPackSlug | string | null;
   challenge?: EventChallengeInput;
 };
 
@@ -309,10 +346,36 @@ export type ChallengePackDefinition = {
 
 export type ChallengeDraft = {
   type: ChallengeMode;
+  eventTemplateSlug: EventTemplateSlug | null;
+  promptPackSlug: PromptPackSlug | null;
   participants: ChallengeParticipant[];
   prompts: ChallengePrompt[];
   categories: ChallengeCategory[];
   memoryCapsule: MemoryCapsuleConfig;
+};
+
+export type PromptPackDefinition = {
+  slug: PromptPackSlug;
+  name: string;
+  kind: PromptPackKind;
+  description: string;
+  items: string[];
+};
+
+export type EventTemplateDefinition = {
+  slug: EventTemplateSlug;
+  name: string;
+  shortDescription: string;
+  bestFor: string;
+  recommendedMode: ChallengeMode;
+  promptPackSlug: PromptPackSlug;
+  revealTiming: string;
+  suggestedUploadLimit?: number;
+  inviteCopy: string;
+  liveWallCopy: string;
+  recapFraming: string;
+  icon: string;
+  badge: string;
 };
 
 export const COLOR_HUNT_PALETTE: ColorHuntColor[] = [
@@ -349,6 +412,225 @@ export const DEFAULT_MEMORY_CAPSULE: MemoryCapsuleConfig = {
   revealTitle: "The album unlocks after the event",
   revealNote: "Guests can keep adding photos now. Everyone comes back at reveal time to see the full capsule together.",
 };
+
+export const PROMPT_PACKS: PromptPackDefinition[] = [
+  {
+    slug: "birthday",
+    name: "Birthday",
+    kind: "award",
+    description: "Warm, funny, high-energy categories for celebrating one person and the whole room.",
+    items: ["Best group selfie", "Funniest moment", "Best outfit", "Photo with the birthday person", "Most chaotic photo", "Best candid", "Main character moment", "Final group photo"],
+  },
+  {
+    slug: "wedding-engagement",
+    name: "Wedding / Engagement",
+    kind: "prompt",
+    description: "A polished mix of couple, family, dance floor, and detail moments.",
+    items: ["Best candid", "Best couple photo", "Best dance floor moment", "Funniest guest photo", "Most wholesome moment", "Best family photo", "Best detail shot", "Final celebration photo"],
+  },
+  {
+    slug: "greek-life",
+    name: "Greek Life",
+    kind: "award",
+    description: "Social, school-spirit-friendly prompts for chapter events and mixers.",
+    items: ["Best group photo", "Best fit", "Funniest candid", "Big/little moment", "Best chant or dance moment", "Most school spirit", "Best table photo", "Main character moment"],
+  },
+  {
+    slug: "student-org",
+    name: "Student Org",
+    kind: "prompt",
+    description: "Balanced prompts for campus org meetings, retreats, and showcases.",
+    items: ["Best team photo", "Best speaker moment", "Funniest candid", "Best behind-the-scenes photo", "Most wholesome moment", "Best group activity", "Best food photo", "Final group photo"],
+  },
+  {
+    slug: "graduation",
+    name: "Graduation",
+    kind: "prompt",
+    description: "Milestone prompts for family, campus, cap-and-gown, and emotional photos.",
+    items: ["Best cap and gown photo", "Family photo", "Friend group photo", "Best candid", "Most emotional moment", "Best campus photo", "Funniest photo", "Final group photo"],
+  },
+  {
+    slug: "friend-trip",
+    name: "Friend Trip",
+    kind: "prompt",
+    description: "Casual prompts for trips, meals, views, and the moment that sums it all up.",
+    items: ["Best view", "Best food photo", "Funniest moment", "Best candid", "Best group selfie", "Most chaotic photo", "Main character moment", "Photo that sums up the trip"],
+  },
+  {
+    slug: "camp-retreat",
+    name: "Camp / Retreat",
+    kind: "prompt",
+    description: "Team, nature, cabin, and activity prompts for a longer shared experience.",
+    items: ["Best team photo", "Best activity photo", "Funniest moment", "Best nature photo", "Most wholesome moment", "Best cabin/group photo", "Best challenge photo", "Final group photo"],
+  },
+  {
+    slug: "club-banquet",
+    name: "Club Banquet",
+    kind: "award",
+    description: "Recognition-night categories for tables, outfits, awards, and celebration photos.",
+    items: ["Best table photo", "Best outfit", "Best award moment", "Funniest candid", "Best speaker photo", "Most wholesome moment", "Best group photo", "Final celebration photo"],
+  },
+  {
+    slug: "custom",
+    name: "Custom Pack",
+    kind: "custom",
+    description: "A flexible starter set hosts can fully rewrite.",
+    items: ["Best group photo", "Funniest moment", "Best candid", "Most wholesome moment", "Main character moment", "Final group photo"],
+  },
+];
+
+export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
+  {
+    slug: "birthday-party",
+    name: "Birthday Party",
+    shortDescription: "A lively setup for the birthday person, friend groups, outfits, and funny moments.",
+    bestFor: "House parties, dinners, surprise parties, and milestone birthdays.",
+    recommendedMode: CHALLENGE_TYPES.EVENT_AWARDS,
+    promptPackSlug: "birthday",
+    revealTiming: "Reveal later that night or the next morning.",
+    suggestedUploadLimit: 12,
+    inviteCopy: "Help capture the birthday from every angle. Upload your funniest, sweetest, and most main-character photos here:",
+    liveWallCopy: "Keep the birthday energy on screen while guests add their favorite moments.",
+    recapFraming: "A birthday recap full of the people, outfits, candids, and chaos that made it feel like the night.",
+    icon: "celebration",
+    badge: "Most social",
+  },
+  {
+    slug: "wedding-engagement",
+    name: "Wedding / Engagement",
+    shortDescription: "A polished guest-photo setup for candids, couple moments, families, and the dance floor.",
+    bestFor: "Weddings, engagements, showers, welcome parties, and rehearsal dinners.",
+    recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
+    promptPackSlug: "wedding-engagement",
+    revealTiming: "Reveal after the reception or the next day.",
+    suggestedUploadLimit: 15,
+    inviteCopy: "Share your favorite candid photos from the celebration. No app download needed:",
+    liveWallCopy: "Open the Live Wall during the reception so guests can watch the celebration build.",
+    recapFraming: "A guest-made celebration story with candids, dance-floor moments, family photos, and details.",
+    icon: "favorite",
+    badge: "Polished",
+  },
+  {
+    slug: "greek-life-event",
+    name: "Greek Life Event",
+    shortDescription: "A chapter-ready setup for group photos, fits, school spirit, and big/little moments.",
+    bestFor: "Mixers, formals, philanthropy events, bid day, and chapter retreats.",
+    recommendedMode: CHALLENGE_TYPES.EVENT_AWARDS,
+    promptPackSlug: "greek-life",
+    revealTiming: "Reveal after the event or at the next chapter moment.",
+    suggestedUploadLimit: 10,
+    inviteCopy: "Drop your best photos from the event here so the chapter recap is ready:",
+    liveWallCopy: "Show the best group shots, fits, and candid moments as they come in.",
+    recapFraming: "A chapter recap built from group shots, spirit moments, candids, and favorite fits.",
+    icon: "groups",
+    badge: "Chapter ready",
+  },
+  {
+    slug: "student-org-event",
+    name: "Student Org Event",
+    shortDescription: "A clean setup for campus teams, speakers, activities, food, and behind-the-scenes photos.",
+    bestFor: "Club meetings, retreats, showcases, conferences, and campus programs.",
+    recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
+    promptPackSlug: "student-org",
+    revealTiming: "Reveal after the event wrap-up.",
+    suggestedUploadLimit: 8,
+    inviteCopy: "Help document the event. Upload team photos, speaker moments, and behind-the-scenes shots here:",
+    liveWallCopy: "Use the Live Wall to make the event feel active and shared.",
+    recapFraming: "A campus-event recap with the people, activities, and behind-the-scenes details that mattered.",
+    icon: "school",
+    badge: "Campus",
+  },
+  {
+    slug: "graduation-party",
+    name: "Graduation Party",
+    shortDescription: "A memory-forward setup for family, friends, campus, and cap-and-gown moments.",
+    bestFor: "Graduation parties, cookouts, senior celebrations, and family gatherings after commencement.",
+    recommendedMode: CHALLENGE_TYPES.MEMORY_CAPSULE,
+    promptPackSlug: "graduation",
+    revealTiming: "Reveal after the party when everyone can relive the day.",
+    suggestedUploadLimit: 12,
+    inviteCopy: "Add your favorite graduation photos here so everyone can see the full album after the reveal:",
+    liveWallCopy: "Let family and friends watch graduation memories appear during the party.",
+    recapFraming: "A graduation story with family, friends, campus photos, candids, and final group moments.",
+    icon: "workspace_premium",
+    badge: "Milestone",
+  },
+  {
+    slug: "friend-trip",
+    name: "Friend Trip",
+    shortDescription: "A relaxed trip setup for views, meals, funny moments, and the photo that sums it all up.",
+    bestFor: "Weekend trips, spring break, road trips, beach houses, and friend vacations.",
+    recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
+    promptPackSlug: "friend-trip",
+    revealTiming: "Reveal on the last night or after everyone gets home.",
+    suggestedUploadLimit: 20,
+    inviteCopy: "Drop the trip photos here so nobody has to chase the group chat afterward:",
+    liveWallCopy: "Keep the trip album alive with food, views, candids, and chaotic moments.",
+    recapFraming: "A trip recap that feels like the group chat turned into a polished album.",
+    icon: "travel_explore",
+    badge: "Trip mode",
+  },
+  {
+    slug: "camp-retreat",
+    name: "Camp / Retreat",
+    shortDescription: "A team-centered setup for activities, nature, cabin groups, and retreat memories.",
+    bestFor: "Camps, church retreats, leadership retreats, orientations, and team weekends.",
+    recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
+    promptPackSlug: "camp-retreat",
+    revealTiming: "Reveal at the closing session or after checkout.",
+    suggestedUploadLimit: 15,
+    inviteCopy: "Capture retreat moments as they happen. Upload photos for the final recap here:",
+    liveWallCopy: "Use the Live Wall between sessions to show the retreat taking shape.",
+    recapFraming: "A retreat recap with teams, activities, nature moments, and the final group story.",
+    icon: "forest",
+    badge: "Group weekend",
+  },
+  {
+    slug: "club-banquet",
+    name: "Club Banquet",
+    shortDescription: "A banquet setup for tables, outfits, awards, speakers, and celebration photos.",
+    bestFor: "End-of-year banquets, team dinners, award nights, and formal club celebrations.",
+    recommendedMode: CHALLENGE_TYPES.EVENT_AWARDS,
+    promptPackSlug: "club-banquet",
+    revealTiming: "Reveal after awards or the morning after.",
+    suggestedUploadLimit: 10,
+    inviteCopy: "Upload your banquet photos here so the full recap is ready after the event:",
+    liveWallCopy: "Show table photos, award moments, and celebration shots during the banquet.",
+    recapFraming: "A banquet recap with outfits, tables, award moments, speakers, and final celebration photos.",
+    icon: "emoji_events",
+    badge: "Awards night",
+  },
+  {
+    slug: "family-gathering",
+    name: "Family Gathering",
+    shortDescription: "A simple, warm setup for candid family moments without making guests think too hard.",
+    bestFor: "Reunions, holidays, cookouts, birthdays, and multi-generation gatherings.",
+    recommendedMode: "NONE",
+    promptPackSlug: "custom",
+    revealTiming: "Reveal during or after the gathering.",
+    suggestedUploadLimit: 12,
+    inviteCopy: "Add your favorite family photos here so everyone can enjoy the shared album:",
+    liveWallCopy: "Keep the shared family album visible while people add photos.",
+    recapFraming: "A warm family album from everyone who was there.",
+    icon: "diversity_1",
+    badge: "Warm and easy",
+  },
+  {
+    slug: "open-custom-event",
+    name: "Open Custom Event",
+    shortDescription: "Start from a flexible setup and customize the mode, prompts, and copy yourself.",
+    bestFor: "Anything that does not fit a preset or needs a host-specific vibe.",
+    recommendedMode: "NONE",
+    promptPackSlug: "custom",
+    revealTiming: "Choose the reveal timing that fits the event.",
+    suggestedUploadLimit: 10,
+    inviteCopy: "Upload your favorite photos from the event here:",
+    liveWallCopy: "Open the Live Wall while guests upload photos.",
+    recapFraming: "A shared recap from the people who were there.",
+    icon: "auto_awesome",
+    badge: "Fully editable",
+  },
+];
 
 export const CHALLENGE_PACKS: ChallengePackDefinition[] = [
   {
@@ -432,6 +714,14 @@ export function getChallengePack(type?: ChallengeMode | ChallengeType | null) {
   return CHALLENGE_PACKS.find((pack) => pack.mode === (type || "NONE")) || CHALLENGE_PACKS[0];
 }
 
+export function getPromptPack(slug?: PromptPackSlug | string | null) {
+  return PROMPT_PACKS.find((pack) => pack.slug === slug) || PROMPT_PACKS[PROMPT_PACKS.length - 1];
+}
+
+export function getEventTemplate(slug?: EventTemplateSlug | string | null) {
+  return EVENT_TEMPLATES.find((template) => template.slug === slug) || null;
+}
+
 export function isAnalyticsEventName(value: string): value is AnalyticsEventName {
   return (ANALYTICS_EVENT_NAMES as readonly string[]).includes(value);
 }
@@ -469,11 +759,14 @@ export function sortPhotosForRecap(photos: Photo[]) {
   });
 }
 
-export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge">): HostLaunchKit {
+export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge" | "eventTemplateSlug">): HostLaunchKit {
   const pack = getChallengePack(event.challenge?.type || "NONE");
+  const template = getEventTemplate(event.eventTemplateSlug);
   const guestLink = event.eventLink;
   const liveWallLink = event.liveWallLink || "";
   const recapLink = event.recapLink || "";
+  const inviteText = template ? `${template.inviteCopy} ${guestLink}` : "Upload your photos from tonight here: " + guestLink + ". No app download needed.";
+  const socialCaption = template ? `${template.recapFraming} Add yours: ${guestLink}` : "Drop your favorite photos from " + event.name + " here: " + guestLink;
 
   return {
     eventName: event.name,
@@ -484,26 +777,28 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
         label: "Guest upload link",
         url: guestLink,
         purpose: "Share this with guests so they can upload photos without an account or app download.",
-        instruction: "Upload your photos from tonight here: " + guestLink + ". No app download needed.",
+        instruction: inviteText,
       },
       {
         key: "live-wall",
         label: "Live Wall link",
         url: liveWallLink,
         purpose: "Open this during the event so the room can see photos appear.",
-        instruction: "Open this on a laptop, TV, projector, or iPad during the event so guests can scan the QR code and watch photos appear.",
+        instruction: template ? template.liveWallCopy : "Open this on a laptop, TV, projector, or iPad during the event so guests can scan the QR code and watch photos appear.",
       },
       {
         key: "recap",
         label: "Recap link",
         url: recapLink,
         purpose: "Share this after the reveal so everyone can view the final album and highlights.",
-        instruction: "Share this after the event so everyone can view the final album and highlights.",
+        instruction: template ? template.recapFraming : "Share this after the event so everyone can view the final album and highlights.",
       },
     ],
-    inviteText: "Upload your photos from tonight here: " + guestLink + ". No app download needed.",
-    hostInstructions: "Create the event, confirm the photo mode, copy the guest link or QR code, open the Live Wall during the event, then share the Recap afterward.",
-    socialCaption: "Drop your favorite photos from " + event.name + " here: " + guestLink,
+    inviteText,
+    hostInstructions: template
+      ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, open the Live Wall during the event, then share the Recap afterward.`
+      : "Create the event, confirm the photo mode, copy the guest link or QR code, open the Live Wall during the event, then share the Recap afterward.",
+    socialCaption,
     modeInstructions: pack.guestInstructions,
     checklist: [
       { key: "create-event", label: "Create event", complete: true },
@@ -535,6 +830,16 @@ export function createDefaultAwardCategories() {
   return DEFAULT_AWARD_CATEGORIES.map((label, order) => createCategory(label, order, `award-${order + 1}`));
 }
 
+export function createPromptsFromPack(slug?: PromptPackSlug | string | null) {
+  const pack = getPromptPack(slug);
+  return pack.items.map((text, order) => createPrompt(text, order, `${pack.slug}-prompt-${order + 1}`));
+}
+
+export function createCategoriesFromPack(slug?: PromptPackSlug | string | null) {
+  const pack = getPromptPack(slug);
+  return pack.items.map((label, order) => createCategory(label, order, `${pack.slug}-award-${order + 1}`));
+}
+
 export function createDefaultParticipants() {
   return COLOR_HUNT_PALETTE.slice(0, 6).map((color) => ({ ...color, displayName: `${color.colorName} Team` }));
 }
@@ -542,10 +847,34 @@ export function createDefaultParticipants() {
 export function createEmptyChallengeDraft(): ChallengeDraft {
   return {
     type: "NONE",
+    eventTemplateSlug: null,
+    promptPackSlug: null,
     participants: createDefaultParticipants(),
     prompts: createStarterPrompts(),
     categories: createDefaultAwardCategories(),
     memoryCapsule: { ...DEFAULT_MEMORY_CAPSULE },
+  };
+}
+
+export function applyEventTemplateToDraft(templateSlug: EventTemplateSlug | string, draft: ChallengeDraft = createEmptyChallengeDraft()): ChallengeDraft {
+  const template = getEventTemplate(templateSlug);
+  if (!template) return { ...draft, eventTemplateSlug: null, promptPackSlug: null };
+  const promptPack = getPromptPack(template.promptPackSlug);
+
+  return {
+    ...draft,
+    type: template.recommendedMode,
+    eventTemplateSlug: template.slug,
+    promptPackSlug: promptPack.slug,
+    prompts: promptPack.kind === "prompt" ? createPromptsFromPack(promptPack.slug) : draft.prompts,
+    categories: promptPack.kind === "award" ? createCategoriesFromPack(promptPack.slug) : draft.categories,
+    memoryCapsule:
+      template.recommendedMode === CHALLENGE_TYPES.MEMORY_CAPSULE
+        ? {
+            revealTitle: `${template.name} album unlocks soon`,
+            revealNote: template.recapFraming,
+          }
+        : draft.memoryCapsule,
   };
 }
 
@@ -629,6 +958,8 @@ export function draftFromChallenge(challenge?: EventChallenge | null): Challenge
   const emptyDraft = createEmptyChallengeDraft();
   return {
     type: challenge.type,
+    eventTemplateSlug: null,
+    promptPackSlug: null,
     participants: challenge.participants.length ? challenge.participants.map((participant) => ({ ...participant })) : emptyDraft.participants,
     prompts: promptsFromChallenge(challenge).length ? promptsFromChallenge(challenge) : emptyDraft.prompts,
     categories: categoriesFromChallenge(challenge).length ? categoriesFromChallenge(challenge) : emptyDraft.categories,
@@ -714,7 +1045,7 @@ export function buildChallengePayload(draft: ChallengeDraft): EventChallengeInpu
       type: CHALLENGE_TYPES.COLOR_HUNT,
       title: pack.name,
       instructions: pack.guestInstructions,
-      config: { palette: COLOR_HUNT_PALETTE.map(({ colorName, colorHex, colorSlug }) => ({ colorName, colorHex, colorSlug })) },
+      config: { palette: COLOR_HUNT_PALETTE.map(({ colorName, colorHex, colorSlug }) => ({ colorName, colorHex, colorSlug })), promptPackSlug: draft.promptPackSlug, eventTemplateSlug: draft.eventTemplateSlug },
       isActive: true,
       participants,
     };
@@ -726,7 +1057,7 @@ export function buildChallengePayload(draft: ChallengeDraft): EventChallengeInpu
       type: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
       title: pack.name,
       instructions: pack.guestInstructions,
-      config: { prompts },
+      config: { prompts, promptPackSlug: draft.promptPackSlug, eventTemplateSlug: draft.eventTemplateSlug },
       isActive: true,
       prompts,
       participants: [],
@@ -739,7 +1070,7 @@ export function buildChallengePayload(draft: ChallengeDraft): EventChallengeInpu
       type: CHALLENGE_TYPES.EVENT_AWARDS,
       title: pack.name,
       instructions: pack.guestInstructions,
-      config: { categories },
+      config: { categories, promptPackSlug: draft.promptPackSlug, eventTemplateSlug: draft.eventTemplateSlug },
       isActive: true,
       categories,
       participants: [],
@@ -753,6 +1084,8 @@ export function buildChallengePayload(draft: ChallengeDraft): EventChallengeInpu
     config: {
       revealTitle: draft.memoryCapsule.revealTitle.trim(),
       revealNote: draft.memoryCapsule.revealNote.trim(),
+      promptPackSlug: draft.promptPackSlug,
+      eventTemplateSlug: draft.eventTemplateSlug,
     },
     isActive: true,
     participants: [],
@@ -859,10 +1192,14 @@ export function buildChallengeProgressSummary(challenge: EventChallenge | null |
   };
 }
 
-export function buildEventRecapMetadata(event: Pick<EventSummary | PublicEvent, "challenge">, photos: Photo[]): EventRecapMetadata {
+export function buildEventRecapMetadata(event: Pick<EventSummary | PublicEvent, "challenge" | "eventTemplateSlug">, photos: Photo[]): EventRecapMetadata {
   const sortedPhotos = sortPhotosForRecap(visiblePhotos(photos));
+  const template = getEventTemplate(event.eventTemplateSlug);
   return {
     modeLabel: challengeLabel(event.challenge),
+    templateName: template?.name,
+    recapTitle: template ? `${template.name} recap` : "Event recap",
+    recapSubtitle: template?.recapFraming || "A shared album from the people who were there.",
     totalPhotos: sortedPhotos.length,
     contributorCount: countUniqueContributors(sortedPhotos),
     highlightPhotos: sortedPhotos.slice(0, 5),

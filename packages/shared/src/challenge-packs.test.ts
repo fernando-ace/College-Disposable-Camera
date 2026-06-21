@@ -4,6 +4,9 @@ import {
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
   ANALYTICS_EVENT_NAMES,
+  EVENT_TEMPLATES,
+  PROMPT_PACKS,
+  applyEventTemplateToDraft,
   buildHostLaunchKit,
   buildChallengeProgressSummary,
   buildChallengePayload,
@@ -12,6 +15,8 @@ import {
   createEmptyChallengeDraft,
   createStarterPrompts,
   getChallengePack,
+  getEventTemplate,
+  getPromptPack,
   normalizeReportReason,
   validateUploadFile,
   visiblePhotos,
@@ -79,7 +84,30 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_launch_kit_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("photo_reported"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("album_downloaded"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("event_template_selected"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("event_created_from_template"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
+});
+
+test("template and prompt pack registries expose requested presets", () => {
+  assert.equal(EVENT_TEMPLATES.length, 10);
+  assert.equal(PROMPT_PACKS.length, 9);
+  assert.equal(new Set(EVENT_TEMPLATES.map((template) => template.slug)).size, EVENT_TEMPLATES.length);
+  assert.equal(new Set(PROMPT_PACKS.map((pack) => pack.slug)).size, PROMPT_PACKS.length);
+  assert.equal(getEventTemplate("birthday-party")?.name, "Birthday Party");
+  assert.deepEqual(getPromptPack("birthday").items.slice(0, 3), ["Best group selfie", "Funniest moment", "Best outfit"]);
+});
+
+test("event templates apply mode and prompt pack defaults", () => {
+  const birthdayDraft = applyEventTemplateToDraft("birthday-party");
+  assert.equal(birthdayDraft.type, CHALLENGE_TYPES.EVENT_AWARDS);
+  assert.equal(birthdayDraft.eventTemplateSlug, "birthday-party");
+  assert.equal(birthdayDraft.promptPackSlug, "birthday");
+  assert.deepEqual(birthdayDraft.categories.map((category) => category.label), getPromptPack("birthday").items);
+
+  const weddingDraft = applyEventTemplateToDraft("wedding-engagement");
+  assert.equal(weddingDraft.type, CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT);
+  assert.deepEqual(weddingDraft.prompts.map((prompt) => prompt.text), getPromptPack("wedding-engagement").items);
 });
 
 test("report reasons and upload validation stay beta-safe", () => {
@@ -241,11 +269,13 @@ test("host launch kit separates guest, live wall, and recap jobs", () => {
     liveWallLink: "https://example.com/wall/spring-formal",
     recapLink: "https://example.com/recap/spring-formal",
     photoCount: 0,
+    eventTemplateSlug: "birthday-party",
+    promptPackSlug: "birthday",
     challenge: null,
   });
 
   assert.deepEqual(kit.links.map((link) => link.key), ["guest", "live-wall", "recap"]);
-  assert.match(kit.inviteText, /No app download needed/);
-  assert.match(kit.links[1].instruction, /laptop, TV, projector, or iPad/);
+  assert.match(kit.inviteText, /birthday/i);
+  assert.match(kit.links[1].instruction, /birthday energy/);
   assert.equal(kit.checklist.length, 5);
 });

@@ -32,3 +32,31 @@ test("event analytics summary uses the host event endpoint", async () => {
   await client.getEventAnalyticsSummary("event 1", "token");
   assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201/analytics/summary");
 });
+
+test("create event sends template and prompt pack slugs", async () => {
+  let body = "";
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (_url, init) => {
+      body = String(init?.body || "");
+      return new Response(JSON.stringify({ event: { id: "event-1" } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.createEvent({
+    name: "Birthday",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 10,
+    eventTemplateSlug: "birthday-party",
+    promptPackSlug: "birthday",
+    challenge: null,
+  });
+
+  const payload = JSON.parse(body);
+  assert.equal(payload.eventTemplateSlug, "birthday-party");
+  assert.equal(payload.promptPackSlug, "birthday");
+});

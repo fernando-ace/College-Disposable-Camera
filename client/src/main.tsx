@@ -7,6 +7,9 @@ import {
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
   COLOR_HUNT_PALETTE,
+  EVENT_TEMPLATES,
+  PROMPT_PACKS,
+  applyEventTemplateToDraft,
   buildHostLaunchKit,
   buildChallengeProgressSummary,
   buildEventRecapMetadata,
@@ -14,13 +17,17 @@ import {
   categoriesFromChallenge,
   challengeLabel,
   colorBySlug,
+  createCategoriesFromPack,
   createCategory,
   createDefaultAwardCategories,
   createEmptyChallengeDraft,
+  createPromptsFromPack,
   createPrompt,
   createStarterPrompts,
   draftFromChallenge,
+  getEventTemplate,
   getChallengePack,
+  getPromptPack,
   hasDuplicateCategories,
   hasDuplicateParticipantColors,
   hasDuplicatePrompts,
@@ -31,7 +38,7 @@ import {
   validateUploadFile,
   validateChallengeDraft,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, HostLaunchKit, HostLaunchKitLink, Photo, PhotoReportReason, PhotoVisibilityStatus, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, HostLaunchKit, HostLaunchKitLink, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -498,6 +505,50 @@ function PhotoDetailModal({
   );
 }
 
+function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
+  return (
+    <section className="rounded-3xl bg-stone-950 p-5 text-white sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Event templates</p>
+          <h2 className="mt-1 font-display text-2xl font-bold">Start with the setup guests expect.</h2>
+          <p className="mt-2 max-w-2xl text-sm text-stone-300">Templates choose a mode, prompt pack, upload limit, and launch copy. Everything stays editable before create.</p>
+        </div>
+        <button type="button" className="min-h-10 rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15" onClick={onSkip}>Open custom event</button>
+      </div>
+      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {EVENT_TEMPLATES.map((template) => {
+          const pack = getPromptPack(template.promptPackSlug);
+          const mode = getChallengePack(template.recommendedMode);
+          const selected = draft.eventTemplateSlug === template.slug;
+          return (
+            <article className={cx("rounded-2xl border p-4", selected ? "border-amber-300 bg-amber-300 text-stone-950" : "border-white/10 bg-white/5")} key={template.slug}>
+              <div className="flex items-start justify-between gap-3">
+                <span className={cx("grid h-10 w-10 shrink-0 place-items-center rounded-full", selected ? "bg-stone-950 text-amber-200" : "bg-white/10 text-amber-200")}><Icon>{template.icon}</Icon></span>
+                <span className={cx("rounded-full px-3 py-1 text-xs font-bold", selected ? "bg-stone-950 text-white" : "bg-white/10 text-amber-100")}>{template.badge}</span>
+              </div>
+              <h3 className="mt-4 font-display text-xl font-bold">{template.name}</h3>
+              <p className={cx("mt-2 text-sm", selected ? "text-stone-800" : "text-stone-300")}>{template.shortDescription}</p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
+                <span className={cx("rounded-full px-3 py-1", selected ? "bg-white/70 text-stone-800" : "bg-white/10 text-white")}>{mode.name}</span>
+                <span className={cx("rounded-full px-3 py-1", selected ? "bg-white/70 text-stone-800" : "bg-white/10 text-white")}>{pack.name}</span>
+              </div>
+              <p className={cx("mt-3 text-xs font-semibold", selected ? "text-stone-800" : "text-stone-300")}>Best for: {template.bestFor}</p>
+              <ul className={cx("mt-3 grid gap-1 text-xs", selected ? "text-stone-800" : "text-stone-300")}>
+                {pack.items.slice(0, 3).map((item) => <li key={item}>- {item}</li>)}
+              </ul>
+              <button type="button" className={cx("mt-4 min-h-10 w-full rounded-full px-4 py-2 text-sm font-bold", selected ? "bg-stone-950 text-white" : "bg-amber-400 text-stone-950 hover:bg-amber-300")} onClick={() => onSelect(template.slug)}>
+                {selected ? "Selected" : "Start with this"}
+              </button>
+              <p className={cx("mt-2 text-center text-xs font-semibold", selected ? "text-stone-800" : "text-stone-400")}>Customize prompts, mode, and copy later.</p>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [isAwardEditorOpen, setIsAwardEditorOpen] = useState(false);
@@ -512,6 +563,20 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
   function updateType(type: ChallengeDraft["type"]) {
     trackAnalytics("event_mode_selected", { metadata: { mode: type } });
     onChange({ ...draft, type });
+  }
+
+  function selectPromptPack(promptPackSlug: PromptPackSlug) {
+    const pack = getPromptPack(promptPackSlug);
+    trackAnalytics("prompt_pack_selected", { metadata: { promptPackSlug, itemKind: pack.kind } });
+    if (pack.kind === "award") {
+      onChange({ ...draft, type: CHALLENGE_TYPES.EVENT_AWARDS, promptPackSlug, categories: createCategoriesFromPack(promptPackSlug) });
+    } else {
+      onChange({ ...draft, type: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT, promptPackSlug, prompts: createPromptsFromPack(promptPackSlug) });
+    }
+  }
+
+  function trackPromptsCustomized(itemKind: "prompt" | "award") {
+    trackAnalytics("prompts_customized", { metadata: { itemKind, promptPackSlug: draft.promptPackSlug || "custom" } });
   }
 
   function updateParticipant(index: number, nextParticipant: ChallengeParticipant) {
@@ -551,6 +616,7 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
   }
 
   function updatePrompt(index: number, text: string) {
+    trackPromptsCustomized("prompt");
     onChange({
       ...draft,
       prompts: draft.prompts.map((prompt, promptIndex) => (promptIndex === index ? { ...prompt, text } : prompt)),
@@ -559,10 +625,12 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
 
   function addPrompt() {
     setIsPromptEditorOpen(true);
+    trackPromptsCustomized("prompt");
     onChange({ ...draft, prompts: [...draft.prompts, createPrompt("", draft.prompts.length)] });
   }
 
   function removePrompt(index: number) {
+    trackPromptsCustomized("prompt");
     onChange({ ...draft, prompts: draft.prompts.filter((_, promptIndex) => promptIndex !== index).map((prompt, order) => ({ ...prompt, order })) });
   }
 
@@ -572,15 +640,18 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
     const prompts = [...draft.prompts];
     const [prompt] = prompts.splice(index, 1);
     prompts.splice(nextIndex, 0, prompt);
+    trackPromptsCustomized("prompt");
     onChange({ ...draft, prompts: prompts.map((nextPrompt, order) => ({ ...nextPrompt, order })) });
   }
 
   function useStarterPrompts() {
     setIsPromptEditorOpen(false);
-    onChange({ ...draft, prompts: createStarterPrompts() });
+    trackPromptsCustomized("prompt");
+    onChange({ ...draft, promptPackSlug: null, prompts: createStarterPrompts() });
   }
 
   function updateCategory(index: number, label: string) {
+    trackPromptsCustomized("award");
     onChange({
       ...draft,
       categories: draft.categories.map((category, categoryIndex) => (categoryIndex === index ? { ...category, label } : category)),
@@ -589,10 +660,12 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
 
   function addCategory() {
     setIsAwardEditorOpen(true);
+    trackPromptsCustomized("award");
     onChange({ ...draft, categories: [...draft.categories, createCategory("", draft.categories.length)] });
   }
 
   function removeCategory(index: number) {
+    trackPromptsCustomized("award");
     onChange({ ...draft, categories: draft.categories.filter((_, categoryIndex) => categoryIndex !== index).map((category, order) => ({ ...category, order })) });
   }
 
@@ -602,12 +675,14 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
     const categories = [...draft.categories];
     const [category] = categories.splice(index, 1);
     categories.splice(nextIndex, 0, category);
+    trackPromptsCustomized("award");
     onChange({ ...draft, categories: categories.map((nextCategory, order) => ({ ...nextCategory, order })) });
   }
 
   function useDefaultAwards() {
     setIsAwardEditorOpen(false);
-    onChange({ ...draft, categories: createDefaultAwardCategories() });
+    trackPromptsCustomized("award");
+    onChange({ ...draft, promptPackSlug: null, categories: createDefaultAwardCategories() });
   }
 
   function updateCapsule(field: keyof ChallengeDraft["memoryCapsule"], value: string) {
@@ -634,6 +709,32 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
               <span className="mt-2 block font-bold text-stone-950">{pack.name}</span>
               <span className="mt-1 block text-stone-600">{pack.shortDescription}</span>
               <span className="mt-3 inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-600">{pack.setupComplexity} setup</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-5 rounded-3xl bg-white p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Prompt pack library</p>
+            <h3 className="mt-1 font-display text-lg font-bold">Swap in a polished prompt set</h3>
+            <p className="mt-1 text-sm text-stone-600">Prompt packs work with Scavenger Hunt or Event Awards and can be edited immediately.</p>
+          </div>
+          {draft.promptPackSlug && <StatusPill tone="amber">{getPromptPack(draft.promptPackSlug).name}</StatusPill>}
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {PROMPT_PACKS.filter((pack) => pack.kind !== "custom").map((pack) => (
+            <button
+              type="button"
+              className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.promptPackSlug === pack.slug ? "border-amber-500 bg-amber-50" : "border-stone-200 bg-white hover:border-amber-300")}
+              onClick={() => selectPromptPack(pack.slug)}
+              key={pack.slug}
+            >
+              <span className="block text-xs font-bold uppercase tracking-wide text-amber-800">{pack.kind === "award" ? "Event Awards" : "Scavenger Hunt"}</span>
+              <span className="mt-2 block font-bold text-stone-950">{pack.name}</span>
+              <span className="mt-1 block text-stone-600">{pack.description}</span>
+              <span className="mt-3 block text-xs font-semibold text-stone-500">{pack.items.slice(0, 4).join(" / ")}</span>
             </button>
           ))}
         </div>
@@ -1666,8 +1767,26 @@ function CreateEvent() {
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    trackAnalytics("event_template_viewed", { path: "/dashboard/events/new", metadata: { surface: "create_event" } });
+  }, []);
+
   function update(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  function selectTemplate(templateSlug: EventTemplateSlug) {
+    const template = getEventTemplate(templateSlug);
+    setChallengeDraft((current) => applyEventTemplateToDraft(templateSlug, current));
+    if (template?.suggestedUploadLimit) {
+      setForm((current) => ({ ...current, photoLimitPerGuest: String(template.suggestedUploadLimit) }));
+    }
+    trackAnalytics("event_template_selected", { path: "/dashboard/events/new", metadata: { templateSlug, mode: template?.recommendedMode || "NONE", promptPackSlug: template?.promptPackSlug || null } });
+  }
+
+  function skipTemplate() {
+    setChallengeDraft((current) => ({ ...current, eventTemplateSlug: "open-custom-event", promptPackSlug: "custom" }));
+    trackAnalytics("template_skipped", { path: "/dashboard/events/new", metadata: { templateSlug: "open-custom-event" } });
   }
 
   async function submit(event: React.FormEvent) {
@@ -1683,14 +1802,20 @@ function CreateEvent() {
           eventDate: new Date(form.eventDate).toISOString(),
           revealAt: new Date(form.revealAt).toISOString(),
           photoLimitPerGuest: Number(form.photoLimitPerGuest),
+          eventTemplateSlug: challengeDraft.eventTemplateSlug,
+          promptPackSlug: challengeDraft.promptPackSlug,
           challenge,
         }),
       });
+      const metadata = { mode: challengeDraft.type, hasChallenge: challengeDraft.type !== "NONE", templateSlug: challengeDraft.eventTemplateSlug, promptPackSlug: challengeDraft.promptPackSlug };
       trackAnalytics("event_created", {
         eventId: data.event.id,
         eventSlug: data.event.slug,
-        metadata: { mode: challengeDraft.type, hasChallenge: challengeDraft.type !== "NONE" },
+        metadata,
       });
+      if (challengeDraft.eventTemplateSlug) {
+        trackAnalytics("event_created_from_template", { eventId: data.event.id, eventSlug: data.event.slug, metadata });
+      }
       setCreated(data.event);
     } catch (err) {
       setError((err as Error).message);
@@ -1717,6 +1842,7 @@ function CreateEvent() {
         <p className="mt-3 text-lg text-stone-600">Create a space where your guests can share their favorite moments instantly.</p>
       </div>
       <form className="mx-auto mt-8 grid max-w-3xl gap-5 rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-8" onSubmit={submit}>
+        <TemplateLibrary draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} />
         <label className="grid gap-2 text-sm font-bold text-stone-700">
           Event name
           <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
@@ -2261,9 +2387,9 @@ function EventRecap() {
             <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white sm:p-10">
               <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-end">
                 <div>
-                  <StatusPill>{recap?.modeLabel || "EventFilm"}</StatusPill>
+                  <StatusPill>{recap?.templateName || recap?.modeLabel || "EventFilm"}</StatusPill>
                   <h1 className="mt-5 font-display text-5xl font-bold lg:text-7xl">{event.name}</h1>
-                  <p className="mt-4 max-w-2xl text-lg text-stone-200">{event.description || "A shared album from the people who were there."}</p>
+                  <p className="mt-4 max-w-2xl text-lg text-stone-200">{event.description || recap?.recapSubtitle || "A shared album from the people who were there."}</p>
                   <div className="mt-6 flex flex-wrap gap-3 text-sm font-bold text-stone-200">
                     <span className="rounded-full bg-white/10 px-4 py-2">Event: {formatDateTime(event.eventDate)}</span>
                     <span className="rounded-full bg-white/10 px-4 py-2">Reveal: {formatDateTime(event.revealAt)}</span>
@@ -2306,8 +2432,8 @@ function EventRecap() {
               <>
                 <section className="mt-8">
                   <div className="mb-4">
-                    <h2 className="font-display text-3xl font-bold">Highlights</h2>
-                    <p className="text-stone-600">A first look at the moments guests added most recently.</p>
+                    <h2 className="font-display text-3xl font-bold">{recap?.recapTitle || "Highlights"}</h2>
+                    <p className="text-stone-600">{recap?.recapSubtitle || "A first look at the moments guests added most recently."}</p>
                   </div>
                   <PhotoMosaic photos={recap?.highlightPhotos || []} onPhotoClick={openPublicPhoto} />
                 </section>

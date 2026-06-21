@@ -65,6 +65,12 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "host_dashboard_opened",
   "event_created",
   "event_mode_selected",
+  "event_template_viewed",
+  "event_template_selected",
+  "prompt_pack_selected",
+  "prompts_customized",
+  "event_created_from_template",
+  "template_skipped",
   "guest_link_copied",
   "live_wall_opened",
   "recap_opened",
@@ -107,6 +113,8 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "photoCount",
   "photoId",
   "visibilityStatus",
+  "templateSlug",
+  "promptPackSlug",
 ]);
 
 const upload = multer({
@@ -182,6 +190,29 @@ const DEFAULT_MEMORY_CAPSULE = {
   revealTitle: "The album unlocks after the event",
   revealNote: "Guests can keep adding photos now. Everyone comes back at reveal time to see the full capsule together.",
 };
+const EVENT_TEMPLATE_SLUGS = new Set([
+  "birthday-party",
+  "wedding-engagement",
+  "greek-life-event",
+  "student-org-event",
+  "graduation-party",
+  "friend-trip",
+  "camp-retreat",
+  "club-banquet",
+  "family-gathering",
+  "open-custom-event",
+]);
+const PROMPT_PACK_SLUGS = new Set([
+  "birthday",
+  "wedding-engagement",
+  "greek-life",
+  "student-org",
+  "graduation",
+  "friend-trip",
+  "camp-retreat",
+  "club-banquet",
+  "custom",
+]);
 
 const challengeInclude = {
   participants: { orderBy: { createdAt: "asc" } },
@@ -240,6 +271,12 @@ function normalizeMemoryCapsuleConfig(config) {
     revealTitle: String(source.revealTitle || DEFAULT_MEMORY_CAPSULE.revealTitle).trim() || DEFAULT_MEMORY_CAPSULE.revealTitle,
     revealNote: String(source.revealNote || DEFAULT_MEMORY_CAPSULE.revealNote).trim() || DEFAULT_MEMORY_CAPSULE.revealNote,
   };
+}
+
+function normalizeOptionalSlug(value, allowedSlugs) {
+  if (value === null || value === undefined || value === "") return null;
+  const slug = String(value).trim();
+  return allowedSlugs.has(slug) ? slug : null;
 }
 
 function challengePayload(challenge) {
@@ -498,6 +535,8 @@ function publicEventBasePayload(event, isRevealed) {
     eventDate: event.eventDate,
     revealAt: event.revealAt,
     photoLimitPerGuest: event.photoLimitPerGuest,
+    eventTemplateSlug: event.eventTemplateSlug,
+    promptPackSlug: event.promptPackSlug,
     isRevealed,
     eventLink: publicEventUrl(event.slug),
     liveWallLink: liveWallUrl(event.slug),
@@ -766,6 +805,8 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
       eventDate: new Date(req.body.eventDate),
       revealAt: new Date(req.body.revealAt),
       photoLimitPerGuest,
+      eventTemplateSlug: normalizeOptionalSlug(req.body.eventTemplateSlug, EVENT_TEMPLATE_SLUGS),
+      promptPackSlug: normalizeOptionalSlug(req.body.promptPackSlug, PROMPT_PACK_SLUGS),
       ...(challengeSetup
         ? {
             challenges: {

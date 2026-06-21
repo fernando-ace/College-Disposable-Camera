@@ -3,7 +3,7 @@ import { Link, useLocalSearchParams } from "expo-router";
 import { Linking, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
-import { buildHostLaunchKit, challengeLabel } from "@eventfilm/shared";
+import { buildHostLaunchKit, challengeLabel, getEventTemplate } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -98,6 +98,7 @@ export default function EventDetailScreen() {
   }, [api, event]);
 
   const launchKit = event ? buildHostLaunchKit(event) : null;
+  const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
 
   return (
     <Screen bottomPadding={96} wide>
@@ -105,6 +106,7 @@ export default function EventDetailScreen() {
         <HeroHeader eyebrow="Event hub" title={event.name} body={event.description || "Share the guest link, monitor uploads, and keep the album moving."}>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Badge>{event.photoCount} photos</Badge>
+            {template ? <Badge tone="amber">{template.name}</Badge> : null}
             <Badge tone="stone">{challengeLabel(event.challenge)}</Badge>
           </View>
         </HeroHeader>
