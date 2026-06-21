@@ -13,15 +13,19 @@ import type {
   User,
 } from "@eventfilm/shared";
 
+export type EventFilmApiErrorKind = "auth" | "http" | "network" | "server" | "timeout";
+
 export class EventFilmApiError extends Error {
   readonly status: number;
   readonly data?: unknown;
+  readonly kind: EventFilmApiErrorKind;
 
-  constructor(message: string, status: number, data?: unknown) {
+  constructor(message: string, status: number, data?: unknown, kind: EventFilmApiErrorKind = "http") {
     super(message);
     this.name = "EventFilmApiError";
     this.status = status;
     this.data = data;
+    this.kind = kind;
   }
 }
 
@@ -117,11 +121,13 @@ export type EventFilmApiClientOptions = {
   baseUrl: string;
   tokenProvider?: () => string | null | Promise<string | null>;
   fetchImpl?: typeof fetch;
+  timeoutMs?: number;
 };
 
 type RequestOptions = RequestInit & {
   token?: string | null;
   auth?: boolean;
+  timeoutMs?: number;
 };
 
 export function normalizeEventFilmBaseUrl(baseUrl: string) {
@@ -154,10 +160,22 @@ function appendUploadPhoto(formData: FormData, photo: UploadPhotoInput["photo"])
 export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
   const baseUrl = normalizeEventFilmBaseUrl(options.baseUrl);
   const fetcher = options.fetchImpl || fetch;
+  const defaultTimeoutMs = options.timeoutMs ?? 12000;
+
+  function classifyHttpStatus(status: number): EventFilmApiErrorKind {
+    if (status === 401 || status === 403) return "auth";
+    if (status >= 500) return "server";
+    return "http";
+  }
 
   async function request<T>(path: string, requestOptions: RequestOptions = {}): Promise<T> {
     const headers = new Headers(requestOptions.headers);
     const isFormData = requestOptions.body instanceof FormData;
+    const timeoutMs = requestOptions.timeoutMs ?? defaultTimeoutMs;
+    const controller = new AbortController();
+    let timedOut = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const sourceSignal = requestOptions.signal;
 
     if (requestOptions.body && !isFormData && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json");
@@ -166,18 +184,36 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     const token = requestOptions.token ?? (requestOptions.auth ? await options.tokenProvider?.() : null);
     if (token) headers.set("Authorization", `Bearer ${token}`);
 
-    const response = await fetcher(`${baseUrl}${path}`, {
-      ...requestOptions,
-      headers,
-    });
-    const contentType = response.headers.get("content-type") || "";
-    const data = contentType.includes("application/json") ? await response.json() : null;
-
-    if (!response.ok) {
-      throw new EventFilmApiError((data as { error?: string } | null)?.error || "Request failed", response.status, data);
+    if (sourceSignal?.aborted) controller.abort();
+    sourceSignal?.addEventListener("abort", () => controller.abort(), { once: true });
+    if (timeoutMs > 0) {
+      timeout = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+      }, timeoutMs);
     }
 
-    return data as T;
+    try {
+      const response = await fetcher(`${baseUrl}${path}`, {
+        ...requestOptions,
+        headers,
+        signal: controller.signal,
+      });
+      const contentType = response.headers.get("content-type") || "";
+      const data = contentType.includes("application/json") ? await response.json() : null;
+
+      if (!response.ok) {
+        throw new EventFilmApiError((data as { error?: string } | null)?.error || "Request failed", response.status, data, classifyHttpStatus(response.status));
+      }
+
+      return data as T;
+    } catch (error) {
+      if (error instanceof EventFilmApiError) throw error;
+      if (timedOut) throw new EventFilmApiError("Request timed out", 0, undefined, "timeout");
+      throw new EventFilmApiError("Could not reach API", 0, undefined, "network");
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   function uploadPhoto(slug: string, input: UploadPhotoInput) {
@@ -203,6 +239,9 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     },
     login(input: { email: string; password: string }) {
       return request<AuthResponse>("/api/auth/login", { method: "POST", body: JSON.stringify(input) });
+    },
+    checkHealth(timeoutMs?: number) {
+      return request<{ ok: boolean }>("/api/health", timeoutMs === undefined ? {} : { timeoutMs });
     },
     getCurrentUser(token?: string | null) {
       return request<{ user: User }>("/api/me", { auth: !token, token });

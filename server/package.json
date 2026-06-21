@@ -9,6 +9,7 @@
     "prestart": "prisma generate",
     "start": "node src/index.js",
     "seed:beta-demo": "node scripts/seed-beta-demo.js",
+    "reset:dev-host": "node scripts/reset-dev-host.js",
     "storage:smoke": "node scripts/storage-smoke.js",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate",

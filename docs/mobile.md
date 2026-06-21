@@ -57,15 +57,42 @@ npx expo start
 `apps/mobile/.env` uses:
 
 ```env
-EXPO_PUBLIC_API_URL="http://localhost:4000"
+EXPO_PUBLIC_API_URL="http://YOUR_LAN_IP:4000"
 EXPO_PUBLIC_RELEASE_CHANNEL="development"
 ```
 
-For a physical phone, `localhost` points at the phone, not your computer. Use your computer LAN address instead, for example:
+For a physical phone, `localhost` points at the phone, not your computer. Use
+your computer LAN address instead. On Windows, find it with `ipconfig` and use
+the Wi-Fi IPv4 address:
 
 ```env
-EXPO_PUBLIC_API_URL="http://192.168.1.25:4000"
+EXPO_PUBLIC_API_URL="http://YOUR_LAN_IP:4000"
 ```
+
+Start the API before Expo Go:
+
+```powershell
+npm run dev:api
+```
+
+In another terminal, reset and verify the development host account:
+
+```powershell
+npm run dev-host:reset
+$env:AUTH_SMOKE_API_URL="http://YOUR_LAN_IP:4000"
+npm run auth:smoke
+```
+
+Then restart Metro so Expo reloads the public API URL:
+
+```powershell
+npm run mobile:start
+```
+
+The sign-in screen shows the active API URL in development and includes a
+`Check connection` action for `/api/health`. If sign-in fails, use that row to
+separate stale LAN IP, API-not-running, invalid credentials, and server/database
+errors.
 
 For preview or production builds, set `EXPO_PUBLIC_API_URL` to the deployed API base URL, not a path under `/api`.
 Set `EXPO_PUBLIC_RELEASE_CHANNEL` to `preview` or `production` only when the API URL points at deployed infrastructure. The app blocks release-like builds that still use localhost.

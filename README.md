@@ -120,12 +120,29 @@ VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFi
 Mobile: copy `apps/mobile/.env.example` to `apps/mobile/.env`.
 
 ```env
-EXPO_PUBLIC_API_URL="http://localhost:4000"
+EXPO_PUBLIC_API_URL="http://YOUR_LAN_IP:4000"
 EXPO_PUBLIC_RELEASE_CHANNEL="development"
 ```
 
-Use a LAN IP instead of `localhost` when testing from a physical phone. Never put
-server secrets in `EXPO_PUBLIC_` variables.
+Start the API before opening Expo Go. Use a LAN IP instead of `localhost` when
+testing from a physical phone; `localhost` points at the phone, not this
+computer. On Windows, get the current Wi-Fi IPv4 address with:
+
+```powershell
+ipconfig
+```
+
+Then set `EXPO_PUBLIC_API_URL` to `http://YOUR_LAN_IP:4000`, restart Metro, and
+run:
+
+```powershell
+npm run dev-host:reset
+$env:AUTH_SMOKE_API_URL="http://YOUR_LAN_IP:4000"
+npm run auth:smoke
+npm run mobile:start
+```
+
+Never put server secrets in `EXPO_PUBLIC_` variables.
 For EAS preview or production builds, set `EXPO_PUBLIC_RELEASE_CHANNEL` to
 `preview` or `production` and set `EXPO_PUBLIC_API_URL` to the deployed API URL.
 The mobile app refuses release-like builds that still point at localhost.
@@ -218,6 +235,16 @@ Clean them up with:
 ```bash
 npm run seed:beta-demo -w server -- --cleanup
 ```
+
+To reset the local mobile sign-in host account used for Expo Go smoke tests:
+
+```bash
+npm run dev-host:reset
+```
+
+This creates or resets `neoskizzy@gmail.com` with the dev-only password
+`EventFilm123!` in the current local database and refuses to run when
+`NODE_ENV=production`.
 
 ## MVP Test Flow
 

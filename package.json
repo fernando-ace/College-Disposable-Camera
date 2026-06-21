@@ -34,6 +34,8 @@
     "smoke:deployed:browser": "node scripts/deployed-smoke-browser.js",
     "smoke:deployed:storage": "node scripts/deployed-smoke-storage.js",
     "smoke:deployed:all": "node scripts/deployed-smoke-all.js",
+    "auth:smoke": "node scripts/auth-smoke.js",
+    "dev-host:reset": "npm run reset:dev-host -w server",
     "demo:seed": "npm run seed:beta-demo -w server",
     "demo:cleanup": "npm run seed:beta-demo -w server -- --cleanup"
   },

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createEventFilmApiClient, normalizeEventFilmBaseUrl } from "./index.ts";
+import { createEventFilmApiClient, EventFilmApiError, normalizeEventFilmBaseUrl } from "./index.ts";
 
 test("normalizes EventFilm API base URLs", () => {
   assert.equal(normalizeEventFilmBaseUrl("http://localhost:4000/"), "http://localhost:4000");
@@ -14,6 +14,77 @@ test("requires a non-empty EventFilm API base URL", () => {
 test("client exposes normalized base URL", () => {
   const client = createEventFilmApiClient({ baseUrl: "https://api.eventfilm.test/" });
   assert.equal(client.baseUrl, "https://api.eventfilm.test");
+});
+
+test("health check uses the API health endpoint", async () => {
+  const calls: string[] = [];
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  const health = await client.checkHealth();
+  assert.deepEqual(health, { ok: true });
+  assert.equal(calls[0], "https://api.eventfilm.test/api/health");
+});
+
+test("classifies invalid credentials as an auth error", async () => {
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async () =>
+      new Response(JSON.stringify({ error: "Invalid email or password" }), {
+        status: 401,
+        headers: { "content-type": "application/json" },
+      })) as typeof fetch,
+  });
+
+  await assert.rejects(() => client.login({ email: "host@example.com", password: "wrong-password" }), (error) => {
+    assert.ok(error instanceof EventFilmApiError);
+    assert.equal(error.kind, "auth");
+    assert.equal(error.status, 401);
+    assert.equal(error.message, "Invalid email or password");
+    return true;
+  });
+});
+
+test("classifies network failures", async () => {
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch,
+  });
+
+  await assert.rejects(() => client.checkHealth(), (error) => {
+    assert.ok(error instanceof EventFilmApiError);
+    assert.equal(error.kind, "network");
+    assert.equal(error.status, 0);
+    return true;
+  });
+});
+
+test("classifies timed out requests", async () => {
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    timeoutMs: 1,
+    fetchImpl: (async (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(Object.assign(new Error("Aborted"), { name: "AbortError" })));
+      })) as typeof fetch,
+  });
+
+  await assert.rejects(() => client.checkHealth(), (error) => {
+    assert.ok(error instanceof EventFilmApiError);
+    assert.equal(error.kind, "timeout");
+    assert.equal(error.status, 0);
+    return true;
+  });
 });
 
 test("event analytics summary uses the host event endpoint", async () => {

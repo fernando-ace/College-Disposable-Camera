@@ -593,7 +593,33 @@ function trackApiAnalytics(name, input = {}) {
   });
 }
 
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
+function databaseTargetLabel() {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) return "missing";
+
+  try {
+    const hostname = new URL(databaseUrl).hostname;
+    if (["localhost", "127.0.0.1", "::1"].includes(hostname)) return "local";
+    return "deployed";
+  } catch {
+    return "configured";
+  }
+}
+
+function logDevAuth(event, details = {}) {
+  if (isProduction) return;
+  console.info("[auth:dev]", JSON.stringify({ event, databaseTarget: databaseTargetLabel(), ...details }));
+}
+
+app.get("/api/health", (_req, res) => {
+  res.json({
+    ok: true,
+    environment: {
+      nodeEnv: process.env.NODE_ENV || "development",
+      databaseTarget: databaseTargetLabel(),
+    },
+  });
+});
 
 app.post("/api/analytics/events", analyticsLimiter, async (req, res) => {
   const { name, source, path: eventPath, eventId, eventSlug, anonymousId, metadata } = req.body || {};
@@ -729,27 +755,37 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
 app.post("/api/auth/signup", async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password || password.length < 8) {
+    logDevAuth("signup_validation_failed", { email: String(email || "").toLowerCase().trim() || null });
     return res.status(400).json({ error: "Email and password of at least 8 characters are required" });
   }
 
   try {
+    const normalizedEmail = email.toLowerCase().trim();
     const passwordHash = await bcrypt.hash(password, 12);
     const user = await prisma.user.create({
-      data: { email: email.toLowerCase().trim(), passwordHash },
+      data: { email: normalizedEmail, passwordHash },
     });
+    logDevAuth("signup_success", { email: normalizedEmail });
     res.status(201).json({ token: signToken(user), user: { id: user.id, email: user.email } });
   } catch (error) {
-    if (error.code === "P2002") return res.status(409).json({ error: "Email already registered" });
+    if (error.code === "P2002") {
+      logDevAuth("signup_duplicate", { email: String(email || "").toLowerCase().trim() });
+      return res.status(409).json({ error: "Email already registered" });
+    }
+    logDevAuth("signup_error", { email: String(email || "").toLowerCase().trim(), message: error.message });
     res.status(500).json({ error: "Could not create account" });
   }
 });
 
 app.post("/api/auth/login", async (req, res) => {
   const { email, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { email: String(email || "").toLowerCase().trim() } });
+  const normalizedEmail = String(email || "").toLowerCase().trim();
+  const user = await prisma.user.findUnique({ where: { email: normalizedEmail } });
   if (!user || !(await bcrypt.compare(password || "", user.passwordHash))) {
+    logDevAuth("login_failed", { email: normalizedEmail, reason: user ? "password_mismatch" : "user_missing" });
     return res.status(401).json({ error: "Invalid email or password" });
   }
+  logDevAuth("login_success", { email: normalizedEmail });
   res.json({ token: signToken(user), user: { id: user.id, email: user.email } });
 });
 
