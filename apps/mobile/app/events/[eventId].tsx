@@ -4,7 +4,7 @@ import { Linking, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
 import { buildHostLaunchKit, challengeLabel, getEventTemplate } from "@eventfilm/shared";
-import { Badge, Body, Button, Card, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
+import { Badge, Body, Button, Card, EmptyState, ErrorState, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function formatDate(value: string) {
@@ -103,15 +103,15 @@ export default function EventDetailScreen() {
   return (
     <Screen bottomPadding={96} wide>
       {event ? (
-        <HeroHeader eyebrow="Event hub" title={event.name} body={event.description || "Share the guest link, monitor uploads, and keep the album moving."}>
+        <TaskHeader eyebrow="Event hub" title={event.name} body={event.description || "Share the guest link, monitor uploads, and keep the album moving."} action={(
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Badge>{event.photoCount} photos</Badge>
             {template ? <Badge tone="amber">{template.name}</Badge> : null}
             <Badge tone="stone">{challengeLabel(event.challenge)}</Badge>
           </View>
-        </HeroHeader>
+        )} />
       ) : (
-        <HeroHeader eyebrow="Event hub" title="Loading event" body="Gathering the latest photos and sharing details." />
+        <TaskHeader eyebrow="Event hub" title="Loading event" body="Gathering the latest photos and sharing details." />
       )}
 
       {error ? <ErrorState message={error} /> : null}
@@ -120,30 +120,36 @@ export default function EventDetailScreen() {
       {event ? (
         <>
           <View style={{ gap: 12 }}>
-            <SectionHeader title="Host actions" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Link href={`/events/${event.id}/share`} asChild>
-                  <Button>Share links</Button>
-                </Link>
+            <SectionHeader title="Launch links" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
+            <LinkBlock label="Guest upload link" description="Use this link or QR code for guests. It opens upload without an account." url={event.eventLink} tone="accent">
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Link href={`/events/${event.id}/share`} asChild>
+                    <Button>Share kit</Button>
+                  </Link>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Link href={`/upload?eventLink=${encodeURIComponent(event.eventLink)}`} asChild>
+                    <Button tone="secondary">Test upload</Button>
+                  </Link>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Link href={`/upload?eventLink=${encodeURIComponent(event.eventLink)}`} asChild>
-                  <Button tone="secondary">Guest view</Button>
-                </Link>
+            </LinkBlock>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+              <View style={{ flex: 1, minWidth: 150 }}>
+                <LinkBlock label="Live Wall" description="Open during the event on a shared screen." url={event.liveWallLink}>
+                  <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
+                </LinkBlock>
               </View>
-            </View>
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
+              <View style={{ flex: 1, minWidth: 150 }}>
+                <LinkBlock label="Recap" description="Share after reveal as the polished album story." url={event.recapLink}>
+                  <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
+                </LinkBlock>
               </View>
             </View>
             <Card tone="warm">
-              <SectionHeader title="Three links, three jobs" subtitle="Guest link is for uploads. Live Wall is for the room during the event. Recap is the polished album story to share after reveal." />
-              <Body tone="muted">Open the Live Wall on a laptop, TV, projector, or iPad while guests are uploading.</Body>
+              <SectionHeader title="Before, during, after" subtitle="Guest link before arrival. Live Wall while people upload. Recap once the reveal is ready." />
+              <Body tone="muted">Open the Live Wall on a laptop, TV, projector, or iPad while guests are uploading. Use the share kit when you need copy, QR, and captions.</Body>
             </Card>
             {launchKit ? (
               <Card>
@@ -171,21 +177,21 @@ export default function EventDetailScreen() {
                 {event.photos.map((photo) => (
                   <View key={photo.id} style={{ gap: 10 }}>
                     <PhotoCard photo={photo} compact />
-                    <Card>
+                    <Card padding={14}>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                         {photo.isFeatured ? <Badge>Featured</Badge> : null}
                         {photo.visibilityStatus === "HIDDEN" ? <Badge tone="red">Hidden</Badge> : null}
                         {photo.reportCount ? <Badge tone="red">{photo.reportCount} reported</Badge> : null}
                       </View>
-                      <View style={{ flexDirection: "row", gap: 8 }}>
-                        <View style={{ flex: 1 }}>
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                        <View style={{ flex: 1, minWidth: 132 }}>
                           {photo.visibilityStatus === "HIDDEN" ? (
                             <Button tone="secondary" onPress={() => updateVisibility(photo, "VISIBLE")}>Restore</Button>
                           ) : (
                             <Button tone="secondary" onPress={() => updateVisibility(photo, "HIDDEN")}>Hide</Button>
                           )}
                         </View>
-                        <View style={{ flex: 1 }}>
+                        <View style={{ flex: 1, minWidth: 132 }}>
                           <Button tone="secondary" disabled={photo.visibilityStatus === "HIDDEN"} onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Unfeature" : "Feature"}</Button>
                         </View>
                       </View>
@@ -228,10 +234,7 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
       <SectionHeader title="Beta event metrics" subtitle="Simple signal for this event across guest, wall, recap, and moderation activity." />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         {rows.map(([label, value]) => (
-          <View key={label} style={{ minWidth: 96, flex: 1, gap: 3 }}>
-            <Body>{String(value)}</Body>
-            <Body tone="muted">{label}</Body>
-          </View>
+          <StatTile key={label} label={String(label)} value={Number(value)} />
         ))}
       </View>
     </Card>

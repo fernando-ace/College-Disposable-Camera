@@ -19,7 +19,14 @@ export default function TabsLayout() {
         headerStyle: { backgroundColor: "#fff8ed" },
         tabBarActiveTintColor: "#1c1917",
         tabBarInactiveTintColor: "#78716c",
-        tabBarStyle: { backgroundColor: "#fff8ed", borderTopColor: "#e7ded3" },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "800" },
+        tabBarStyle: {
+          minHeight: 68,
+          backgroundColor: "#fffbf5",
+          borderTopColor: "#e7ded3",
+          paddingTop: 6,
+          paddingBottom: 8,
+        },
       }}
     >
       <Tabs.Screen name="index" options={{ title: "Welcome", tabBarLabel: "Home", tabBarIcon: tabIcon("home-outline") }} />

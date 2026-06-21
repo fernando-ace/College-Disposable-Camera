@@ -3,7 +3,7 @@ import { router } from "expo-router";
 import { View } from "react-native";
 import { EventFilmApiError } from "@eventfilm/api-client";
 import { checkMobileApiConnection, getMobileApiDiagnosticHints, shouldShowMobileApiDiagnostics } from "../src/api";
-import { Body, Button, Caption, Card, Field, Heading, Screen } from "../src/components/ui";
+import { Body, Button, Caption, Card, Field, Heading, Screen, SectionHeader } from "../src/components/ui";
 import { useAuth } from "../src/auth";
 
 function authErrorMessage(error: unknown) {
@@ -32,6 +32,7 @@ export default function AuthScreen() {
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState("");
   const [connectionStatus, setConnectionStatus] = React.useState("");
+  const [diagnosticsOpen, setDiagnosticsOpen] = React.useState(false);
   const [checkingConnection, setCheckingConnection] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const showDiagnostics = shouldShowMobileApiDiagnostics();
@@ -79,18 +80,23 @@ export default function AuthScreen() {
             {mode === "login" ? "Need an account?" : "Already have an account?"}
           </Button>
         </View>
-        {showDiagnostics ? (
-          <View style={{ gap: 8 }}>
-            {apiDiagnostics.hints.map((hint) => (
-              <Caption key={hint}>{hint}</Caption>
-            ))}
-            {connectionStatus ? <Caption tone={connectionStatus.startsWith("Connected") ? "success" : "danger"}>{connectionStatus}</Caption> : null}
-            <Button tone="secondary" loading={checkingConnection} disabled={checkingConnection} onPress={checkConnection}>
-              Check connection
-            </Button>
-          </View>
-        ) : null}
       </Card>
+      {showDiagnostics ? (
+        <Card tone="warm" padding={14}>
+          <SectionHeader title="Development API" subtitle={apiDiagnostics.baseUrl} action={<Button tone="ghost" onPress={() => setDiagnosticsOpen((open) => !open)}>{diagnosticsOpen ? "Hide" : "Details"}</Button>} />
+          {connectionStatus ? <Caption tone={connectionStatus.startsWith("Connected") ? "success" : "danger"}>{connectionStatus}</Caption> : null}
+          {diagnosticsOpen ? (
+            <View style={{ gap: 8 }}>
+              {apiDiagnostics.hints.slice(1).map((hint) => (
+                <Caption key={hint}>{hint}</Caption>
+              ))}
+            </View>
+          ) : null}
+          <Button tone="secondary" loading={checkingConnection} disabled={checkingConnection} onPress={checkConnection}>
+            Check connection
+          </Button>
+        </Card>
+      ) : null}
     </Screen>
   );
 }

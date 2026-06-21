@@ -5,7 +5,7 @@ import { Image, Share, View } from "react-native";
 import type { LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo } from "@eventfilm/shared";
 import { buildHostLaunchKit, getEventTemplate } from "@eventfilm/shared";
-import { Badge, Body, Button, Card, ErrorState, HeroHeader, LoadingState, Screen, SectionHeader, SuccessState, colors } from "../../../src/components/ui";
+import { Badge, Body, Button, Card, ErrorState, LinkBlock, LoadingState, Screen, SectionHeader, SuccessState, TaskHeader, colors } from "../../../src/components/ui";
 import { useAuth } from "../../../src/auth";
 
 export default function ShareEventScreen() {
@@ -71,20 +71,16 @@ export default function ShareEventScreen() {
 
   return (
     <Screen>
-      <HeroHeader
+      <TaskHeader
         eyebrow="Share event"
-        title={event ? `Invite guests to ${event.name}` : "Preparing share link"}
-        body={template ? `${template.name} template: ${template.liveWallCopy}` : "Guests can scan the QR code or open the link from any browser. No account needed."}
+        title={event ? `Launch kit for ${event.name}` : "Preparing share link"}
+        body={template ? `${template.name} template. ${template.liveWallCopy}` : "Guests scan the QR code or open the guest link from any browser. No account needed."}
       />
       {error ? <ErrorState message={error} /> : null}
       {!event ? <LoadingState label="Loading sharing details..." /> : null}
       {event ? (
         <>
-          <Card>
-            <SectionHeader title="Guest link" subtitle="Send this anywhere your guests already are." />
-            <View style={{ borderRadius: 18, borderCurve: "continuous", backgroundColor: colors.surfaceWarm, padding: 12, borderWidth: 1, borderColor: "#f1ddc4" }}>
-              <Body>{event.eventLink}</Body>
-            </View>
+          <LinkBlock label="Guest upload link" description="Send this anywhere your guests already are. This is the one for QR codes, group chats, and invitations." url={event.eventLink} tone="accent">
             {message ? <SuccessState message={message} /> : null}
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1 }}>
@@ -94,7 +90,7 @@ export default function ShareEventScreen() {
                 <Button tone="secondary" onPress={() => copyLink("Guest link", event.eventLink)}>Copy link</Button>
               </View>
             </View>
-          </Card>
+          </LinkBlock>
 
           <ShareLinkCard
             title="Live Wall"
@@ -186,11 +182,7 @@ function ShareLinkCard({
   onCopy: () => void;
 }) {
   return (
-    <Card>
-      <SectionHeader title={title} subtitle={subtitle} />
-      <View style={{ borderRadius: 18, borderCurve: "continuous", backgroundColor: colors.surfaceWarm, padding: 12, borderWidth: 1, borderColor: "#f1ddc4" }}>
-        <Body>{url || "Link unavailable until the event reloads."}</Body>
-      </View>
+    <LinkBlock label={title} description={subtitle} url={url || "Link unavailable until the event reloads."}>
       <View style={{ flexDirection: "row", gap: 10 }}>
         <View style={{ flex: 1 }}>
           <Button disabled={!url} onPress={onShare}>Share</Button>
@@ -199,6 +191,6 @@ function ShareLinkCard({
           <Button tone="secondary" disabled={!url} onPress={onCopy}>Copy link</Button>
         </View>
       </View>
-    </Card>
+    </LinkBlock>
   );
 }

@@ -219,6 +219,23 @@ Before a real-host beta, also run the checklist in `docs/real-event-qa.md`.
 For deployment, storage, CORS, EAS env, smoke, and rollback checklists, use
 `docs/deployment-readiness.md`.
 
+## Mobile UI QA Checklist
+
+Use this on a real phone or small simulator after mobile UI changes:
+
+- Sign in as a host.
+- Confirm the dashboard shows the Create event action, event stats, and event cards without crowding.
+- Create an event and check each wizard step, including back, continue, review, validation, and submit loading states.
+- Open event detail and confirm the guest upload, Live Wall, and Recap links are visually distinct.
+- Copy or share the guest upload link from the share kit.
+- Open the Live Wall link.
+- Open the Recap link.
+- View the album after reveal.
+- Hide and restore one photo from the host event detail screen.
+- Feature and unfeature one visible photo.
+- Sign out if available.
+- Repeat the pass on a small phone screen and check for clipped text, tab overlap, keyboard overlap, and cramped two-button rows.
+
 ## Feature Workflow
 
 Future cross-platform features should follow this order:

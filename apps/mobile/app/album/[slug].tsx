@@ -3,7 +3,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Alert, View } from "react-native";
 import type { Photo, PublicEvent } from "@eventfilm/shared";
 import { CHALLENGE_TYPES, memoryCapsuleFromChallenge } from "@eventfilm/shared";
-import { Badge, Button, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader, SuccessState } from "../../src/components/ui";
+import { Badge, Button, EmptyState, ErrorState, LoadingState, PhotoCard, Screen, SectionHeader, SuccessState, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 export default function AlbumScreen() {
@@ -52,13 +52,12 @@ export default function AlbumScreen() {
 
   return (
     <Screen bottomPadding={96} wide>
-      <HeroHeader
+      <TaskHeader
         eyebrow="Guest album"
         title={event?.name || "Album"}
         body={event?.isRevealed ? "The reveal is live. Browse the moments guests shared." : capsuleCopy?.revealNote || "The album is safely tucked away until the host reveal time."}
-      >
-        {event ? <Badge tone={event.isRevealed ? "green" : "amber"}>{event.isRevealed ? "Revealed" : "Locked"}</Badge> : null}
-      </HeroHeader>
+        action={event ? <Badge tone={event.isRevealed ? "green" : "amber"}>{event.isRevealed ? "Revealed" : "Locked"}</Badge> : undefined}
+      />
 
       {loading ? <LoadingState label="Loading album..." /> : null}
       {error ? <ErrorState message={error} /> : null}

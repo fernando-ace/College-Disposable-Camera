@@ -14,11 +14,11 @@ import {
   ErrorState,
   Field,
   FieldGroup,
-  HeroHeader,
   LoadingState,
   Screen,
   SectionHeader,
   SuccessState,
+  TaskHeader,
 } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 import { getGuestClientId, slugFromInput } from "../../src/guest-session";
@@ -175,18 +175,17 @@ export default function UploadScreen() {
 
   return (
     <Screen bottomPadding={88}>
-      <HeroHeader
+      <TaskHeader
         eyebrow="Guest upload"
         title={event ? event.name : "Join an EventFilm album"}
         body={event?.description || "Paste a guest link or event code, then upload photos without making an account."}
-      >
-        {event ? (
+        action={event ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Badge>{challengeLabel(event.challenge)}</Badge>
             <Badge tone={remaining === 0 ? "red" : "green"}>{remaining === null ? "Checking uploads" : `${remaining} uploads left`}</Badge>
           </View>
-        ) : null}
-      </HeroHeader>
+        ) : undefined}
+      />
 
       <Card>
         <SectionHeader title="Find your event" subtitle="Use the QR link, full URL, or the event code from the host." />
@@ -243,11 +242,11 @@ export default function UploadScreen() {
               </Card>
             ) : null}
 
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+              <View style={{ flex: 1, minWidth: 132 }}>
                 <Button onPress={() => choosePhoto("camera")}>Take photo</Button>
               </View>
-              <View style={{ flex: 1 }}>
+              <View style={{ flex: 1, minWidth: 132 }}>
                 <Button tone="secondary" onPress={() => choosePhoto("library")}>Library</Button>
               </View>
             </View>
@@ -269,6 +268,7 @@ export default function UploadScreen() {
             {error ? <ErrorState message={error} /> : null}
             {remaining === 0 ? <ErrorState message="You have used all uploads for this event." /> : null}
             {asset ? <Button loading={loading} disabled={!canUpload} onPress={upload}>Upload photo</Button> : null}
+            {event && !asset && !uploadedPreviewUri ? <Body tone="muted">Choose a photo when you are ready. EventFilm will keep the album private until reveal.</Body> : null}
           </Card>
 
           {event.isRevealed ? (

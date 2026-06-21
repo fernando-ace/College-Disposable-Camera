@@ -15,12 +15,12 @@ import {
   ErrorState,
   Field,
   FieldGroup,
-  HeroHeader,
   Label,
   ModeOptionCard,
   ProgressSteps,
   Screen,
   SectionHeader,
+  TaskHeader,
   colors,
 } from "../src/components/ui";
 import { useAuth } from "../src/auth";
@@ -519,12 +519,12 @@ export default function CreateEventScreen() {
 
   return (
     <Screen bottomPadding={96}>
-      <HeroHeader
+      <TaskHeader
         eyebrow="Host setup"
-        title="Create an event guests will actually enjoy joining."
+        title="Create an event guests will actually join."
         body="A guided setup keeps the details clear now, then gives you a polished QR link to share."
       />
-      <ProgressSteps current={step} total={5} labels={wizardLabels} />
+      <ProgressSteps current={step} total={6} labels={wizardLabels} />
 
       {step === 0 ? (
         <TemplateSetup draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} />
@@ -629,10 +629,10 @@ export default function CreateEventScreen() {
 
       {error ? <ErrorState message={error} /> : null}
 
-      <Card padding={14}>
-        <View style={{ flexDirection: "row", gap: 10 }}>
-          {step > 0 ? <View style={{ flex: 1 }}><Button tone="secondary" onPress={goBack}>Back</Button></View> : null}
-          <View style={{ flex: 1 }}>
+      <Card padding={13}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+          {step > 0 ? <View style={{ flex: 1, minWidth: 132 }}><Button tone="secondary" onPress={goBack}>Back</Button></View> : null}
+          <View style={{ flex: 1, minWidth: 132 }}>
             {step < 5 ? (
               <Button onPress={goNext}>Continue</Button>
             ) : (

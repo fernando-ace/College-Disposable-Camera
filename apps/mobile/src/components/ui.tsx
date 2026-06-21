@@ -5,6 +5,7 @@ import { challengeLabel, photoChallengeLabel } from "@eventfilm/shared";
 
 export const colors = {
   ink: "#1c1917",
+  inkSoft: "#3f342d",
   muted: "#78716c",
   soft: "#a8a29e",
   border: "#e7ded3",
@@ -24,6 +25,7 @@ export const colors = {
   success: "#047857",
   successWash: "#dcfce7",
   wash: "#faf7f2",
+  focusRing: "#f3ce79",
 };
 
 type Tone = "default" | "muted" | "danger" | "success";
@@ -37,7 +39,7 @@ function toneColor(tone: Tone) {
 
 export function Screen({
   children,
-  bottomPadding = 88,
+  bottomPadding = 104,
   wide = false,
 }: {
   children: React.ReactNode;
@@ -53,8 +55,9 @@ export function Screen({
         width: "100%",
         maxWidth: wide ? 760 : 560,
         alignSelf: "center",
-        padding: 20,
-        gap: 18,
+        paddingHorizontal: 18,
+        paddingTop: 16,
+        gap: 16,
         paddingBottom: bottomPadding,
       }}
     >
@@ -66,7 +69,7 @@ export function Screen({
 export function Card({
   children,
   tone = "default",
-  padding = 18,
+  padding = 16,
 }: {
   children: React.ReactNode;
   tone?: "default" | "warm" | "accent" | "success" | "danger";
@@ -85,12 +88,12 @@ export function Card({
       style={{
         gap: 14,
         padding,
-        borderRadius: 24,
+        borderRadius: 20,
         borderCurve: "continuous",
         borderWidth: 1,
         borderColor: palette.borderColor,
         backgroundColor: palette.backgroundColor,
-        boxShadow: "0 14px 34px rgba(101, 62, 0, 0.08)",
+        boxShadow: "0 8px 24px rgba(101, 62, 0, 0.07)",
       }}
     >
       {children}
@@ -103,31 +106,54 @@ export function HeroHeader({
   title,
   body,
   children,
+  compact = false,
 }: {
   eyebrow?: string;
   title: string;
   body?: string;
   children?: React.ReactNode;
+  compact?: boolean;
 }) {
   return (
     <View
       style={{
-        gap: 14,
-        padding: 22,
-        borderRadius: 30,
+        gap: compact ? 11 : 14,
+        padding: compact ? 18 : 22,
+        borderRadius: compact ? 24 : 28,
         borderCurve: "continuous",
         backgroundColor: colors.ink,
         overflow: "hidden",
       }}
     >
-      <View style={{ position: "absolute", right: -42, top: -34, width: 130, height: 130, borderRadius: 999, backgroundColor: colors.amber, opacity: 0.28 }} />
-      <View style={{ position: "absolute", left: -36, bottom: -42, width: 112, height: 112, borderRadius: 999, backgroundColor: colors.coral, opacity: 0.24 }} />
       {eyebrow ? <Badge tone="amber">{eyebrow}</Badge> : null}
-      <View style={{ gap: 8 }}>
-        <Text selectable style={{ color: "#fffaf0", fontSize: 34, lineHeight: 39, fontWeight: "900" }}>{title}</Text>
+      <View style={{ gap: 7 }}>
+        <Text selectable style={{ color: "#fffaf0", fontSize: compact ? 25 : 31, lineHeight: compact ? 31 : 37, fontWeight: "900" }}>{title}</Text>
         {body ? <Text selectable style={{ color: "#f5e9d7", fontSize: 16, lineHeight: 24 }}>{body}</Text> : null}
       </View>
       {children}
+    </View>
+  );
+}
+
+export function TaskHeader({
+  eyebrow,
+  title,
+  body,
+  action,
+}: {
+  eyebrow?: string;
+  title: string;
+  body?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <View style={{ gap: 12, paddingTop: 2 }}>
+      {eyebrow ? <Badge tone="stone">{eyebrow}</Badge> : null}
+      <View style={{ gap: 6 }}>
+        <Text selectable style={{ color: colors.ink, fontSize: 29, lineHeight: 34, fontWeight: "900" }}>{title}</Text>
+        {body ? <Text selectable style={{ color: colors.muted, fontSize: 16, lineHeight: 23 }}>{body}</Text> : null}
+      </View>
+      {action}
     </View>
   );
 }
@@ -143,9 +169,9 @@ export function Section({ title, children, action }: { title?: string; children:
 
 export function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: React.ReactNode }) {
   return (
-    <View style={{ flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", gap: 12 }}>
+    <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
       <View style={{ flex: 1, gap: 3 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: 22, fontWeight: "900" }}>{title}</Text>
+        <Text selectable style={{ color: colors.ink, fontSize: 20, lineHeight: 25, fontWeight: "900" }}>{title}</Text>
         {subtitle ? <Body tone="muted">{subtitle}</Body> : null}
       </View>
       {action}
@@ -154,11 +180,11 @@ export function SectionHeader({ title, subtitle, action }: { title: string; subt
 }
 
 export function Heading({ children }: { children: React.ReactNode }) {
-  return <Text selectable style={{ color: colors.ink, fontSize: 32, fontWeight: "900", lineHeight: 38 }}>{children}</Text>;
+  return <Text selectable style={{ color: colors.ink, fontSize: 30, fontWeight: "900", lineHeight: 36 }}>{children}</Text>;
 }
 
 export function Body({ children, tone = "default" }: { children: React.ReactNode; tone?: Tone }) {
-  return <Text selectable style={{ color: toneColor(tone), fontSize: 16, lineHeight: 23 }}>{children}</Text>;
+  return <Text selectable style={{ color: toneColor(tone), fontSize: 15, lineHeight: 22 }}>{children}</Text>;
 }
 
 export function Caption({ children, tone = "muted" }: { children: React.ReactNode; tone?: Tone }) {
@@ -197,7 +223,7 @@ export function Field(props: React.ComponentProps<typeof TextInput>) {
       style={[
         {
           minHeight: props.multiline ? 96 : 52,
-          borderRadius: 16,
+          borderRadius: 15,
           borderCurve: "continuous",
           borderWidth: 1,
           borderColor: colors.border,
@@ -232,6 +258,7 @@ export function Chip({
       onPress={onPress}
       style={({ pressed }) => ({
         minHeight: 40,
+        maxWidth: "100%",
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "center",
@@ -241,12 +268,12 @@ export function Chip({
         borderColor: selected ? colors.ink : colors.border,
         backgroundColor: selected ? colors.amberWash : "#fff",
         opacity: pressed ? 0.72 : 1,
-        paddingHorizontal: 12,
+        paddingHorizontal: 11,
         paddingVertical: 7,
       })}
     >
       {swatch ? <View style={{ width: 12, height: 12, borderRadius: 999, borderWidth: 1, borderColor: "#00000022", backgroundColor: swatch }} /> : null}
-      <Text style={{ color: colors.ink, fontSize: 14, fontWeight: "900" }}>{children}</Text>
+      <Text style={{ color: colors.ink, fontSize: 13, lineHeight: 17, fontWeight: "900" }}>{children}</Text>
     </Pressable>
   );
 }
@@ -276,7 +303,7 @@ export function ActionButton({
         paddingHorizontal: 13,
       })}
     >
-      <Text style={{ color: colors.ink, fontSize: 13, fontWeight: "900" }}>{children}</Text>
+      <Text style={{ color: colors.ink, fontSize: 13, lineHeight: 17, fontWeight: "900", textAlign: "center" }}>{children}</Text>
     </Pressable>
   );
 }
@@ -313,7 +340,7 @@ export function Button({
         paddingHorizontal: 18,
       })}
     >
-      {loading ? <ActivityIndicator color={color} /> : <Text style={{ color, fontSize: 16, fontWeight: "900" }}>{children}</Text>}
+      {loading ? <ActivityIndicator color={color} /> : <Text style={{ color, fontSize: 16, lineHeight: 20, fontWeight: "900", textAlign: "center" }}>{children}</Text>}
     </Pressable>
   );
 }
@@ -350,17 +377,17 @@ export function ModeOptionCard({
       onPress={onPress}
       style={({ pressed }) => ({
         gap: 6,
-        borderRadius: 20,
+        borderRadius: 18,
         borderCurve: "continuous",
         borderWidth: 1,
         borderColor: selected ? colors.amberDark : colors.border,
         backgroundColor: selected ? colors.amberWash : "#fff",
         opacity: pressed ? 0.76 : 1,
-        padding: 16,
+        padding: 15,
       })}
     >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-        <Text style={{ flex: 1, color: colors.ink, fontSize: 16, fontWeight: "900" }}>{title}</Text>
+        <Text style={{ flex: 1, color: colors.ink, fontSize: 16, lineHeight: 20, fontWeight: "900" }}>{title}</Text>
         {selected ? <Badge tone="dark">Selected</Badge> : null}
       </View>
       {description ? <Text selectable style={{ color: colors.muted, fontSize: 14, lineHeight: 20 }}>{description}</Text> : null}
@@ -389,15 +416,16 @@ export function Badge({
   }[tone];
 
   return (
-    <View style={{ alignSelf: "flex-start", borderRadius: 999, backgroundColor: palette.backgroundColor, paddingHorizontal: 12, paddingVertical: 6 }}>
-      <Text style={{ color: palette.color, fontSize: 12, fontWeight: "900" }}>{children}</Text>
+    <View style={{ alignSelf: "flex-start", maxWidth: "100%", borderRadius: 999, backgroundColor: palette.backgroundColor, paddingHorizontal: 11, paddingVertical: 6 }}>
+      <Text style={{ color: palette.color, fontSize: 12, lineHeight: 15, fontWeight: "900" }}>{children}</Text>
     </View>
   );
 }
 
 export function ProgressSteps({ current, total, labels }: { current: number; total: number; labels?: string[] }) {
   return (
-    <View style={{ gap: 8 }}>
+    <Card padding={13}>
+      <View style={{ gap: 8 }}>
       <View style={{ flexDirection: "row", gap: 6 }}>
         {Array.from({ length: total }).map((_, index) => {
           const active = index <= current;
@@ -414,8 +442,9 @@ export function ProgressSteps({ current, total, labels }: { current: number; tot
           );
         })}
       </View>
-      <Caption>{labels?.[current] || `Step ${current + 1} of ${total}`}</Caption>
-    </View>
+        <Caption>{labels?.[current] || `Step ${current + 1} of ${total}`}</Caption>
+      </View>
+    </Card>
   );
 }
 
@@ -429,8 +458,7 @@ export function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <Card tone="warm">
-      <Badge tone="stone">Nothing here yet</Badge>
+    <Card tone="warm" padding={16}>
       <View style={{ gap: 5 }}>
         <Text selectable style={{ color: colors.ink, fontSize: 21, fontWeight: "900" }}>{title}</Text>
         <Body tone="muted">{body}</Body>
@@ -442,7 +470,7 @@ export function EmptyState({
 
 export function LoadingState({ label = "Loading..." }: { label?: string }) {
   return (
-    <Card>
+    <Card padding={14}>
       <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
         <ActivityIndicator color={colors.amberDark} />
         <Body tone="muted">{label}</Body>
@@ -453,7 +481,7 @@ export function LoadingState({ label = "Loading..." }: { label?: string }) {
 
 export function ErrorState({ message }: { message: string }) {
   return (
-    <Card tone="danger">
+    <Card tone="danger" padding={14}>
       <Badge tone="red">Needs attention</Badge>
       <Body tone="danger">{message}</Body>
     </Card>
@@ -462,7 +490,7 @@ export function ErrorState({ message }: { message: string }) {
 
 export function SuccessState({ message }: { message: string }) {
   return (
-    <Card tone="success">
+    <Card tone="success" padding={14}>
       <Badge tone="green">Done</Badge>
       <Body tone="success">{message}</Body>
     </Card>
@@ -485,10 +513,10 @@ export function EventCard({ event, onPress, featured = false }: { event: EventSu
 
   return (
     <Pressable disabled={!onPress} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.78 : 1 })}>
-      <Card tone={featured ? "accent" : "default"}>
+      <Card tone={featured ? "accent" : "default"} padding={featured ? 17 : 15}>
         <View style={{ gap: 7 }}>
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-            <Text selectable style={{ flex: 1, color: colors.ink, fontSize: featured ? 24 : 20, lineHeight: featured ? 29 : 25, fontWeight: "900" }}>{event.name}</Text>
+            <Text selectable style={{ flex: 1, color: colors.ink, fontSize: featured ? 22 : 18, lineHeight: featured ? 27 : 23, fontWeight: "900" }}>{event.name}</Text>
             <Badge tone={featured ? "dark" : "amber"}>{event.photoCount} photos</Badge>
           </View>
           {event.description ? <Body tone="muted">{event.description}</Body> : null}
@@ -506,6 +534,41 @@ export function EventCard({ event, onPress, featured = false }: { event: EventSu
   );
 }
 
+export function StatTile({ label, value, tone = "default" }: { label: string; value: string | number; tone?: "default" | "accent" }) {
+  return (
+    <View style={{ flex: 1, minWidth: 108, gap: 3, borderRadius: 18, borderCurve: "continuous", borderWidth: 1, borderColor: tone === "accent" ? colors.focusRing : colors.border, backgroundColor: tone === "accent" ? colors.amberWash : colors.surface, padding: 13 }}>
+      <Text selectable style={{ color: colors.ink, fontSize: 22, lineHeight: 26, fontWeight: "900", fontVariant: ["tabular-nums"] }}>{String(value)}</Text>
+      <Caption>{label}</Caption>
+    </View>
+  );
+}
+
+export function LinkBlock({
+  label,
+  description,
+  url,
+  children,
+  tone = "default",
+}: {
+  label: string;
+  description: string;
+  url?: string | null;
+  children?: React.ReactNode;
+  tone?: "default" | "accent" | "warm";
+}) {
+  return (
+    <Card tone={tone === "accent" ? "accent" : tone === "warm" ? "warm" : "default"}>
+      <SectionHeader title={label} subtitle={description} />
+      {url ? (
+        <View style={{ borderRadius: 15, borderCurve: "continuous", backgroundColor: colors.surfaceWarm, padding: 12, borderWidth: 1, borderColor: "#f1ddc4" }}>
+          <Caption>{url}</Caption>
+        </View>
+      ) : null}
+      {children}
+    </Card>
+  );
+}
+
 export function PhotoCard({ photo, compact = false }: { photo: Photo; compact?: boolean }) {
   const [loaded, setLoaded] = React.useState(false);
   const [imageError, setImageError] = React.useState(false);
@@ -513,8 +576,8 @@ export function PhotoCard({ photo, compact = false }: { photo: Photo; compact?: 
   const usesLocalhost = isLocalhostUrl(imageUrl);
 
   return (
-    <Card padding={compact ? 10 : 14}>
-      <View style={{ width: "100%", aspectRatio: 1, borderRadius: compact ? 18 : 20, borderCurve: "continuous", backgroundColor: colors.wash, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
+    <Card padding={compact ? 9 : 12}>
+      <View style={{ width: "100%", aspectRatio: 1, borderRadius: compact ? 15 : 18, borderCurve: "continuous", backgroundColor: colors.wash, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
         {imageUrl && !imageError ? (
           <>
             {!loaded ? <ActivityIndicator color={colors.amberDark} /> : null}
@@ -539,7 +602,7 @@ export function PhotoCard({ photo, compact = false }: { photo: Photo; compact?: 
         </Body>
       ) : null}
       <View style={{ gap: 5 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: compact ? 14 : 16, fontWeight: "900" }}>{photo.challengeParticipantName || photo.guestNickname || "Guest"}</Text>
+        <Text selectable style={{ color: colors.ink, fontSize: compact ? 14 : 16, lineHeight: compact ? 18 : 20, fontWeight: "900" }}>{photo.challengeParticipantName || photo.guestNickname || "Guest"}</Text>
         {photo.challengeColorName ? <Badge tone="stone">{photo.challengeColorName}</Badge> : null}
         {photoChallengeLabel(photo) && !photo.challengeColorName ? <Caption>{photoChallengeLabel(photo)}</Caption> : null}
       </View>
