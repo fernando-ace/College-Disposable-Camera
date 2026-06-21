@@ -88,6 +88,9 @@ JWT_SECRET="replace-with-a-long-random-secret"
 ANALYTICS_SALT="replace-with-a-long-random-analytics-salt"
 CLIENT_URL="http://localhost:5173"
 SERVER_URL="http://localhost:4000"
+WEB_PUBLIC_URL="http://localhost:5173"
+API_PUBLIC_URL="http://localhost:4000"
+CLIENT_ORIGINS=""
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="replace-with-your-service-role-key"
 SUPABASE_STORAGE_BUCKET="event-photos"
@@ -100,7 +103,10 @@ client app or commit a real key.
 
 In production, the API fails fast when required backend values are missing or
 when `JWT_SECRET` still uses the development fallback. Use deployed HTTPS
-values for `CLIENT_URL` and `SERVER_URL` before sharing links with real guests.
+values for `WEB_PUBLIC_URL`/`CLIENT_URL` and `API_PUBLIC_URL`/`SERVER_URL`
+before sharing links with real guests. `CLIENT_ORIGIN` or comma-separated
+`CLIENT_ORIGINS` can add preview web origins for CORS; do not use wildcard
+origins in production.
 
 Frontend: copy `client/.env.example` to `client/.env`.
 
@@ -243,12 +249,14 @@ Guest:
 
 - Provision a hosted PostgreSQL database and run Prisma migrations before starting the server.
 - Create the private Supabase Storage bucket named by `SUPABASE_STORAGE_BUCKET`.
-- Configure backend environment variables on the deployment host: `DATABASE_URL`, `NODE_ENV=production`, `JWT_SECRET`, `ANALYTICS_SALT`, `CLIENT_URL`, `SERVER_URL`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `MAX_FILE_SIZE_MB`, and `PORT`.
+- Configure backend environment variables on the deployment host: `DATABASE_URL`, `NODE_ENV=production`, `JWT_SECRET`, `ANALYTICS_SALT`, `WEB_PUBLIC_URL` or `CLIENT_URL`, `API_PUBLIC_URL` or `SERVER_URL`, `CLIENT_ORIGINS` if needed, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `MAX_FILE_SIZE_MB`, and `PORT`.
 - Configure the frontend deployment with `VITE_API_URL` pointing at the deployed API.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
 - Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Live Wall, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
 - See `docs/real-event-qa.md` before testing with a real host.
 - See `docs/deployment-readiness.md` for the deployment, storage, CORS, migration, EAS, smoke, and rollback checklists.
+- See `docs/first-host-beta-handoff.md` before handing a real beta host the product.
+- See `docs/demo-recording-checklist.md` before recording the release-candidate demo.
 
 ## Vercel Frontend Deployment
 
@@ -300,8 +308,10 @@ Required backend environment variables:
 ```env
 DATABASE_URL="postgresql://..."
 JWT_SECRET="long-random-secret"
-CLIENT_URL="https://your-frontend-domain"
-SERVER_URL="https://your-railway-api-domain"
+ANALYTICS_SALT="long-random-analytics-salt"
+WEB_PUBLIC_URL="https://your-frontend-domain"
+API_PUBLIC_URL="https://your-api-domain"
+CLIENT_ORIGINS="https://your-frontend-domain"
 SUPABASE_URL="https://your-project.supabase.co"
 SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
 SUPABASE_STORAGE_BUCKET="event-photos"
@@ -356,12 +366,27 @@ npm run demo:cleanup
 ```
 
 `smoke:browser` expects the web and API servers to be reachable. Override with
-`EVENTFILM_WEB_URL`, `EVENTFILM_API_URL`, and `EVENTFILM_SMOKE_EVENT_SLUG` when
-testing deployed URLs. `smoke:storage` expects real Supabase-backed API
+`EVENTFILM_WEB_URL`, `BROWSER_SMOKE_BASE_URL`, `EVENTFILM_API_URL`, and
+`EVENTFILM_SMOKE_EVENT_SLUG` when testing non-default URLs. `smoke:storage` expects real Supabase-backed API
 configuration and never commits or prints storage secrets. The storage smoke
 uses the revealed `eventfilm-beta-demo-storage-smoke` seed event by default and
 verifies upload, DB record, album, Live Wall, Recap, moderation, reporting,
 analytics, and cleanup.
+
+Deployed smoke commands:
+
+```bash
+npm run smoke:deployed:api
+npm run smoke:deployed:browser
+npm run smoke:deployed:storage
+npm run smoke:deployed:all
+```
+
+Set `DEPLOYED_API_URL`, `DEPLOYED_WEB_URL`, and `DEPLOYED_SMOKE_EVENT_SLUG`
+for deployed checks. Add `DEPLOYED_SMOKE_HOST_EMAIL` and
+`DEPLOYED_SMOKE_HOST_PASSWORD` only for a dedicated target-environment smoke
+host. Missing deployed URLs should produce clear missing-env output, not fake
+success.
 
 The guest web upload flow remains the lowest-friction path for event attendees.
 Do not make a native app install required for QR/link uploads.

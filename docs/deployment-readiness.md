@@ -1,136 +1,199 @@
-# EventFilm Deployment Readiness
+# EventFilm Deployed Beta Release Candidate
 
-Use this checklist before handing EventFilm to beta hosts. Do not commit real secrets and do not submit mobile builds to app stores from this workflow.
+Use this runbook before Fernando gives EventFilm to first beta hosts. Do not commit secrets, do not publish app-store builds from this workflow, and do not record deployed smoke success until the deployed commands pass against real deployed URLs.
 
-## Production Configuration
+## Deployment Targets
 
-Replace placeholders before deployment:
+EventFilm is provider-flexible:
+
+- Web: Vercel or similar, rooted at `client/`.
+- API: Railway, Render, Fly.io, or similar, rooted at `server/`.
+- Database: the current configured PostgreSQL provider.
+- Photo storage: Supabase Storage private bucket.
+- Mobile preview: EAS internal/preview build from `apps/mobile/`.
+
+## Environment Values
+
+Local development:
 
 ```env
-CLIENT_URL="https://your-eventfilm-domain.com"
-SERVER_URL="https://api.your-eventfilm-domain.com"
-VITE_API_URL="https://api.your-eventfilm-domain.com"
-EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
+CLIENT_URL="http://localhost:5173"
+SERVER_URL="http://localhost:4000"
+WEB_PUBLIC_URL="http://localhost:5173"
+API_PUBLIC_URL="http://localhost:4000"
+CLIENT_ORIGINS=""
+VITE_API_URL="http://localhost:4000"
+EXPO_PUBLIC_API_URL="http://localhost:4000"
+EXPO_PUBLIC_RELEASE_CHANNEL="development"
 ```
 
-Backend required values:
+Preview deployment:
+
+```env
+NODE_ENV="production"
+WEB_PUBLIC_URL="https://preview.your-eventfilm-domain.com"
+API_PUBLIC_URL="https://api-preview.your-eventfilm-domain.com"
+CLIENT_ORIGINS="https://preview.your-eventfilm-domain.com"
+VITE_API_URL="https://api-preview.your-eventfilm-domain.com"
+EXPO_PUBLIC_API_URL="https://api-preview.your-eventfilm-domain.com"
+EXPO_PUBLIC_RELEASE_CHANNEL="preview"
+```
+
+Production candidate:
+
+```env
+NODE_ENV="production"
+WEB_PUBLIC_URL="https://your-eventfilm-domain.com"
+API_PUBLIC_URL="https://api.your-eventfilm-domain.com"
+CLIENT_ORIGINS="https://your-eventfilm-domain.com"
+VITE_API_URL="https://api.your-eventfilm-domain.com"
+EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
+EXPO_PUBLIC_RELEASE_CHANNEL="production"
+```
+
+Backend secrets, server-only:
 
 - `DATABASE_URL`
-- `NODE_ENV=production`
 - `JWT_SECRET`
 - `ANALYTICS_SALT`
-- `CLIENT_URL`
-- `SERVER_URL`
 - `SUPABASE_URL`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_STORAGE_BUCKET`
 - `MAX_FILE_SIZE_MB`
 - `PORT`
 
-Frontend required value:
+`CLIENT_URL` and `SERVER_URL` still work for existing hosts. `WEB_PUBLIC_URL` and `API_PUBLIC_URL` are aliases for the same public values. `CLIENT_ORIGIN` or comma-separated `CLIENT_ORIGINS` can add allowed CORS origins for preview domains.
 
-- `VITE_API_URL`
+Production startup fails if required database/storage config is missing, if production public URLs point at localhost or non-HTTPS, if wildcard CORS is configured, if `JWT_SECRET` uses the dev fallback, or if production secrets are too short.
 
-Mobile required values:
+## Deploy Sequence
 
-- `EXPO_PUBLIC_API_URL`
-- `EXPO_PUBLIC_RELEASE_CHANNEL`
-
-`SUPABASE_SERVICE_ROLE_KEY`, `DATABASE_URL`, `JWT_SECRET`, and `ANALYTICS_SALT` must stay server-side only.
-
-## Deployment Checklist
-
-- Web client: deploy `client/`, run `npm run build`, and set `VITE_API_URL` to the deployed API base URL with no `/api` suffix.
-- API server: deploy `server/`, run `npm run build`, and start with `npm start`.
-- Prisma client: confirm the server build or `prestart` ran `prisma generate`.
-- Database migrations: run `npm run prisma:deploy -w server` against the production database.
-- Supabase storage: create a private bucket named by `SUPABASE_STORAGE_BUCKET`; do not make the bucket public.
-- Supabase project: confirm the project is active/unpaused before treating upload `fetch failed` errors as app bugs.
-- CORS: set `CLIENT_URL` to the exact deployed web origin. Localhost variants are allowed only outside production.
-- Auth/session: create a beta host, sign in on web and mobile, then refresh to confirm the token-backed session survives reload.
-- Public routes: verify `/e/:slug`, `/wall/:slug`, and `/recap/:slug` load from deployed web and call the deployed API.
-- Analytics: confirm `host_dashboard_opened`, `guest_joined_event`, `photo_upload_succeeded`, `live_wall_opened`, and `recap_opened` write without blocking the user flow.
-- EAS env: replace the `https://api.your-eventfilm-domain.com` placeholder with the actual deployed API URL before sharing preview/production builds.
-
-## Post-Deploy Smoke
-
-Run the checks from the repo root:
+1. Deploy the API service from `server/`.
+2. Set server env values, keeping all secrets server-side.
+3. Run migrations against the target database:
 
 ```bash
-npm run preflight
+npm run prisma:deploy -w server
 ```
 
-When local or deployed web/API URLs are reachable:
+4. Confirm the Supabase private bucket named by `SUPABASE_STORAGE_BUCKET` exists and the project is active.
+5. Deploy the web client from `client/` with `VITE_API_URL` pointing at the deployed API base URL, no `/api` suffix.
+6. Create or seed a safe smoke host and event in the target environment.
+7. Run deployed smoke commands from the repo root.
+
+## Deployed Smoke
+
+Required URL env:
+
+```powershell
+$env:DEPLOYED_API_URL="https://api.your-eventfilm-domain.com"
+$env:DEPLOYED_WEB_URL="https://your-eventfilm-domain.com"
+$env:DEPLOYED_SMOKE_EVENT_SLUG="eventfilm-beta-demo-storage-smoke"
+```
+
+Optional target-environment smoke credentials:
+
+```powershell
+$env:DEPLOYED_SMOKE_HOST_EMAIL="smoke-host@example.com"
+$env:DEPLOYED_SMOKE_HOST_PASSWORD="target-environment-password"
+```
+
+Commands:
 
 ```bash
-npm run demo:seed
-$env:EVENTFILM_WEB_URL="http://localhost:5173"
-$env:EVENTFILM_API_URL="http://localhost:4000"
-npm run smoke:browser
-npm run demo:cleanup
+npm run smoke:deployed:api
+npm run smoke:deployed:browser
+npm run smoke:deployed:storage
+npm run smoke:deployed:all
 ```
 
-For real Supabase storage smoke:
+`smoke:deployed:api` verifies API health, analytics write, optional host-auth database route, guest event route, guest upload route shell, Live Wall, and Recap. If the event slug or host credentials are missing, it prints documented skips rather than pretending full coverage passed.
 
-```bash
-npm run demo:seed
-$env:STORAGE_SMOKE_API_URL="http://localhost:4000"
-npm run smoke:storage
-npm run demo:cleanup
-```
+`smoke:deployed:browser` runs the Playwright browser smoke against `DEPLOYED_WEB_URL` or `BROWSER_SMOKE_BASE_URL`, using `DEPLOYED_API_URL` for API checks.
 
-Use the deployed API URL for `STORAGE_SMOKE_API_URL` when testing deployed infrastructure. The smoke script signs in as the demo host, uploads a tiny PNG through the public guest API, verifies the database photo record, file and preview routes, guest album, Live Wall, Recap, feature/unfeature, guest report, hide/restore moderation, event analytics summary, and cleanup. It prints whether required env vars are present, but never prints service keys, tokens, or secrets.
+`smoke:deployed:storage` reuses the real storage smoke. It uploads a tiny PNG through the deployed guest API, verifies DB record, file/preview routes, guest album, Live Wall, Recap, feature/unfeature, report, hide/restore, analytics summary, and cleanup. Run it only against a safe target event.
 
-The default smoke event is `eventfilm-beta-demo-storage-smoke`, created by `npm run demo:seed`. It is intentionally revealed so public album and Recap routes should include the uploaded test photo. If upload fails with `fetch failed`, first confirm the API URL is reachable and the Supabase project is unpaused.
+If no deployed URLs are configured, deployed smoke commands must fail with clear missing-env output. That is expected during local validation.
 
-## Mobile Beta Rehearsal
+## Safe Target Data
 
-Local simulator or Expo Go against local API:
+For local development, `npm run demo:seed` creates dev-only demo events and `npm run demo:cleanup` removes them. For deployed preview/production candidates, do not run the dev-only seed blindly unless the target environment is intended for smoke data. Preferred options:
 
-```env
-EXPO_PUBLIC_API_URL="http://localhost:4000"
-EXPO_PUBLIC_RELEASE_CHANNEL="development"
-```
+- Create a dedicated smoke host in the deployed app.
+- Create one revealed event named clearly for smoke testing.
+- Set `DEPLOYED_SMOKE_EVENT_SLUG` to that event.
+- Run storage smoke, then confirm cleanup removed the uploaded test photo.
 
-Physical phone against local API:
+## Mobile Preview Build
 
-```env
-EXPO_PUBLIC_API_URL="http://192.168.1.25:4000"
-EXPO_PUBLIC_RELEASE_CHANNEL="development"
-```
+Keep `EXPO_PUBLIC_API_URL` as the Expo public API base URL. It is bundled into the app and must never contain secrets.
 
-Preview or production candidate:
-
-```env
-EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
-EXPO_PUBLIC_RELEASE_CHANNEL="preview"
-```
-
-Build rehearsal only:
+Preview build:
 
 ```bash
 cd apps/mobile
 npx eas-cli@latest build --profile preview --platform all
+```
+
+Production-candidate build rehearsal:
+
+```bash
+cd apps/mobile
 npx eas-cli@latest build --profile production --platform all
 ```
 
-Do not run EAS submit or app-store submission commands. Before public store submission, replace the app icon, splash, screenshots, privacy URL, support URL, and final app name if needed.
+Do not run `eas submit`, TestFlight submission, or Play Store submission from this beta readiness workflow.
 
-Verify the build can sign in, create an event, copy/share the guest link, open the Live Wall link, open the Recap link, view analytics summary, and moderate photos.
+Before giving the preview build to a beta host:
 
-## Beta Metrics
+- Install the preview build on a phone.
+- Sign in.
+- Create an event.
+- Share the guest link.
+- Open the guest link in the phone browser.
+- Upload a photo.
+- Open Live Wall on a laptop.
+- Open Recap.
+- Hide, restore, feature, unfeature, and report a test photo.
+- Verify analytics summary changes.
+- Replace icon, splash, privacy URL, support URL, screenshots, and final app metadata before any public submission.
 
-- Active host: a signed-in host who opens the host dashboard in the last 30 days.
-- Guest join: a guest upload route visit that records `guest_joined_event`.
-- Photo upload: a successfully stored event photo that has not been deleted.
-- Live Wall open: a Live Wall route visit that records `live_wall_opened`.
-- Recap open: a Recap route visit that records `recap_opened`.
-- Beta MAU: count distinct active hosts plus distinct anonymous guest hashes in the last 30 days. Use this as directional beta signal, not a public usage claim.
+## Final Local Gate
+
+Before deployment handoff:
+
+```bash
+npm run test:shared
+npm run check:shared
+npm run check:api-client
+npm run test -w @eventfilm/api-client
+npm run check:web
+npm run check:api
+npm run check:mobile
+npm run lint:mobile
+npm run build:web
+npm run check
+npm exec -w server -- prisma migrate status --schema prisma/schema.prisma
+npm run demo:seed
+npm run smoke:browser
+npm run smoke:storage
+npm run demo:cleanup
+npm run preflight
+git diff --check
+git diff --cached --check
+```
+
+For local storage smoke on Windows:
+
+```powershell
+$env:STORAGE_SMOKE_API_URL="http://localhost:4000"
+npm run smoke:storage
+```
 
 ## Rollback Notes
 
-- Web rollback: redeploy the last known-good Vercel deployment for `client/`.
-- API rollback: redeploy the last known-good server build and confirm `SERVER_URL` still points at it.
-- Database rollback: prefer forward fixes. Do not manually reverse production migrations unless a tested rollback migration exists.
-- Storage rollback: hide problematic photos first; permanent deletion should be limited to cleanup or clear abuse.
-- Mobile rollback: stop distributing the bad internal build and create a new preview build with the previous working commit or EAS env values.
+- Web: redeploy the last known-good web deployment.
+- API: redeploy the last known-good server build and re-run API health.
+- Database: prefer forward fixes; do not hand-edit production data as rollback.
+- Storage: hide problematic photos first; reserve permanent delete for cleanup or abuse.
+- Mobile: stop distributing the bad internal build and create a new preview build with corrected env values.

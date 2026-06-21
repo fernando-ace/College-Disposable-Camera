@@ -1,6 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const baseURL = process.env.EVENTFILM_WEB_URL || "http://localhost:5173";
+const baseURL = process.env.BROWSER_SMOKE_BASE_URL || process.env.EVENTFILM_WEB_URL || "http://localhost:5173";
 
 export default defineConfig({
   testDir: "./tests/e2e",

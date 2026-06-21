@@ -11,7 +11,7 @@ const QRCode = require("qrcode");
 const rateLimit = require("express-rate-limit");
 const prisma = require("./prisma");
 const { signToken, requireAuth } = require("./auth");
-const { port, clientUrl, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction } = require("./config");
+const { port, clientUrl, clientOrigins, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction } = require("./config");
 const {
   createPhotoObjectKey,
   getPhotoPreviewUrl,
@@ -28,7 +28,7 @@ function normalizeOrigin(value) {
   return value.replace(/\/+$/, "");
 }
 
-const allowedOrigins = new Set([normalizeOrigin(clientUrl)]);
+const allowedOrigins = new Set(clientOrigins.map(normalizeOrigin));
 if (!isProduction) {
   allowedOrigins.add(normalizeOrigin(clientUrl.replace("localhost", "127.0.0.1")));
   allowedOrigins.add(normalizeOrigin(clientUrl.replace("127.0.0.1", "localhost")));

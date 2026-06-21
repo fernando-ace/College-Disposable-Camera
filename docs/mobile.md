@@ -105,6 +105,22 @@ EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
 EXPO_PUBLIC_RELEASE_CHANNEL="preview"
 ```
 
+Preview/internal build only:
+
+```bash
+cd apps/mobile
+npx eas-cli@latest build --profile preview --platform all
+```
+
+Production-candidate rehearsal only:
+
+```bash
+cd apps/mobile
+npx eas-cli@latest build --profile production --platform all
+```
+
+Do not run EAS submit, TestFlight submission, or Play Store submission from this beta workflow.
+
 For local testing against a deployed API, keep the release channel as
 `development` and point the local `.env` at the deployed API:
 
@@ -113,9 +129,18 @@ EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
 EXPO_PUBLIC_RELEASE_CHANNEL="development"
 ```
 
-Before giving a preview build to a beta host, verify the build can sign in,
-create an event, copy or share the guest link, open Live Wall, open Recap, view
-the analytics summary, and hide/restore or feature photos.
+Before giving a preview build to a beta host, verify:
+
+- Install the preview build on a phone.
+- Sign in.
+- Create an event.
+- Share the guest link.
+- Open the guest link in the phone browser.
+- Upload a photo.
+- Open Live Wall on a laptop.
+- Open Recap.
+- Hide, restore, feature, unfeature, and report one test photo.
+- Verify the analytics summary changes.
 
 ## App Store Metadata Placeholders
 

@@ -1443,7 +1443,10 @@ function Dashboard() {
             <h1 className="mt-4 font-display text-3xl font-bold sm:text-5xl">Plan it. Share it. Watch the album fill up.</h1>
             <p className="mt-3 max-w-2xl text-stone-200">{auth.user?.email}</p>
           </div>
-          <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400" to="/dashboard/events/new">Create event</Link>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20 transition hover:bg-white/15" to="/dashboard/beta-readiness">Beta readiness</Link>
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400" to="/dashboard/events/new">Create event</Link>
+          </div>
         </div>
       </div>
       {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -1515,6 +1518,133 @@ function Dashboard() {
             <h3 className="mt-4 font-display text-2xl font-bold">Create your first EventFilm album</h3>
             <p className="mx-auto mt-2 max-w-xl text-stone-600">Start with the event name and reveal time. EventFilm will give you a guest link and QR code right after setup.</p>
             <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950" to="/dashboard/events/new">Create event</Link>
+          </Card>
+        )}
+      </section>
+    </Shell>
+  );
+}
+
+function BetaReadiness() {
+  const auth = useAuth();
+  const [events, setEvents] = useState<EventSummary[]>([]);
+  const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
+  const [apiReachable, setApiReachable] = useState<"checking" | "yes" | "no">("checking");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/health`)
+      .then((response) => setApiReachable(response.ok ? "yes" : "no"))
+      .catch(() => setApiReachable("no"));
+
+    Promise.all([
+      eventFilmApi.getHostEvents(auth.token),
+      eventFilmApi.getAnalyticsSummary(auth.token).catch(() => null),
+    ])
+      .then(([eventData, analytics]) => {
+        setEvents(eventData.events);
+        setAnalyticsSummary(analytics?.summary || null);
+      })
+      .catch((err) => setError((err as Error).message));
+  }, [auth.token]);
+
+  const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
+  const recentEvents = events.slice(0, 4);
+  const apiLooksDeployed = !API_BASE_URL.includes("localhost") && !API_BASE_URL.includes("127.0.0.1");
+  const hasUsableEventLinks = events.some((event) => {
+    const links = [event.eventLink, event.liveWallLink, event.recapLink];
+    return links.every((link) => link && !link.includes("localhost") && !link.includes("127.0.0.1"));
+  });
+
+  return (
+    <Shell wide>
+      <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <StatusPill>Internal beta readiness</StatusPill>
+          <h1 className="mt-3 font-display text-4xl font-bold text-stone-950">Release candidate check</h1>
+          <p className="mt-2 max-w-2xl text-stone-600">Use this before sharing EventFilm with first beta hosts.</p>
+        </div>
+        <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
+      </section>
+
+      {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ["API reachable", apiReachable === "checking" ? "Checking" : apiReachable === "yes" ? "Yes" : "No"],
+          ["API target", apiLooksDeployed ? "Deployed" : "Local"],
+          ["Events", events.length],
+          ["Uploads", totalPhotos],
+        ].map(([label, value]) => (
+          <Card key={label}>
+            <p className="text-sm font-bold uppercase tracking-wide text-stone-500">{label}</p>
+            <p className="mt-3 font-display text-3xl font-bold text-[#653e00]">{value}</p>
+          </Card>
+        ))}
+      </div>
+
+      <section className="mt-8 grid gap-5 lg:grid-cols-2">
+        <Card>
+          <h2 className="font-display text-2xl font-bold">Deployment signals</h2>
+          <div className="mt-4 grid gap-3">
+            <p className="rounded-2xl bg-stone-50 p-4 text-sm font-semibold text-stone-700">API base: {API_BASE_URL}</p>
+            <p className={cx("rounded-2xl p-4 text-sm font-semibold", apiLooksDeployed ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-800")}>
+              {apiLooksDeployed ? "Mobile/web clients are pointing at a non-local API." : "Client is still pointing at a local API."}
+            </p>
+            <p className={cx("rounded-2xl p-4 text-sm font-semibold", hasUsableEventLinks ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-800")}>
+              {hasUsableEventLinks ? "At least one event has non-local guest, Live Wall, and Recap links." : "Create or reload a deployed event before first-host sharing."}
+            </p>
+            <p className="rounded-2xl bg-stone-50 p-4 text-sm font-semibold text-stone-700">Storage smoke runbook: docs/deployment-readiness.md</p>
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="font-display text-2xl font-bold">Analytics summary</h2>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            {[
+              ["Guest joins", analyticsSummary?.guestJoins ?? 0],
+              ["Uploads", analyticsSummary?.uploads ?? 0],
+              ["Live Wall", analyticsSummary?.liveWallOpens ?? 0],
+              ["Recap", analyticsSummary?.recapOpens ?? 0],
+              ["Active hosts", analyticsSummary?.activeHosts ?? 0],
+              ["Active guests", analyticsSummary?.activeGuests ?? 0],
+            ].map(([label, value]) => (
+              <div className="rounded-2xl bg-stone-50 p-4" key={label}>
+                <p className="text-xs font-bold uppercase text-stone-500">{label}</p>
+                <p className="mt-2 font-display text-2xl font-bold text-[#653e00]">{value}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </section>
+
+      <section className="mt-8">
+        <div className="mb-4">
+          <h2 className="font-display text-2xl font-bold">Recent event checks</h2>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-2">
+          {recentEvents.map((event) => (
+            <Card key={event.id}>
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <StatusPill tone={new Date(event.revealAt).getTime() > Date.now() ? "green" : "stone"}>{new Date(event.revealAt).getTime() > Date.now() ? "Live" : "Revealed"}</StatusPill>
+                  <h3 className="mt-3 font-display text-xl font-bold text-stone-950">{event.name}</h3>
+                  <p className="mt-1 text-sm text-stone-600">{event.photoCount} uploads</p>
+                </div>
+                <Link className="text-sm font-bold text-[#653e00] hover:text-stone-950" to={`/dashboard/events/${event.id}`}>Manage</Link>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {event.liveWallLink && <a className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-200" href={event.liveWallLink} target="_blank" rel="noreferrer">Live Wall</a>}
+                {event.recapLink && <a className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-200" href={event.recapLink} target="_blank" rel="noreferrer">Recap</a>}
+                {event.eventLink && <a className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-200" href={event.eventLink} target="_blank" rel="noreferrer">Guest link</a>}
+              </div>
+            </Card>
+          ))}
+        </div>
+        {!recentEvents.length && (
+          <Card className="text-center">
+            <h3 className="font-display text-2xl font-bold">No events yet</h3>
+            <p className="mx-auto mt-2 max-w-xl text-stone-600">Create a deployed test event before first-host beta sharing.</p>
           </Card>
         )}
       </section>
@@ -2621,6 +2751,7 @@ function App() {
             <Route path="/signup" element={<AuthForm mode="signup" />} />
             <Route path="/login" element={<AuthForm mode="login" />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/dashboard/beta-readiness" element={<ProtectedRoute><BetaReadiness /></ProtectedRoute>} />
             <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
             <Route path="/dashboard/events/:eventId" element={<ProtectedRoute><ManageEvent /></ProtectedRoute>} />
             <Route path="/wall/:slug" element={<LiveWall />} />

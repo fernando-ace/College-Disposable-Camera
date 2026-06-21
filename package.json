@@ -18,6 +18,7 @@
     "build:web": "npm run build -w client",
     "check:api": "npm run build -w server",
     "build:api": "npm run build -w server",
+    "test:server": "npm run test -w server",
     "check:shared": "npm run typecheck -w @eventfilm/shared",
     "test:shared": "npm run test -w @eventfilm/shared",
     "check:api-client": "npm run typecheck -w @eventfilm/api-client",
@@ -26,6 +27,10 @@
     "preflight": "node scripts/preflight.js",
     "smoke:browser": "playwright test",
     "smoke:storage": "npm run storage:smoke -w server",
+    "smoke:deployed:api": "node scripts/deployed-smoke-api.js",
+    "smoke:deployed:browser": "node scripts/deployed-smoke-browser.js",
+    "smoke:deployed:storage": "node scripts/deployed-smoke-storage.js",
+    "smoke:deployed:all": "node scripts/deployed-smoke-all.js",
     "demo:seed": "npm run seed:beta-demo -w server",
     "demo:cleanup": "npm run seed:beta-demo -w server -- --cleanup"
   },

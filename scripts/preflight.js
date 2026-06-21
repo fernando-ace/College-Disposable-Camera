@@ -6,6 +6,7 @@ const commands = [
   ["API client typecheck", "npm", ["run", "check:api-client"]],
   ["Web build/check", "npm", ["run", "check:web"]],
   ["API build/check", "npm", ["run", "check:api"]],
+  ["Server config tests", "npm", ["run", "test:server"]],
   ["Mobile typecheck", "npm", ["run", "check:mobile"]],
   ["Mobile lint", "npm", ["run", "lint:mobile"]],
   ["Prisma migrate status", "npm", ["exec", "-w", "server", "--", "prisma", "migrate", "status", "--schema", "prisma/schema.prisma"]],

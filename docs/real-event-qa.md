@@ -5,8 +5,9 @@ Use this before a real host or guest group tests EventFilm.
 ## Environment
 
 - API `NODE_ENV` is `production` for deployed testing.
-- `CLIENT_URL` points at the deployed web app.
-- `SERVER_URL` points at the deployed API and uses HTTPS.
+- `WEB_PUBLIC_URL` or `CLIENT_URL` points at the deployed web app.
+- `API_PUBLIC_URL` or `SERVER_URL` points at the deployed API and uses HTTPS.
+- `CLIENT_ORIGIN` or `CLIENT_ORIGINS` includes the deployed web origin and does not use `*`.
 - `VITE_API_URL` points at the deployed API base URL with no `/api` suffix.
 - Mobile `EXPO_PUBLIC_API_URL` points at the deployed API.
 - Mobile `EXPO_PUBLIC_RELEASE_CHANNEL` is `preview` or `production` for EAS builds.
@@ -18,6 +19,21 @@ npm exec -w server -- prisma migrate status --schema prisma/schema.prisma
 ```
 
 For full deployment readiness, also follow `docs/deployment-readiness.md`.
+
+## Deployed Smoke Commands
+
+Use these after web/API deployment and after creating a safe target-environment smoke event:
+
+```powershell
+$env:DEPLOYED_API_URL="https://api.your-eventfilm-domain.com"
+$env:DEPLOYED_WEB_URL="https://your-eventfilm-domain.com"
+$env:DEPLOYED_SMOKE_EVENT_SLUG="eventfilm-beta-demo-storage-smoke"
+npm run smoke:deployed:api
+npm run smoke:deployed:browser
+npm run smoke:deployed:storage
+```
+
+Add `DEPLOYED_SMOKE_HOST_EMAIL` and `DEPLOYED_SMOKE_HOST_PASSWORD` only for a dedicated smoke host. The commands must report missing env or documented skips instead of claiming full deployed success.
 
 ## Dev Demo Setup
 
