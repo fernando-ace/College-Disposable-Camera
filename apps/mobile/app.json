@@ -1,0 +1,29 @@
+{
+  "expo": {
+    "name": "EventFilm",
+    "slug": "eventfilm",
+    "scheme": "eventfilm",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "bundleIdentifier": "com.eventfilm.app",
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.eventfilm.app"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "EventFilm lets you choose event photos to upload.",
+          "cameraPermission": "EventFilm lets you take event photos to upload."
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}

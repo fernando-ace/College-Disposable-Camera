@@ -381,7 +381,7 @@ function Button({ children, className = "", ...props }: React.ButtonHTMLAttribut
   return (
     <button
       className={cx(
-        "inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-[0_16px_36px_rgba(245,158,11,0.16)] transition hover:-translate-y-0.5 hover:bg-amber-400 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none",
+        "inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-[0_18px_42px_rgba(101,62,0,0.16)] transition hover:-translate-y-0.5 hover:bg-amber-400 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none",
         className,
       )}
       {...props}
@@ -409,7 +409,7 @@ function TextInput({ className = "", ...props }: React.InputHTMLAttributes<HTMLI
   return (
     <input
       className={cx(
-        "w-full rounded-2xl border border-transparent bg-stone-100 px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
+        "w-full rounded-2xl border border-stone-200 bg-[#fffaf3] px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
         className,
       )}
       {...props}
@@ -421,7 +421,7 @@ function TextArea({ className = "", ...props }: React.TextareaHTMLAttributes<HTM
   return (
     <textarea
       className={cx(
-        "w-full rounded-2xl border border-transparent bg-stone-100 px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
+        "w-full rounded-2xl border border-stone-200 bg-[#fffaf3] px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
         className,
       )}
       {...props}
@@ -474,7 +474,7 @@ function LiveDemoPill() {
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={cx("rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)]", className)}>{children}</div>;
+  return <div className={cx("rounded-3xl border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)]", className)}>{children}</div>;
 }
 
 function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "colorName" | "colorHex"> }) {
@@ -673,8 +673,8 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
 function Shell({ children, wide = false }: { children: React.ReactNode; wide?: boolean }) {
   const auth = useAuth();
   return (
-    <div className="min-h-screen bg-[#f9f9f9] text-stone-950">
-      <header className="sticky top-0 z-40 border-b border-white/70 bg-[#f9f9f9]/85 backdrop-blur-xl">
+    <div className="min-h-screen bg-[#fff8ed] text-stone-950">
+      <header className="sticky top-0 z-40 border-b border-white/70 bg-[#fff8ed]/85 backdrop-blur-xl">
         <div className={cx("mx-auto flex items-center justify-between px-5 py-4", wide ? "max-w-7xl lg:px-10" : "max-w-6xl")}>
           <Link to="/" className="font-display text-xl font-bold tracking-tight text-[#653e00] sm:text-2xl">EventFilm</Link>
           <nav className="flex items-center gap-2 text-sm">
@@ -1016,12 +1016,15 @@ function Dashboard() {
 
   return (
     <Shell wide>
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">Welcome back</h1>
-          <p className="mt-2 text-stone-600">{auth.user?.email}</p>
+      <div className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <StatusPill>Host command center</StatusPill>
+            <h1 className="mt-4 font-display text-3xl font-bold sm:text-5xl">Plan it. Share it. Watch the album fill up.</h1>
+            <p className="mt-3 max-w-2xl text-stone-200">{auth.user?.email}</p>
+          </div>
+          <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400" to="/dashboard/events/new">Create event</Link>
         </div>
-        <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
       </div>
       {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <div className="mt-8 grid gap-5 sm:grid-cols-3">
@@ -1064,9 +1067,10 @@ function Dashboard() {
           ))}
         </div>
         {!events.length && (
-          <Card className="text-center">
-            <h3 className="font-display text-2xl font-bold">No events yet</h3>
-            <p className="mt-2 text-stone-600">Create your first album to get a shareable link and QR code.</p>
+          <Card className="bg-[#fffaf3] text-center">
+            <StatusPill>First event</StatusPill>
+            <h3 className="mt-4 font-display text-2xl font-bold">Create your first EventFilm album</h3>
+            <p className="mx-auto mt-2 max-w-xl text-stone-600">Start with the event name and reveal time. EventFilm will give you a guest link and QR code right after setup.</p>
             <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950" to="/dashboard/events/new">Create event</Link>
           </Card>
         )}
@@ -1556,13 +1560,13 @@ function GuestEvent() {
       )}
       {event && (
         <div className="mx-auto max-w-2xl">
-          <section className="text-center">
+          <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-center text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
             <StatusPill>No app download. No account needed.</StatusPill>
-            <h1 className="mt-5 font-display text-4xl font-bold text-stone-950">{event.name}</h1>
-            {event.description && <p className="mt-3 text-stone-700">{event.description}</p>}
-            <p className="mt-3 text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
+            <h1 className="mt-5 font-display text-4xl font-bold">{event.name}</h1>
+            {event.description && <p className="mt-3 text-stone-200">{event.description}</p>}
+            <p className="mt-3 text-sm text-stone-300">Reveal: {formatDateTime(event.revealAt)}</p>
             {!event.isRevealed && (
-              <p className="mt-5 rounded-3xl bg-amber-50 p-4 text-sm font-semibold text-amber-900">
+              <p className="mt-5 rounded-3xl bg-amber-100 p-4 text-sm font-semibold text-amber-950">
                 Photos are hidden until the reveal. Keep uploading throughout the event.
               </p>
             )}
@@ -1617,7 +1621,7 @@ function GuestEvent() {
             </section>
           )}
 
-          <form className="mt-6 rounded-3xl border border-stone-200 bg-white p-5 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-6" onSubmit={uploadPhoto}>
+          <form className="mt-6 rounded-3xl border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)] sm:p-6" onSubmit={uploadPhoto}>
             <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
             <p className="mt-2 text-stone-600">{event.challenge?.type === "COLOR_HUNT" ? "Pick a photo and send it to the private album." : "Add your name, pick a photo, and send it to the private album."}</p>
             {event.challenge?.type === "COLOR_HUNT" && selectedParticipant && (
@@ -1635,6 +1639,7 @@ function GuestEvent() {
             <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-700">
               {remaining === null ? "Checking uploads..." : `${remaining} uploads left`}
             </p>
+            {remaining === 0 && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">You have used all uploads for this event.</p>}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400">
                 <Icon>photo_camera</Icon>
