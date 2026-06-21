@@ -1,6 +1,7 @@
 node_modules/
 .expo/
 .env
+apps/mobile/.env.local
 server/.env
 client/.env
 server/uploads/

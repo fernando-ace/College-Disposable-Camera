@@ -2,14 +2,14 @@ import * as React from "react";
 import { router } from "expo-router";
 import { View } from "react-native";
 import { EventFilmApiError } from "@eventfilm/api-client";
-import { checkMobileApiConnection, getMobileApiBaseUrl, shouldShowMobileApiDiagnostics } from "../src/api";
+import { checkMobileApiConnection, getMobileApiDiagnosticHints, shouldShowMobileApiDiagnostics } from "../src/api";
 import { Body, Button, Caption, Card, Field, Heading, Screen } from "../src/components/ui";
 import { useAuth } from "../src/auth";
 
 function authErrorMessage(error: unknown) {
   if (error instanceof EventFilmApiError) {
-    if (error.kind === "timeout") return "Request timed out. Check that the API is running and the phone can reach this API URL.";
-    if (error.kind === "network") return "Could not reach API. Use your computer LAN IP, not localhost, when testing from a phone.";
+    if (error.kind === "timeout") return "Request timed out. Run npm run mobile:env:lan, then restart with npm run mobile:start:clear.";
+    if (error.kind === "network") return "Could not reach API. Use your computer LAN IP, then restart with npm run mobile:start:clear.";
     if (error.kind === "auth") return "Invalid email or password.";
     if (error.kind === "server") return "Server error. Check the API terminal and database connection.";
   }
@@ -35,7 +35,7 @@ export default function AuthScreen() {
   const [checkingConnection, setCheckingConnection] = React.useState(false);
   const [loading, setLoading] = React.useState(false);
   const showDiagnostics = shouldShowMobileApiDiagnostics();
-  const apiBaseUrl = getMobileApiBaseUrl();
+  const apiDiagnostics = getMobileApiDiagnosticHints();
 
   async function submit() {
     if (loading) return;
@@ -60,7 +60,7 @@ export default function AuthScreen() {
       const result = await checkMobileApiConnection();
       setConnectionStatus(result.ok ? `Connected to ${result.baseUrl} in ${result.latencyMs}ms.` : `Reached ${result.baseUrl}, but health did not return ok.`);
     } catch (err) {
-      setConnectionStatus(`${connectionErrorMessage(err)} API: ${apiBaseUrl}`);
+      setConnectionStatus(`${connectionErrorMessage(err)} API: ${apiDiagnostics.baseUrl}. Run npm run mobile:env:lan, then npm run mobile:start:clear.`);
     } finally {
       setCheckingConnection(false);
     }
@@ -81,7 +81,9 @@ export default function AuthScreen() {
         </View>
         {showDiagnostics ? (
           <View style={{ gap: 8 }}>
-            <Caption>API: {apiBaseUrl}</Caption>
+            {apiDiagnostics.hints.map((hint) => (
+              <Caption key={hint}>{hint}</Caption>
+            ))}
             {connectionStatus ? <Caption tone={connectionStatus.startsWith("Connected") ? "success" : "danger"}>{connectionStatus}</Caption> : null}
             <Button tone="secondary" loading={checkingConnection} disabled={checkingConnection} onPress={checkConnection}>
               Check connection

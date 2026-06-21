@@ -117,7 +117,7 @@ VITE_BOOKING_SMS_URL="sms:+15555555555?&body=I%20want%20to%20book%20an%20EventFi
 
 `VITE_BOOKING_SMS_URL` is optional. The app defaults to the beta booking number in code; set this only if the booking number or prefilled text should change.
 
-Mobile: copy `apps/mobile/.env.example` to `apps/mobile/.env`.
+Mobile: generate `apps/mobile/.env.local` from the current LAN address.
 
 ```env
 EXPO_PUBLIC_API_URL="http://YOUR_LAN_IP:4000"
@@ -126,21 +126,28 @@ EXPO_PUBLIC_RELEASE_CHANNEL="development"
 
 Start the API before opening Expo Go. Use a LAN IP instead of `localhost` when
 testing from a physical phone; `localhost` points at the phone, not this
-computer. On Windows, get the current Wi-Fi IPv4 address with:
+computer. The phone and laptop must be on the same Wi-Fi, and Windows Firewall
+may need to allow Node.js on port `4000`.
+
+Terminal 1:
 
 ```powershell
-ipconfig
+npm run dev:api
 ```
 
-Then set `EXPO_PUBLIC_API_URL` to `http://YOUR_LAN_IP:4000`, restart Metro, and
-run:
+Terminal 2:
 
 ```powershell
-npm run dev-host:reset
+npm run mobile:env:lan
 $env:AUTH_SMOKE_API_URL="http://YOUR_LAN_IP:4000"
 npm run auth:smoke
-npm run mobile:start
+npm run mobile:start:clear
 ```
+
+Open Expo Go and sign in with `neoskizzy@gmail.com` / `EventFilm123!`.
+If the app shows an old IP, run `npm run mobile:env:lan` again and restart with
+`npm run mobile:start:clear`. Do not run raw `npx expo start` from the repo
+root; use the root mobile scripts so Expo starts from `apps/mobile`.
 
 Never put server secrets in `EXPO_PUBLIC_` variables.
 For EAS preview or production builds, set `EXPO_PUBLIC_RELEASE_CHANNEL` to
