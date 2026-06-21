@@ -178,7 +178,7 @@ export default function UploadScreen() {
       <TaskHeader
         eyebrow="Guest upload"
         title={event ? event.name : "Join an EventFilm album"}
-        body={event?.description || "Paste a guest link or event code, then upload photos without making an account."}
+        body={event?.description || "Paste the host link or event code. No account needed."}
         action={event ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Badge>{challengeLabel(event.challenge)}</Badge>
@@ -188,7 +188,7 @@ export default function UploadScreen() {
       />
 
       <Card>
-        <SectionHeader title="Find your event" subtitle="Use the QR link, full URL, or the event code from the host." />
+        <SectionHeader title="Find your event" subtitle="Use the QR link, full URL, or event code from the host." />
         <Field placeholder="Paste event link or slug" value={input} onChangeText={setInput} autoCapitalize="none" />
         <Button loading={findingEvent} onPress={() => loadEvent()}>Find event</Button>
       </Card>
@@ -217,7 +217,7 @@ export default function UploadScreen() {
           />
 
           <Card>
-            <SectionHeader title="Upload a photo" subtitle="Choose a fresh photo from the event or pick one from your library." />
+            <SectionHeader title="Upload a photo" subtitle="Choose a camera shot or pick from your library." />
             {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT ? (
               <FieldGroup label="Name or nickname" helper="This appears with your upload in the album.">
                 <Field placeholder="Your name" value={nickname} onChangeText={setNickname} autoCapitalize="words" />
@@ -268,7 +268,7 @@ export default function UploadScreen() {
             {error ? <ErrorState message={error} /> : null}
             {remaining === 0 ? <ErrorState message="You have used all uploads for this event." /> : null}
             {asset ? <Button loading={loading} disabled={!canUpload} onPress={upload}>Upload photo</Button> : null}
-            {event && !asset && !uploadedPreviewUri ? <Body tone="muted">Choose a photo when you are ready. EventFilm will keep the album private until reveal.</Body> : null}
+            {event && !asset && !uploadedPreviewUri ? <Body tone="muted">Choose a photo when you are ready. The host controls when the album reveals.</Body> : null}
           </Card>
 
           {event.isRevealed ? (
@@ -319,7 +319,7 @@ function ChallengeInstructions({
     return (
       <Card tone="accent">
         <Badge tone="dark">Color Hunt</Badge>
-        <SectionHeader title="Choose your color team" subtitle="Find real moments that match your color, then upload them here." />
+        <SectionHeader title="Choose your color team" subtitle="Find a moment that matches your color, then upload it here." />
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           {participants.map((participant) => (
             <Chip
@@ -341,7 +341,7 @@ function ChallengeInstructions({
     return (
       <Card tone="accent">
         <Badge tone="dark">Photo Scavenger Hunt</Badge>
-        <SectionHeader title="Pick a prompt" subtitle="Choose what you are completing before you upload." />
+        <SectionHeader title="Pick a prompt" subtitle="Choose your mission before you upload." />
         <View style={{ gap: 8 }}>
           {prompts.map((prompt) => (
             <Button key={prompt.id} tone={selectedPromptId === prompt.id ? "primary" : "secondary"} onPress={() => prompt.id && onSelectPrompt(prompt.id)}>

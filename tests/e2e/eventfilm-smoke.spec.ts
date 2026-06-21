@@ -29,7 +29,7 @@ test.describe("EventFilm browser smoke", () => {
     page.on("pageerror", (error) => consoleProblems.push(error.message));
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: /Stop chasing event photos/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Collect every moment/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Create your first event/i }).first()).toBeVisible();
     await expect(page.getByRole("link", { name: /View demo/i })).toBeVisible();
 

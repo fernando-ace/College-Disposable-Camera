@@ -120,8 +120,8 @@ export default function EventDetailScreen() {
       {event ? (
         <>
           <View style={{ gap: 12 }}>
-            <SectionHeader title="Launch links" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
-            <LinkBlock label="Guest upload link" description="Use this link or QR code for guests. It opens upload without an account." url={event.eventLink} tone="accent">
+            <SectionHeader title="Launch kit" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
+            <LinkBlock label="Guest Upload" description="The link and QR code guests need before and during the event." url={event.eventLink} tone="accent">
               <View style={{ flexDirection: "row", gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Link href={`/events/${event.id}/share`} asChild>
@@ -137,19 +137,19 @@ export default function EventDetailScreen() {
             </LinkBlock>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
               <View style={{ flex: 1, minWidth: 150 }}>
-                <LinkBlock label="Live Wall" description="Open during the event on a shared screen." url={event.liveWallLink}>
+                <LinkBlock label="Live Wall" description="Open on a TV, projector, or laptop while guests upload." url={event.liveWallLink}>
                   <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
                 </LinkBlock>
               </View>
               <View style={{ flex: 1, minWidth: 150 }}>
-                <LinkBlock label="Recap" description="Share after reveal as the polished album story." url={event.recapLink}>
+                <LinkBlock label="Recap" description="Share after reveal as the finished memory page." url={event.recapLink}>
                   <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
                 </LinkBlock>
               </View>
             </View>
             <Card tone="warm">
-              <SectionHeader title="Before, during, after" subtitle="Guest link before arrival. Live Wall while people upload. Recap once the reveal is ready." />
-              <Body tone="muted">Open the Live Wall on a laptop, TV, projector, or iPad while guests are uploading. Use the share kit when you need copy, QR, and captions.</Body>
+              <SectionHeader title="Run of show" subtitle="Guest Upload before arrival. Live Wall during the event. Recap after reveal." />
+              <Body tone="muted">The share kit has copy, QR, and captions when you need to send everything cleanly.</Body>
             </Card>
             {launchKit ? (
               <Card>
@@ -171,13 +171,13 @@ export default function EventDetailScreen() {
           </View>
 
           <View style={{ gap: 12 }}>
-            <SectionHeader title="Album activity" subtitle="Recent uploads from guests appear first." />
+            <SectionHeader title="Album activity" subtitle="Moderate recent uploads without losing sight of the event." />
             {event.photos.length ? (
               <View style={{ gap: 14 }}>
                 {event.photos.map((photo) => (
                   <View key={photo.id} style={{ gap: 10 }}>
                     <PhotoCard photo={photo} compact />
-                    <Card padding={14}>
+                    <Card padding={13}>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                         {photo.isFeatured ? <Badge>Featured</Badge> : null}
                         {photo.visibilityStatus === "HIDDEN" ? <Badge tone="red">Hidden</Badge> : null}
@@ -195,7 +195,7 @@ export default function EventDetailScreen() {
                           <Button tone="secondary" disabled={photo.visibilityStatus === "HIDDEN"} onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Unfeature" : "Feature"}</Button>
                         </View>
                       </View>
-                      <Body tone="muted">Use hide for beta moderation. Hidden photos leave public views but can be restored.</Body>
+                      <Body tone="muted">Hide removes a photo from public views and keeps it restorable.</Body>
                     </Card>
                   </View>
                 ))}
@@ -231,7 +231,7 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
 
   return (
     <Card>
-      <SectionHeader title="Beta event metrics" subtitle="Simple signal for this event across guest, wall, recap, and moderation activity." />
+      <SectionHeader title="Event signal" subtitle="Guest, wall, recap, and moderation activity." />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         {rows.map(([label, value]) => (
           <StatTile key={label} label={String(label)} value={Number(value)} />
@@ -271,7 +271,7 @@ function RunOfShow() {
 
   return (
     <Card tone="warm">
-      <SectionHeader title="Real-event run of show" subtitle="The minimum flow for a beta host." />
+      <SectionHeader title="Before, during, after" subtitle="A compact host checklist." />
       {rows.map(([label, body]) => (
         <View key={label} style={{ gap: 4 }}>
           <Badge tone="stone">{label}</Badge>

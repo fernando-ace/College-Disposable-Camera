@@ -224,13 +224,14 @@ For deployment, storage, CORS, EAS env, smoke, and rollback checklists, use
 Use this on a real phone or small simulator after mobile UI changes:
 
 - Sign in as a host.
-- Confirm the dashboard shows the Create event action, event stats, and event cards without crowding.
-- Create an event and check each wizard step, including back, continue, review, validation, and submit loading states.
-- Open event detail and confirm the guest upload, Live Wall, and Recap links are visually distinct.
-- Copy or share the guest upload link from the share kit.
-- Open the Live Wall link.
-- Open the Recap link.
-- View the album after reveal.
+- Confirm the dashboard shows the Create event action, compact stats, next-up event, and event cards without crowding.
+- Create an event and inspect each wizard step: template cards, details, timing, mode choice, customization, review, back/continue behavior, validation, keyboard scroll, and submit loading state.
+- Open event detail and confirm Guest Upload, Live Wall, and Recap are visually distinct and ordered by when the host uses them.
+- Open the share kit and confirm QR, share, copy, invite text, host notes, and caption are easy to scan on a small screen.
+- Open guest upload from a phone browser and confirm challenge instructions, upload CTA, selected-photo preview, success, retry, and upload-limit states are clear.
+- Open the Live Wall link on a display-sized browser and confirm it feels presentation-ready.
+- Open the Recap link after reveal and confirm highlights, stats, challenge recap, empty states, and full album feel polished.
+- View the mobile album after reveal and confirm photo spacing, report action, and empty states look intentional.
 - Hide and restore one photo from the host event detail screen.
 - Feature and unfeature one visible photo.
 - Sign out if available.

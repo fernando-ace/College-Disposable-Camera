@@ -54,12 +54,12 @@ import {
 type PickerMode = "date" | "time";
 
 const wizardLabels = [
-  "Step 1 of 6: Event template",
-  "Step 2 of 6: Event basics",
-  "Step 3 of 6: Timing and uploads",
-  "Step 4 of 6: Photo mode",
-  "Step 5 of 6: Customize mode",
-  "Step 6 of 6: Review and create",
+  "Template",
+  "Details",
+  "Timing",
+  "Mode",
+  "Customize",
+  "Review",
 ];
 
 function formatDateTime(value: Date) {
@@ -331,19 +331,40 @@ function MemoryCapsuleSetup({ draft, onChange }: { draft: ChallengeDraft; onChan
 function TemplateSetup({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
   return (
     <View style={{ gap: 12 }}>
-      <SectionHeader title="Choose event type" subtitle="Start with a polished setup. You can customize the mode and prompts before create." />
+      <SectionHeader title="Choose a template" subtitle="Start with the shape of the event. You can adjust the mode, timing, and prompts before launch." />
       {EVENT_TEMPLATES.map((template) => {
         const promptPack = getPromptPack(template.promptPackSlug);
         const mode = getChallengePack(template.recommendedMode);
+        const selected = draft.eventTemplateSlug === template.slug;
         return (
-          <ModeOptionCard
+          <Pressable
             key={template.slug}
-            title={template.name}
-            description={template.shortDescription}
-            meta={`${template.badge} - ${mode.name} - ${promptPack.items.slice(0, 3).join(" / ")}`}
-            selected={draft.eventTemplateSlug === template.slug}
             onPress={() => onSelect(template.slug)}
-          />
+            style={({ pressed }) => ({
+              opacity: pressed ? 0.76 : 1,
+              borderRadius: 24,
+              borderCurve: "continuous",
+              borderWidth: 1,
+              borderColor: selected ? colors.coralDark : colors.border,
+              backgroundColor: selected ? colors.rose : colors.surface,
+              padding: 15,
+              gap: 12,
+              boxShadow: selected ? "0 12px 28px rgba(232, 93, 63, 0.13)" : "0 6px 18px rgba(101, 62, 0, 0.045)",
+            })}
+          >
+            <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+              <View style={{ flex: 1, gap: 5 }}>
+                <Text selectable style={{ color: colors.ink, fontSize: 19, lineHeight: 24, fontWeight: "900" }}>{template.name}</Text>
+                <Body tone="muted">{template.shortDescription}</Body>
+              </View>
+              <Badge tone={selected ? "dark" : "amber"}>{selected ? "Selected" : template.badge}</Badge>
+            </View>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+              <Chip>{mode.name}</Chip>
+              <Chip>{promptPack.name}</Chip>
+            </View>
+            <Caption>{template.bestFor}</Caption>
+          </Pressable>
         );
       })}
       <Button tone="secondary" onPress={onSkip}>Open custom event</Button>
@@ -371,13 +392,13 @@ function PromptPackPicker({ draft, onChange }: { draft: ChallengeDraft; onChange
 
   return (
     <Card>
-      <SectionHeader title="Prompt pack library" subtitle="Swap in a high-quality prompt set, then edit every line." />
+      <SectionHeader title="Prompt pack" subtitle="Choose a polished set, then edit only what needs your voice." />
       {PROMPT_PACKS.filter((pack) => pack.kind !== "custom").map((pack) => (
         <ModeOptionCard
           key={pack.slug}
           title={pack.name}
           description={pack.description}
-          meta={`${pack.kind === "award" ? "Event Awards" : "Scavenger Hunt"} - ${pack.items.slice(0, 3).join(" / ")}`}
+          meta={`${pack.kind === "award" ? "Event Awards" : "Scavenger Hunt"} - ${pack.items.length} ready-to-use ideas`}
           selected={draft.promptPackSlug === pack.slug}
           onPress={() => selectPromptPack(pack.slug)}
         />
@@ -566,7 +587,6 @@ export default function CreateEventScreen() {
               onPress={() => updateType(pack.mode)}
             />
           ))}
-          <PromptPackPicker draft={challengeDraft} onChange={setChallengeDraft} />
         </View>
       ) : null}
 
@@ -578,6 +598,7 @@ export default function CreateEventScreen() {
               <SectionHeader title="No challenge setup needed" subtitle="Guests will enter a name, choose a photo, and upload straight into the album." />
             </Card>
           ) : null}
+          {challengeDraft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT || challengeDraft.type === CHALLENGE_TYPES.EVENT_AWARDS ? <PromptPackPicker draft={challengeDraft} onChange={setChallengeDraft} /> : null}
           {challengeDraft.type === CHALLENGE_TYPES.COLOR_HUNT ? <ColorHuntSetup draft={challengeDraft} onChange={setChallengeDraft} /> : null}
           {challengeDraft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT ? <ScavengerSetup draft={challengeDraft} onChange={setChallengeDraft} /> : null}
           {challengeDraft.type === CHALLENGE_TYPES.EVENT_AWARDS ? <AwardsSetup draft={challengeDraft} onChange={setChallengeDraft} /> : null}
@@ -587,8 +608,9 @@ export default function CreateEventScreen() {
 
       {step === 5 ? (
         <Card>
-          <SectionHeader title="Review" subtitle="One last look before EventFilm creates the share link and QR code." />
-          <View style={{ gap: 10 }}>
+          <Badge tone={canCreate ? "green" : "stone"}>{canCreate ? "Ready to launch" : "Review needed"}</Badge>
+          <SectionHeader title="Confirm your event" subtitle="EventFilm will create the guest upload link, Live Wall, Recap, and QR code next." />
+          <View style={{ gap: 8, borderRadius: 18, borderCurve: "continuous", backgroundColor: colors.wash, padding: 12 }}>
             <ReviewRow label="Event" value={name.trim() || "Untitled event"} />
             <ReviewRow label="Template" value={EVENT_TEMPLATES.find((template) => template.slug === challengeDraft.eventTemplateSlug)?.name || "Custom event"} />
             <ReviewRow label="Mode" value={challengeTypeName(challengeDraft.type)} />

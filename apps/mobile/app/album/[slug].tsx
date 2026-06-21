@@ -55,7 +55,7 @@ export default function AlbumScreen() {
       <TaskHeader
         eyebrow="Guest album"
         title={event?.name || "Album"}
-        body={event?.isRevealed ? "The reveal is live. Browse the moments guests shared." : capsuleCopy?.revealNote || "The album is safely tucked away until the host reveal time."}
+        body={event?.isRevealed ? "The reveal is live. Browse the moments people shared." : capsuleCopy?.revealNote || "The album is tucked away until the host reveal time."}
         action={event ? <Badge tone={event.isRevealed ? "green" : "amber"}>{event.isRevealed ? "Revealed" : "Locked"}</Badge> : undefined}
       />
 
@@ -72,7 +72,7 @@ export default function AlbumScreen() {
 
       {event?.isRevealed ? (
         <>
-          <SectionHeader title="Shared photos" subtitle={`${photos.length} photos in this album.`} />
+          <SectionHeader title="Shared photos" subtitle={`${photos.length} revealed photos.`} />
           {photos.length ? photos.map((photo) => (
             <View key={photo.id} style={{ gap: 10 }}>
               <PhotoCard photo={photo} />

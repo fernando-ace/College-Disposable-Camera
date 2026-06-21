@@ -10,6 +10,7 @@ export const colors = {
   soft: "#a8a29e",
   border: "#e7ded3",
   paper: "#fff8ed",
+  paperSoft: "#fffcf7",
   paperDeep: "#f7ead7",
   surface: "#ffffff",
   surfaceWarm: "#fffbf5",
@@ -18,6 +19,7 @@ export const colors = {
   amberWash: "#fff7dc",
   amberDark: "#653e00",
   coral: "#ef6f58",
+  coralDark: "#d94f33",
   rose: "#fff1ec",
   plum: "#6d3f5b",
   danger: "#b91c1c",
@@ -56,8 +58,8 @@ export function Screen({
         maxWidth: wide ? 760 : 560,
         alignSelf: "center",
         paddingHorizontal: 18,
-        paddingTop: 16,
-        gap: 16,
+        paddingTop: 14,
+        gap: 15,
         paddingBottom: bottomPadding,
       }}
     >
@@ -86,14 +88,14 @@ export function Card({
   return (
     <View
       style={{
-        gap: 14,
+        gap: 13,
         padding,
-        borderRadius: 20,
+        borderRadius: 22,
         borderCurve: "continuous",
         borderWidth: 1,
         borderColor: palette.borderColor,
         backgroundColor: palette.backgroundColor,
-        boxShadow: "0 8px 24px rgba(101, 62, 0, 0.07)",
+        boxShadow: "0 10px 28px rgba(101, 62, 0, 0.065)",
       }}
     >
       {children}
@@ -117,7 +119,7 @@ export function HeroHeader({
   return (
     <View
       style={{
-        gap: compact ? 11 : 14,
+        gap: compact ? 10 : 13,
         padding: compact ? 18 : 22,
         borderRadius: compact ? 24 : 28,
         borderCurve: "continuous",
@@ -127,7 +129,7 @@ export function HeroHeader({
     >
       {eyebrow ? <Badge tone="amber">{eyebrow}</Badge> : null}
       <View style={{ gap: 7 }}>
-        <Text selectable style={{ color: "#fffaf0", fontSize: compact ? 25 : 31, lineHeight: compact ? 31 : 37, fontWeight: "900" }}>{title}</Text>
+        <Text selectable style={{ color: "#fffaf0", fontSize: compact ? 24 : 30, lineHeight: compact ? 30 : 36, fontWeight: "900" }}>{title}</Text>
         {body ? <Text selectable style={{ color: "#f5e9d7", fontSize: 16, lineHeight: 24 }}>{body}</Text> : null}
       </View>
       {children}
@@ -150,7 +152,7 @@ export function TaskHeader({
     <View style={{ gap: 12, paddingTop: 2 }}>
       {eyebrow ? <Badge tone="stone">{eyebrow}</Badge> : null}
       <View style={{ gap: 6 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: 29, lineHeight: 34, fontWeight: "900" }}>{title}</Text>
+        <Text selectable style={{ color: colors.ink, fontSize: 28, lineHeight: 33, fontWeight: "900" }}>{title}</Text>
         {body ? <Text selectable style={{ color: colors.muted, fontSize: 16, lineHeight: 23 }}>{body}</Text> : null}
       </View>
       {action}
@@ -171,7 +173,7 @@ export function SectionHeader({ title, subtitle, action }: { title: string; subt
   return (
     <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
       <View style={{ flex: 1, gap: 3 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: 20, lineHeight: 25, fontWeight: "900" }}>{title}</Text>
+        <Text selectable style={{ color: colors.ink, fontSize: 19, lineHeight: 24, fontWeight: "900" }}>{title}</Text>
         {subtitle ? <Body tone="muted">{subtitle}</Body> : null}
       </View>
       {action}
@@ -223,11 +225,11 @@ export function Field(props: React.ComponentProps<typeof TextInput>) {
       style={[
         {
           minHeight: props.multiline ? 96 : 52,
-          borderRadius: 15,
+          borderRadius: 17,
           borderCurve: "continuous",
           borderWidth: 1,
           borderColor: colors.border,
-          backgroundColor: "#fff",
+          backgroundColor: colors.paperSoft,
           paddingHorizontal: 15,
           paddingVertical: props.multiline ? 13 : 0,
           color: colors.ink,
@@ -265,8 +267,8 @@ export function Chip({
         gap: 7,
         borderRadius: 999,
         borderWidth: 1,
-        borderColor: selected ? colors.ink : colors.border,
-        backgroundColor: selected ? colors.amberWash : "#fff",
+        borderColor: selected ? colors.coralDark : colors.border,
+        backgroundColor: selected ? colors.rose : "#fff",
         opacity: pressed ? 0.72 : 1,
         paddingHorizontal: 11,
         paddingVertical: 7,
@@ -298,7 +300,7 @@ export function ActionButton({
         borderRadius: 999,
         borderWidth: 1,
         borderColor: colors.border,
-        backgroundColor: "#fff",
+        backgroundColor: colors.surface,
         opacity: disabled ? 0.36 : pressed ? 0.7 : 1,
         paddingHorizontal: 13,
       })}
@@ -321,8 +323,8 @@ export function Button({
   onPress?: () => void;
   disabled?: boolean;
 }) {
-  const backgroundColor = tone === "primary" ? colors.amber : tone === "danger" ? colors.danger : tone === "ghost" ? "transparent" : "#fff";
-  const color = tone === "primary" ? colors.ink : tone === "danger" ? "#fff" : colors.ink;
+  const backgroundColor = tone === "primary" ? colors.coral : tone === "danger" ? colors.danger : tone === "ghost" ? "transparent" : "#fff";
+  const color = tone === "primary" || tone === "danger" ? "#fff" : colors.ink;
 
   return (
     <Pressable
@@ -332,7 +334,8 @@ export function Button({
         minHeight: 52,
         alignItems: "center",
         justifyContent: "center",
-        borderRadius: 999,
+        borderRadius: 18,
+        borderCurve: "continuous",
         borderWidth: tone === "secondary" ? 1 : 0,
         borderColor: colors.border,
         backgroundColor,
@@ -376,14 +379,15 @@ export function ModeOptionCard({
     <Pressable
       onPress={onPress}
       style={({ pressed }) => ({
-        gap: 6,
-        borderRadius: 18,
+        gap: 8,
+        borderRadius: 20,
         borderCurve: "continuous",
         borderWidth: 1,
-        borderColor: selected ? colors.amberDark : colors.border,
-        backgroundColor: selected ? colors.amberWash : "#fff",
+        borderColor: selected ? colors.coralDark : colors.border,
+        backgroundColor: selected ? colors.rose : "#fff",
         opacity: pressed ? 0.76 : 1,
         padding: 15,
+        boxShadow: selected ? "0 8px 22px rgba(232, 93, 63, 0.12)" : "0 4px 14px rgba(101, 62, 0, 0.04)",
       })}
     >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -416,16 +420,20 @@ export function Badge({
   }[tone];
 
   return (
-    <View style={{ alignSelf: "flex-start", maxWidth: "100%", borderRadius: 999, backgroundColor: palette.backgroundColor, paddingHorizontal: 11, paddingVertical: 6 }}>
-      <Text style={{ color: palette.color, fontSize: 12, lineHeight: 15, fontWeight: "900" }}>{children}</Text>
+    <View style={{ alignSelf: "flex-start", maxWidth: "100%", borderRadius: 999, backgroundColor: palette.backgroundColor, paddingHorizontal: 10, paddingVertical: 5 }}>
+      <Text style={{ color: palette.color, fontSize: 11, lineHeight: 14, fontWeight: "900", textTransform: "uppercase", letterSpacing: 0.2 }}>{children}</Text>
     </View>
   );
 }
 
 export function ProgressSteps({ current, total, labels }: { current: number; total: number; labels?: string[] }) {
   return (
-    <Card padding={13}>
-      <View style={{ gap: 8 }}>
+    <Card padding={12}>
+      <View style={{ gap: 10 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+          <Caption>{labels?.[current] || `Step ${current + 1}`}</Caption>
+          <Badge tone="stone">{current + 1}/{total}</Badge>
+        </View>
       <View style={{ flexDirection: "row", gap: 6 }}>
         {Array.from({ length: total }).map((_, index) => {
           const active = index <= current;
@@ -434,15 +442,14 @@ export function ProgressSteps({ current, total, labels }: { current: number; tot
               key={index}
               style={{
                 flex: 1,
-                height: 7,
+                height: 6,
                 borderRadius: 999,
-                backgroundColor: active ? colors.amber : "#eadfce",
+                backgroundColor: active ? colors.coral : "#eadfce",
               }}
             />
           );
         })}
       </View>
-        <Caption>{labels?.[current] || `Step ${current + 1} of ${total}`}</Caption>
       </View>
     </Card>
   );
@@ -460,7 +467,7 @@ export function EmptyState({
   return (
     <Card tone="warm" padding={16}>
       <View style={{ gap: 5 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: 21, fontWeight: "900" }}>{title}</Text>
+        <Text selectable style={{ color: colors.ink, fontSize: 20, lineHeight: 25, fontWeight: "900" }}>{title}</Text>
         <Body tone="muted">{body}</Body>
       </View>
       {action}
@@ -513,7 +520,7 @@ export function EventCard({ event, onPress, featured = false }: { event: EventSu
 
   return (
     <Pressable disabled={!onPress} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.78 : 1 })}>
-      <Card tone={featured ? "accent" : "default"} padding={featured ? 17 : 15}>
+      <Card tone={featured ? "accent" : "default"} padding={featured ? 18 : 15}>
         <View style={{ gap: 7 }}>
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
             <Text selectable style={{ flex: 1, color: colors.ink, fontSize: featured ? 22 : 18, lineHeight: featured ? 27 : 23, fontWeight: "900" }}>{event.name}</Text>
@@ -521,7 +528,7 @@ export function EventCard({ event, onPress, featured = false }: { event: EventSu
           </View>
           {event.description ? <Body tone="muted">{event.description}</Body> : null}
         </View>
-        <View style={{ gap: 6 }}>
+        <View style={{ gap: 5, borderRadius: 16, borderCurve: "continuous", backgroundColor: featured ? "#fffaf0" : colors.wash, padding: 11 }}>
           <Caption>Event: {eventDate}</Caption>
           <Caption>Reveal: {revealDate}</Caption>
         </View>
@@ -536,8 +543,8 @@ export function EventCard({ event, onPress, featured = false }: { event: EventSu
 
 export function StatTile({ label, value, tone = "default" }: { label: string; value: string | number; tone?: "default" | "accent" }) {
   return (
-    <View style={{ flex: 1, minWidth: 108, gap: 3, borderRadius: 18, borderCurve: "continuous", borderWidth: 1, borderColor: tone === "accent" ? colors.focusRing : colors.border, backgroundColor: tone === "accent" ? colors.amberWash : colors.surface, padding: 13 }}>
-      <Text selectable style={{ color: colors.ink, fontSize: 22, lineHeight: 26, fontWeight: "900", fontVariant: ["tabular-nums"] }}>{String(value)}</Text>
+    <View style={{ flex: 1, minWidth: 96, gap: 2, borderRadius: 18, borderCurve: "continuous", borderWidth: 1, borderColor: tone === "accent" ? "#ffd4c7" : colors.border, backgroundColor: tone === "accent" ? colors.rose : colors.surface, padding: 12 }}>
+      <Text selectable style={{ color: tone === "accent" ? colors.coralDark : colors.ink, fontSize: 21, lineHeight: 25, fontWeight: "900", fontVariant: ["tabular-nums"] }}>{String(value)}</Text>
       <Caption>{label}</Caption>
     </View>
   );
@@ -560,7 +567,7 @@ export function LinkBlock({
     <Card tone={tone === "accent" ? "accent" : tone === "warm" ? "warm" : "default"}>
       <SectionHeader title={label} subtitle={description} />
       {url ? (
-        <View style={{ borderRadius: 15, borderCurve: "continuous", backgroundColor: colors.surfaceWarm, padding: 12, borderWidth: 1, borderColor: "#f1ddc4" }}>
+        <View style={{ borderRadius: 17, borderCurve: "continuous", backgroundColor: colors.surfaceWarm, padding: 12, borderWidth: 1, borderColor: "#f1ddc4" }}>
           <Caption>{url}</Caption>
         </View>
       ) : null}
@@ -576,8 +583,8 @@ export function PhotoCard({ photo, compact = false }: { photo: Photo; compact?: 
   const usesLocalhost = isLocalhostUrl(imageUrl);
 
   return (
-    <Card padding={compact ? 9 : 12}>
-      <View style={{ width: "100%", aspectRatio: 1, borderRadius: compact ? 15 : 18, borderCurve: "continuous", backgroundColor: colors.wash, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
+    <Card padding={compact ? 8 : 11}>
+      <View style={{ width: "100%", aspectRatio: 1, borderRadius: compact ? 16 : 20, borderCurve: "continuous", backgroundColor: colors.wash, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
         {imageUrl && !imageError ? (
           <>
             {!loaded ? <ActivityIndicator color={colors.amberDark} /> : null}

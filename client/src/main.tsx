@@ -270,7 +270,7 @@ function Button({ children, className = "", ...props }: React.ButtonHTMLAttribut
   return (
     <button
       className={cx(
-        "inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-[0_18px_42px_rgba(101,62,0,0.16)] transition hover:-translate-y-0.5 hover:bg-amber-400 disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none",
+        "inline-flex min-h-12 items-center justify-center gap-2 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_16px_34px_rgba(232,93,63,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d94f33] disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none",
         className,
       )}
       {...props}
@@ -284,7 +284,7 @@ function SecondaryButton({ children, className = "", ...props }: React.ButtonHTM
   return (
     <button
       className={cx(
-        "inline-flex min-h-12 items-center justify-center rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900 transition hover:-translate-y-0.5 hover:border-amber-500 hover:bg-amber-50 disabled:translate-y-0 disabled:cursor-not-allowed disabled:text-stone-400",
+        "inline-flex min-h-12 items-center justify-center gap-2 rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)] transition hover:-translate-y-0.5 hover:border-[#e85d3f] hover:bg-[#fff7f1] disabled:translate-y-0 disabled:cursor-not-allowed disabled:text-stone-400 disabled:shadow-none",
         className,
       )}
       {...props}
@@ -298,7 +298,7 @@ function TextInput({ className = "", ...props }: React.InputHTMLAttributes<HTMLI
   return (
     <input
       className={cx(
-        "w-full rounded-2xl border border-stone-200 bg-[#fffaf3] px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
+        "w-full rounded-[1.15rem] border border-[#e7ded3] bg-[#fffaf6] px-4 py-3 text-base font-semibold text-stone-950 outline-none transition placeholder:font-medium placeholder:text-stone-400 focus:border-[#e85d3f] focus:bg-white focus:ring-4 focus:ring-[#ffe1d8]",
         className,
       )}
       {...props}
@@ -310,7 +310,7 @@ function TextArea({ className = "", ...props }: React.TextareaHTMLAttributes<HTM
   return (
     <textarea
       className={cx(
-        "w-full rounded-2xl border border-stone-200 bg-[#fffaf3] px-4 py-3 text-base text-stone-950 outline-none transition placeholder:text-stone-400 focus:border-amber-500 focus:bg-white focus:ring-4 focus:ring-amber-100",
+        "w-full rounded-[1.15rem] border border-[#e7ded3] bg-[#fffaf6] px-4 py-3 text-base font-semibold text-stone-950 outline-none transition placeholder:font-medium placeholder:text-stone-400 focus:border-[#e85d3f] focus:bg-white focus:ring-4 focus:ring-[#ffe1d8]",
         className,
       )}
       {...props}
@@ -338,6 +338,10 @@ function Icon({ children, className = "" }: { children: React.ReactNode; classNa
     calendar_today: <><rect x="3" y="4" width="18" height="17" rx="2" /><path d="M8 2v4" /><path d="M16 2v4" /><path d="M3 10h18" /></>,
     qr_code_2: <><path d="M4 4h6v6H4z" /><path d="M14 4h6v6h-6z" /><path d="M4 14h6v6H4z" /><path d="M14 14h2v2h-2z" /><path d="M18 14h2v6h-6v-2h4z" /></>,
     lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
+    cloud_upload: <><path d="M16 16l-4-4-4 4" /><path d="M12 12v9" /><path d="M20 16.5A4.5 4.5 0 0 0 17.2 8 6 6 0 0 0 5.5 9.3 4.5 4.5 0 0 0 6 18h2" /></>,
+    live_tv: <><rect x="3" y="5" width="18" height="13" rx="2" /><path d="M8 21h8" /><path d="M12 18v3" /><path d="m10 9 5 3-5 3z" /></>,
+    auto_stories: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M4 4.5A2.5 2.5 0 0 1 6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5z" /><path d="M8 7h8" /><path d="M8 11h6" /></>,
+    upload: <><path d="M12 3v12" /><path d="m7 8 5-5 5 5" /><path d="M5 21h14" /></>,
   };
 
   return <svg {...common}>{paths[icon] || <circle cx="12" cy="12" r="8" />}</svg>;
@@ -345,17 +349,17 @@ function Icon({ children, className = "" }: { children: React.ReactNode; classNa
 
 function StatusPill({ children, tone = "amber" }: { children: React.ReactNode; tone?: "amber" | "green" | "stone" | "red" }) {
   const tones = {
-    amber: "bg-amber-100 text-amber-900",
-    green: "bg-emerald-100 text-emerald-800",
-    stone: "bg-stone-100 text-stone-700",
-    red: "bg-red-100 text-red-800",
+    amber: "bg-[#fff0d8] text-[#7c3f00] ring-[#f7d89c]",
+    green: "bg-emerald-50 text-emerald-800 ring-emerald-100",
+    stone: "bg-stone-100 text-stone-700 ring-stone-200",
+    red: "bg-red-50 text-red-800 ring-red-100",
   };
-  return <span className={cx("inline-flex items-center rounded-full px-3 py-1 text-xs font-bold uppercase tracking-wide", tones[tone])}>{children}</span>;
+  return <span className={cx("inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide ring-1", tones[tone])}>{children}</span>;
 }
 
 function LiveDemoPill() {
   return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-bold uppercase tracking-wide text-amber-900">
+    <span className="inline-flex items-center gap-2 rounded-full bg-[#fff0d8] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#7c3f00] ring-1 ring-[#f7d89c]">
       <span className="h-2 w-2 rounded-full bg-emerald-500 motion-safe:animate-[live-pulse_1.4s_ease-in-out_infinite]" aria-hidden="true" />
       Live demo
     </span>
@@ -363,7 +367,7 @@ function LiveDemoPill() {
 }
 
 function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={cx("rounded-3xl border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)]", className)}>{children}</div>;
+  return <div className={cx("rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]", className)}>{children}</div>;
 }
 
 function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "colorName" | "colorHex"> }) {
@@ -378,11 +382,26 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
 
 function PhotoStatusBadges({ photo, host = false }: { photo: Photo; host?: boolean }) {
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-1.5">
       {photo.isFeatured && <StatusPill tone="amber">Featured</StatusPill>}
       {host && photo.visibilityStatus === "HIDDEN" && <StatusPill tone="red">Hidden</StatusPill>}
       {host && Boolean(photo.reportCount) && <StatusPill tone="red">{photo.reportCount} reported</StatusPill>}
       {photoChallengeLabel(photo) && <StatusPill tone="stone">{photoChallengeLabel(photo)}</StatusPill>}
+    </div>
+  );
+}
+
+function MetricCard({ label, value, tone = "default" }: { label: string; value: string | number; tone?: "default" | "accent" | "green" | "plum" }) {
+  const tones = {
+    default: "border-[#eadfce] bg-white text-[#653e00]",
+    accent: "border-[#ffd4c7] bg-[#fff3ee] text-[#d94f33]",
+    green: "border-emerald-100 bg-emerald-50 text-emerald-800",
+    plum: "border-[#ead8e4] bg-[#fff4fb] text-[#6d3f5b]",
+  };
+  return (
+    <div className={cx("rounded-[1.35rem] border p-4 shadow-[0_12px_30px_rgba(101,62,0,0.05)]", tones[tone])}>
+      <p className="font-display text-3xl font-bold tabular-nums">{value}</p>
+      <p className="mt-1 text-xs font-extrabold uppercase tracking-wide text-stone-500">{label}</p>
     </div>
   );
 }
@@ -507,14 +526,14 @@ function PhotoDetailModal({
 
 function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
   return (
-    <section className="rounded-3xl bg-stone-950 p-5 text-white sm:p-6">
+    <section className="rounded-[1.75rem] bg-stone-950 p-5 text-white sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Event templates</p>
-          <h2 className="mt-1 font-display text-2xl font-bold">Start with the setup guests expect.</h2>
-          <p className="mt-2 max-w-2xl text-sm text-stone-300">Templates choose a mode, prompt pack, upload limit, and launch copy. Everything stays editable before create.</p>
+          <p className="text-xs font-extrabold uppercase tracking-wide text-amber-200">Event templates</p>
+          <h2 className="mt-1 font-display text-2xl font-bold">Choose the event shape.</h2>
+          <p className="mt-2 max-w-2xl text-sm text-stone-300">Pick a polished setup, then adjust timing, prompts, and mode details before launch.</p>
         </div>
-        <button type="button" className="min-h-10 rounded-full bg-white/10 px-4 py-2 text-sm font-bold text-white hover:bg-white/15" onClick={onSkip}>Open custom event</button>
+        <button type="button" className="min-h-10 rounded-full bg-white/10 px-4 py-2 text-sm font-extrabold text-white ring-1 ring-white/15 hover:bg-white/15" onClick={onSkip}>Open custom event</button>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {EVENT_TEMPLATES.map((template) => {
@@ -522,25 +541,21 @@ function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; o
           const mode = getChallengePack(template.recommendedMode);
           const selected = draft.eventTemplateSlug === template.slug;
           return (
-            <article className={cx("rounded-2xl border p-4", selected ? "border-amber-300 bg-amber-300 text-stone-950" : "border-white/10 bg-white/5")} key={template.slug}>
+            <article className={cx("rounded-[1.35rem] border p-4 transition", selected ? "border-[#ffb9a8] bg-[#fff1ec] text-stone-950 shadow-[0_18px_44px_rgba(232,93,63,0.18)]" : "border-white/10 bg-white/5 hover:border-white/25")} key={template.slug}>
               <div className="flex items-start justify-between gap-3">
-                <span className={cx("grid h-10 w-10 shrink-0 place-items-center rounded-full", selected ? "bg-stone-950 text-amber-200" : "bg-white/10 text-amber-200")}><Icon>{template.icon}</Icon></span>
-                <span className={cx("rounded-full px-3 py-1 text-xs font-bold", selected ? "bg-stone-950 text-white" : "bg-white/10 text-amber-100")}>{template.badge}</span>
+                <span className={cx("grid h-10 w-10 shrink-0 place-items-center rounded-[1rem]", selected ? "bg-stone-950 text-[#fff1ec]" : "bg-white/10 text-amber-200")}><Icon>{template.icon}</Icon></span>
+                <span className={cx("rounded-full px-3 py-1 text-xs font-extrabold", selected ? "bg-stone-950 text-white" : "bg-white/10 text-amber-100")}>{selected ? "Selected" : template.badge}</span>
               </div>
               <h3 className="mt-4 font-display text-xl font-bold">{template.name}</h3>
               <p className={cx("mt-2 text-sm", selected ? "text-stone-800" : "text-stone-300")}>{template.shortDescription}</p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs font-bold">
+              <div className="mt-4 flex flex-wrap gap-2 text-xs font-extrabold">
                 <span className={cx("rounded-full px-3 py-1", selected ? "bg-white/70 text-stone-800" : "bg-white/10 text-white")}>{mode.name}</span>
                 <span className={cx("rounded-full px-3 py-1", selected ? "bg-white/70 text-stone-800" : "bg-white/10 text-white")}>{pack.name}</span>
               </div>
               <p className={cx("mt-3 text-xs font-semibold", selected ? "text-stone-800" : "text-stone-300")}>Best for: {template.bestFor}</p>
-              <ul className={cx("mt-3 grid gap-1 text-xs", selected ? "text-stone-800" : "text-stone-300")}>
-                {pack.items.slice(0, 3).map((item) => <li key={item}>- {item}</li>)}
-              </ul>
-              <button type="button" className={cx("mt-4 min-h-10 w-full rounded-full px-4 py-2 text-sm font-bold", selected ? "bg-stone-950 text-white" : "bg-amber-400 text-stone-950 hover:bg-amber-300")} onClick={() => onSelect(template.slug)}>
+              <button type="button" className={cx("mt-4 min-h-10 w-full rounded-[1rem] px-4 py-2 text-sm font-extrabold", selected ? "bg-stone-950 text-white" : "bg-[#e85d3f] text-white hover:bg-[#d94f33]")} onClick={() => onSelect(template.slug)}>
                 {selected ? "Selected" : "Start with this"}
               </button>
-              <p className={cx("mt-2 text-center text-xs font-semibold", selected ? "text-stone-800" : "text-stone-400")}>Customize prompts, mode, and copy later.</p>
             </article>
           );
         })}
@@ -1031,7 +1046,7 @@ function DemoUploader() {
 
 function LaunchKitCopyBlock({ title, value, onCopy }: { title: string; value: string; onCopy: () => void }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+    <div className="rounded-[1.25rem] border border-[#eadfce] bg-[#fffaf6] p-4">
       <p className="text-sm font-bold text-stone-950">{title}</p>
       <p className="mt-2 text-sm leading-6 text-stone-600">{value}</p>
       <SecondaryButton type="button" className="mt-3 min-h-10 px-4 py-2" onClick={onCopy}>Copy</SecondaryButton>
@@ -1058,7 +1073,7 @@ function LaunchKitLinkCard({ link, event }: { link: HostLaunchKitLink; event: Ev
   }
 
   return (
-    <div className="rounded-3xl bg-stone-50 p-4">
+    <div className={cx("rounded-[1.45rem] border p-4 shadow-[0_12px_30px_rgba(101,62,0,0.05)]", link.key === "guest" ? "border-[#ffd4c7] bg-[#fff3ee]" : "border-[#eadfce] bg-white")}>
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="font-display text-lg font-bold text-stone-950">{link.label}</p>
@@ -1066,7 +1081,7 @@ function LaunchKitLinkCard({ link, event }: { link: HostLaunchKitLink; event: Ev
         </div>
         <StatusPill tone={link.key === "guest" ? "amber" : link.key === "live-wall" ? "green" : "stone"}>{link.key === "guest" ? "Guests" : link.key === "live-wall" ? "During" : "After"}</StatusPill>
       </div>
-      <input className="mt-4 w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-stone-700" readOnly value={link.url} />
+      <input className="mt-4 w-full rounded-[1rem] border border-[#eadfce] bg-white px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={link.url} />
       <p className="mt-3 text-sm font-semibold text-stone-700">{link.instruction}</p>
       {status && <p className="mt-2 text-sm font-semibold text-amber-700">{status}</p>}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
@@ -1104,14 +1119,14 @@ function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: 
         <div>
           <StatusPill>Host launch kit</StatusPill>
           <h2 className="mt-4 font-display text-3xl font-bold text-stone-950">Everything to run {kit.eventName}</h2>
-          <p className="mt-2 max-w-2xl text-stone-600">Guest upload, Live Wall, and Recap links each have a different job. Keep them separate and hosting stays simple.</p>
+          <p className="mt-2 max-w-2xl text-stone-600">Guest Upload, Live Wall, and Recap each have one job. Keep them separate and hosting stays simple.</p>
         </div>
         <StatusPill tone="stone">{kit.modeLabel}</StatusPill>
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-5">
         {kit.checklist.map((item, index) => (
-          <div className={cx("rounded-2xl p-3 text-sm font-bold", item.complete ? "bg-emerald-50 text-emerald-800" : "bg-stone-50 text-stone-700")} key={item.key}>
+          <div className={cx("rounded-[1.15rem] border p-3 text-sm font-bold", item.complete ? "border-emerald-100 bg-emerald-50 text-emerald-800" : "border-[#eadfce] bg-[#fffaf6] text-stone-700")} key={item.key}>
             <span className="block text-xs uppercase tracking-wide opacity-70">Step {index + 1}</span>
             {item.label}
           </div>
@@ -1135,8 +1150,8 @@ function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: 
             <SecondaryButton type="button" className="mt-4 w-full" onClick={() => downloadDataUrl(qrCodeDataUrl, `${event.name}-qr.png`)}>Download QR</SecondaryButton>
           </div>
         )}
-        <div className="rounded-3xl bg-amber-50 p-5">
-          <p className="text-sm font-bold uppercase tracking-wide text-amber-900">Mode instructions</p>
+        <div className="rounded-[1.45rem] border border-[#ffd4c7] bg-[#fff3ee] p-5">
+          <p className="text-sm font-bold uppercase tracking-wide text-[#d94f33]">Mode instructions</p>
           <p className="mt-2 font-display text-xl font-bold text-[#653e00]">{kit.modeLabel}</p>
           <p className="mt-2 text-sm font-semibold text-amber-950">{kit.modeInstructions}</p>
           {copyStatus && <p className="mt-3 text-sm font-bold text-amber-800">{copyStatus}</p>}
@@ -1157,27 +1172,27 @@ function Landing() {
 
   return (
     <Shell wide>
-      <section className="grid items-center gap-8 py-8 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16 lg:py-16">
+      <section className="grid items-center gap-8 py-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16 lg:py-14">
         <div className="text-center lg:text-left">
           <h1 className="font-display text-4xl font-bold leading-[1.05] tracking-tight text-stone-950 sm:text-6xl">
-            Stop chasing <span className="text-[#653e00]">event photos.</span>
+            Collect every moment. <span className="text-[#d94f33]">Relive what matters.</span>
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg lg:mx-0">
-            Create an event, share one QR code, collect guest uploads, run photo challenges, show a Live Wall, and share a recap after.
+            Create an event, share one QR code, collect guest uploads, show a Live Wall, and send a polished recap when the reveal is ready.
           </p>
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
-            <Link className="inline-flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-[0_16px_36px_rgba(101,62,0,0.18)] transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup" onClick={() => trackCta("Create your first event")}>
+            <Link className="inline-flex min-h-13 items-center justify-center gap-2 rounded-[1.15rem] bg-[#e85d3f] px-7 py-4 text-sm font-extrabold text-white shadow-[0_16px_34px_rgba(232,93,63,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d94f33]" to="/signup" onClick={() => trackCta("Create your first event")}>
               Create your first event
               <Icon>arrow_forward</Icon>
             </Link>
-            <a className="inline-flex min-h-13 items-center justify-center rounded-2xl border border-[#d5c4b2] bg-white px-7 py-4 text-sm font-bold text-[#653e00] transition hover:-translate-y-0.5 hover:border-[#653e00] hover:bg-amber-50" href="#demo" onClick={() => trackCta("View demo")}>
+            <a className="inline-flex min-h-13 items-center justify-center rounded-[1.15rem] border border-[#d5c4b2] bg-white px-7 py-4 text-sm font-extrabold text-[#653e00] shadow-[0_10px_24px_rgba(101,62,0,0.06)] transition hover:-translate-y-0.5 hover:border-[#e85d3f] hover:bg-[#fff7f1]" href="#demo" onClick={() => trackCta("View demo")}>
               View demo
             </a>
           </div>
-          <div className="mt-7 grid gap-3 text-sm font-semibold text-stone-600 sm:grid-cols-3">
-            <p className="rounded-2xl bg-white/70 p-3">No guest app required</p>
-            <p className="rounded-2xl bg-white/70 p-3">QR-first sharing</p>
-            <p className="rounded-2xl bg-white/70 p-3">Live Wall and recap included</p>
+          <div className="mt-7 grid gap-3 text-sm font-bold text-stone-700 sm:grid-cols-3">
+            <p className="rounded-[1.15rem] border border-[#eadfce] bg-white/80 p-3">Guest Upload</p>
+            <p className="rounded-[1.15rem] border border-[#eadfce] bg-white/80 p-3">Live Wall</p>
+            <p className="rounded-[1.15rem] border border-[#eadfce] bg-white/80 p-3">Recap</p>
           </div>
         </div>
         <div className="relative mx-auto w-full max-w-[390px]">
@@ -1194,10 +1209,10 @@ function Landing() {
         </div>
       </section>
 
-      <section className="border-t border-stone-200 py-16">
+      <section className="border-t border-stone-200 py-14">
         <div className="mx-auto mb-12 max-w-2xl text-center">
           <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">How it works</h2>
-          <p className="mt-3 text-stone-600">A host-ready flow from first setup to final album share.</p>
+          <p className="mt-3 text-stone-600">One clean host flow from setup to final memory page.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-5">
           {[
@@ -1207,8 +1222,8 @@ function Landing() {
             ["Show the Live Wall", "Open it on a laptop, TV, projector, or iPad during the event."],
             ["Share the recap", "Send the polished album story after the reveal time."],
           ].map(([title, body], index) => (
-            <div className="rounded-3xl bg-white p-5 shadow-sm" key={title}>
-              <div className="grid h-12 w-12 place-items-center rounded-full bg-amber-100 font-display text-lg font-bold text-[#653e00]">{index + 1}</div>
+            <div className="rounded-[1.5rem] border border-[#eadfce] bg-white p-5 shadow-[0_12px_34px_rgba(101,62,0,0.055)]" key={title}>
+              <div className="grid h-11 w-11 place-items-center rounded-full bg-[#fff0d8] font-display text-lg font-bold text-[#653e00]">{index + 1}</div>
               <h3 className="mt-5 font-display text-lg font-bold text-stone-950">{title}</h3>
               <p className="mt-2 text-sm leading-6 text-stone-600">{body}</p>
             </div>
@@ -1216,7 +1231,7 @@ function Landing() {
         </div>
       </section>
 
-      <section className="border-t border-stone-200 px-0 py-16" id="demo">
+      <section className="border-t border-stone-200 px-0 py-14" id="demo">
         <div className="mx-auto mb-10 max-w-2xl text-center">
           <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">See it in action</h2>
           <p className="mt-3 text-stone-600">Experience the simplicity from both sides. Upload locally in this demo, then create a real event when you are ready.</p>
@@ -1224,14 +1239,14 @@ function Landing() {
         <DemoUploader />
       </section>
 
-      <section className="py-16">
+      <section className="py-14">
         <div className="mx-auto mb-12 max-w-2xl">
           <h2 className="text-center font-display text-3xl font-bold">Event modes for the room you are hosting</h2>
           <p className="mt-3 text-center text-stone-600">Start with a classic album or add a lightweight game that makes guests want to join in.</p>
         </div>
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {CHALLENGE_PACKS.map((pack) => (
-            <div className="rounded-3xl border border-[#eadfce] bg-white p-5 shadow-sm" key={pack.slug}>
+            <div className="rounded-[1.5rem] border border-[#eadfce] bg-white p-5 shadow-[0_12px_34px_rgba(101,62,0,0.055)]" key={pack.slug}>
               <StatusPill>{pack.badge}</StatusPill>
               <h3 className="mt-4 font-display text-xl font-bold text-stone-950">{pack.name}</h3>
               <p className="mt-2 text-sm leading-6 text-stone-600">{pack.shortDescription}</p>
@@ -1241,7 +1256,7 @@ function Landing() {
         </div>
       </section>
 
-      <section className="grid gap-6 py-16 lg:grid-cols-2">
+      <section className="grid gap-6 py-14 lg:grid-cols-2">
         <div className="rounded-[2rem] bg-stone-950 p-6 text-white sm:p-8">
           <LiveDemoPill />
           <h2 className="mt-5 font-display text-4xl font-bold">Live Wall for the room.</h2>
@@ -1272,7 +1287,7 @@ function Landing() {
         </div>
       </section>
 
-      <section className="py-16">
+      <section className="py-14">
         <div className="mx-auto mb-10 max-w-2xl text-center">
           <h2 className="font-display text-3xl font-bold">Made for social events</h2>
           <p className="mt-3 text-stone-600">EventFilm fits the moments where photos are everywhere, but the host never gets them all.</p>
@@ -1284,17 +1299,21 @@ function Landing() {
         </div>
       </section>
 
-      <section className="grid gap-6 rounded-[2rem] bg-[#fff1ec] p-6 sm:p-8 lg:grid-cols-[0.8fr_1.2fr]">
+      <section className="grid gap-6 rounded-[2rem] border border-[#ffd8cf] bg-[#fff1ec] p-6 sm:p-8 lg:grid-cols-[0.8fr_1.2fr]">
         <div>
-          <StatusPill>Beta credibility</StatusPill>
-          <h2 className="mt-4 font-display text-3xl font-bold text-stone-950">Built for real event hosts.</h2>
-          <p className="mt-3 text-stone-700">This beta section is ready for future event stats, testimonials, and real examples once Fernando has permission to share them.</p>
+          <StatusPill>Host confidence</StatusPill>
+          <h2 className="mt-4 font-display text-3xl font-bold text-stone-950">Clear links for every event moment.</h2>
+          <p className="mt-3 text-stone-700">EventFilm keeps the host flow simple: collect photos before and during the event, display the room feed, then share the recap after reveal.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
-          {["Future stat", "Future testimonial", "Future event example"].map((label) => (
-            <div className="rounded-3xl bg-white/80 p-5" key={label}>
-              <p className="text-sm font-bold uppercase tracking-wide text-stone-500">{label}</p>
-              <p className="mt-3 text-sm text-stone-600">Placeholder reserved for verified beta proof. No fake quote here.</p>
+          {[
+            ["Guest Upload", "The QR/link guests use without an account."],
+            ["Live Wall", "A display-ready view for the room."],
+            ["Recap", "A polished memory page after reveal."],
+          ].map(([label, body]) => (
+            <div className="rounded-[1.35rem] bg-white/85 p-5 shadow-[0_12px_30px_rgba(101,62,0,0.05)]" key={label}>
+              <p className="text-sm font-extrabold uppercase tracking-wide text-[#d94f33]">{label}</p>
+              <p className="mt-3 text-sm font-semibold leading-6 text-stone-600">{body}</p>
             </div>
           ))}
         </div>
@@ -1541,7 +1560,7 @@ function Dashboard() {
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <StatusPill>Host command center</StatusPill>
-            <h1 className="mt-4 font-display text-3xl font-bold sm:text-5xl">Plan it. Share it. Watch the album fill up.</h1>
+            <h1 className="mt-4 font-display text-3xl font-bold sm:text-5xl">Plan it. Share it. Keep the album moving.</h1>
             <p className="mt-3 max-w-2xl text-stone-200">{auth.user?.email}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -1552,18 +1571,9 @@ function Dashboard() {
       </div>
       {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <div className="mt-8 grid gap-5 sm:grid-cols-3">
-        <Card>
-          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Live events</p>
-          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{liveEvents}</p>
-        </Card>
-        <Card>
-          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Total events</p>
-          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{events.length}</p>
-        </Card>
-        <Card>
-          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Total photos</p>
-          <p className="mt-3 font-display text-4xl font-bold text-[#653e00]">{totalPhotos}</p>
-        </Card>
+        <MetricCard label="Live events" value={liveEvents} tone="green" />
+        <MetricCard label="Total events" value={events.length} />
+        <MetricCard label="Total photos" value={totalPhotos} tone="accent" />
       </div>
       {analyticsSummary && (
         <section className="mt-8">
@@ -1579,11 +1589,8 @@ function Dashboard() {
               ["Recap opens", analyticsSummary.recapOpens],
               ["Active hosts", analyticsSummary.activeHosts],
               ["Active guests", analyticsSummary.activeGuests],
-            ].map(([label, value]) => (
-              <Card key={label}>
-                <p className="text-sm font-bold uppercase tracking-wide text-stone-500">{label}</p>
-                <p className="mt-3 font-display text-3xl font-bold text-[#653e00]">{value}</p>
-              </Card>
+            ].map(([label, value], index) => (
+              <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 2 ? "green" : index === 3 ? "plum" : "default"} />
             ))}
           </div>
         </section>
@@ -1594,7 +1601,7 @@ function Dashboard() {
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
           {events.map((event) => (
-            <Link className="group overflow-hidden rounded-3xl border border-stone-200 bg-white shadow-[0_24px_70px_rgba(28,25,23,0.07)] transition hover:-translate-y-1 hover:shadow-[0_30px_80px_rgba(245,158,11,0.14)]" to={`/dashboard/events/${event.id}`} key={event.id}>
+            <Link className="group overflow-hidden rounded-[1.65rem] border border-[#eadfce] bg-white shadow-[0_18px_54px_rgba(101,62,0,0.075)] transition hover:-translate-y-1 hover:shadow-[0_30px_80px_rgba(232,93,63,0.12)]" to={`/dashboard/events/${event.id}`} key={event.id}>
               <EventPhotoBanner photos={event.previewPhotos || []} eventName={event.name} />
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
@@ -1604,8 +1611,8 @@ function Dashboard() {
                     <p className="mt-1 text-sm text-stone-600">Event: {formatDateTime(event.eventDate)}</p>
                     <p className="text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
                   </div>
-                  <div className="rounded-2xl bg-stone-50 px-4 py-3 text-center">
-                    <p className="font-display text-2xl font-bold text-[#653e00]">{event.photoCount}</p>
+                  <div className="rounded-[1.15rem] bg-[#fff3ee] px-4 py-3 text-center">
+                    <p className="font-display text-2xl font-bold text-[#d94f33]">{event.photoCount}</p>
                     <p className="text-xs font-bold uppercase text-stone-500">Photos</p>
                   </div>
                 </div>
@@ -1838,16 +1845,31 @@ function CreateEvent() {
   return (
     <Shell>
       <div className="mx-auto max-w-3xl text-center">
-        <h1 className="font-display text-4xl font-bold text-[#653e00]">Start your story</h1>
-        <p className="mt-3 text-lg text-stone-600">Create a space where your guests can share their favorite moments instantly.</p>
+        <h1 className="font-display text-4xl font-bold text-stone-950">Create your event.</h1>
+        <p className="mt-3 text-lg text-stone-600">Choose a template, set the reveal, and get the QR, Live Wall, and Recap links in one place.</p>
       </div>
-      <form className="mx-auto mt-8 grid max-w-3xl gap-5 rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_24px_70px_rgba(28,25,23,0.07)] sm:p-8" onSubmit={submit}>
+      <form className="mx-auto mt-8 grid max-w-3xl gap-5 rounded-[1.75rem] border border-[#eadfce] bg-white p-6 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-8" onSubmit={submit}>
         <TemplateLibrary draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} />
-        <label className="grid gap-2 text-sm font-bold text-stone-700">
-          Event name
-          <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
-        </label>
-        <div className="grid gap-5 sm:grid-cols-2">
+        <section className="grid gap-5 rounded-[1.45rem] bg-[#fffaf6] p-5">
+          <div>
+            <h2 className="font-display text-xl font-bold text-stone-950">Event details</h2>
+            <p className="mt-1 text-sm text-stone-600">Use names and copy guests will recognize at a glance.</p>
+          </div>
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Event name
+            <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
+          </label>
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Description
+            <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
+          </label>
+        </section>
+        <section className="grid gap-5 rounded-[1.45rem] bg-[#fffaf6] p-5">
+          <div>
+            <h2 className="font-display text-xl font-bold text-stone-950">Timing and limits</h2>
+            <p className="mt-1 text-sm text-stone-600">The reveal controls when guests can browse the album.</p>
+          </div>
+          <div className="grid gap-5 sm:grid-cols-2">
           <label className="grid gap-2 text-sm font-bold text-stone-700">
             Event date
             <TextInput type="datetime-local" value={form.eventDate} onChange={(event) => update("eventDate", event.target.value)} required />
@@ -1856,18 +1878,15 @@ function CreateEvent() {
             Reveal date/time
             <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
           </label>
-        </div>
-        <label className="grid gap-2 text-sm font-bold text-stone-700">
-          Photo limit per guest
-          <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
-        </label>
-        <label className="grid gap-2 text-sm font-bold text-stone-700">
-          Description
-          <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
-        </label>
+          </div>
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Photo limit per guest
+            <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
+          </label>
+        </section>
         <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} />
-        <div className="rounded-3xl bg-stone-50 p-5">
-          <h2 className="font-display text-xl font-bold text-[#653e00]">Event settings</h2>
+        <div className="rounded-[1.45rem] bg-[#fff3ee] p-5">
+          <h2 className="font-display text-xl font-bold text-[#653e00]">After create</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <p className="rounded-2xl bg-white p-4 text-sm text-stone-600"><strong className="block text-stone-950">QR upload</strong> Guests scan a QR code to upload photos.</p>
             <p className="rounded-2xl bg-white p-4 text-sm text-stone-600"><strong className="block text-stone-950">Reveal lock</strong> Photos stay private until the reveal time.</p>
@@ -2040,8 +2059,8 @@ function ManageEvent() {
           {eventAnalytics && (
             <section className="mt-8">
               <div className="mb-4">
-                <h2 className="font-display text-2xl font-bold">Beta event metrics</h2>
-                <p className="text-sm text-stone-600">Host-owned signal for this event. Counts use real uploads plus internal analytics events.</p>
+                <h2 className="font-display text-2xl font-bold">Event signal</h2>
+                <p className="text-sm text-stone-600">Compact host-owned activity across guest, wall, recap, and moderation.</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
@@ -2053,11 +2072,8 @@ function ManageEvent() {
                   ["Hidden photos", eventAnalytics.hiddenPhotos],
                   ["Reported photos", eventAnalytics.reportedPhotos],
                   ["Featured photos", eventAnalytics.featuredPhotos],
-                ].map(([label, value]) => (
-                  <Card key={label}>
-                    <p className="text-sm font-bold uppercase tracking-wide text-stone-500">{label}</p>
-                    <p className="mt-3 font-display text-3xl font-bold text-[#653e00]">{value}</p>
-                  </Card>
+                ].map(([label, value], index) => (
+                  <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 1 ? "accent" : index === 2 ? "green" : index === 3 ? "plum" : "default"} />
                 ))}
               </div>
             </section>
@@ -2080,10 +2096,10 @@ function ManageEvent() {
             <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
                 <h2 className="font-display text-3xl font-bold">Recent uploads</h2>
-                <p className="text-stone-600">Review, feature, hide, restore, or delete guest uploads.</p>
+                <p className="text-stone-600">Feature favorites, hide anything off-tone, and keep public views clean.</p>
               </div>
             </div>
-            <div className="mb-5 grid gap-3 rounded-3xl bg-white p-4 shadow-sm">
+            <div className="mb-5 grid gap-3 rounded-[1.45rem] border border-[#eadfce] bg-white p-4 shadow-[0_12px_34px_rgba(101,62,0,0.055)]">
               <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
                 <div className="flex min-w-max gap-2 sm:min-w-0 sm:flex-wrap">
                   {[
@@ -2093,7 +2109,7 @@ function ManageEvent() {
                     ["featured", `Featured (${featuredCount})`],
                     ["reported", `Reported (${reportedCount})`],
                   ].map(([key, label]) => (
-                    <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === key ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700")} onClick={() => setGalleryFilter(key)} key={key}>{label}</button>
+                    <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-extrabold", galleryFilter === key ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700 hover:bg-stone-200")} onClick={() => setGalleryFilter(key)} key={key}>{label}</button>
                   ))}
                 </div>
               </div>
@@ -2127,12 +2143,12 @@ function ManageEvent() {
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {filteredPhotos.map((photo) => (
-                <div className={cx("overflow-hidden rounded-3xl border bg-white p-2 shadow-sm", photo.visibilityStatus === "HIDDEN" ? "border-red-200 opacity-80" : "border-stone-200")} key={photo.id}>
+                <div className={cx("overflow-hidden rounded-[1.45rem] border bg-white p-2 shadow-[0_12px_30px_rgba(101,62,0,0.055)]", photo.visibilityStatus === "HIDDEN" ? "border-red-200 opacity-80" : "border-[#eadfce]")} key={photo.id}>
                   <button className="block w-full text-left" onClick={() => {
                     setSelectedPhoto(photo);
                     trackAnalytics("photo_lightbox_opened", { eventId, eventSlug: event.slug, metadata: { surface: "host", photoId: photo.id } });
                   }}>
-                    <img className="aspect-square w-full rounded-2xl object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                    <img className="aspect-square w-full rounded-[1.1rem] object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
                   </button>
                   <div className="p-3 text-sm">
                     <PhotoStatusBadges photo={photo} host />
@@ -2151,14 +2167,14 @@ function ManageEvent() {
                     <p className="mt-1 text-stone-600">{formatDateTime(photo.createdAt)}</p>
                     <div className="mt-3 grid gap-2">
                       {photo.visibilityStatus === "HIDDEN" ? (
-                        <SecondaryButton className="min-h-10 px-4 py-2" onClick={() => updatePhotoVisibility(photo, "VISIBLE")}>Restore</SecondaryButton>
+                        <SecondaryButton className="min-h-10 rounded-[0.95rem] px-4 py-2" onClick={() => updatePhotoVisibility(photo, "VISIBLE")}>Restore</SecondaryButton>
                       ) : (
-                        <SecondaryButton className="min-h-10 px-4 py-2" onClick={() => updatePhotoVisibility(photo, "HIDDEN")}>Hide</SecondaryButton>
+                        <SecondaryButton className="min-h-10 rounded-[0.95rem] px-4 py-2" onClick={() => updatePhotoVisibility(photo, "HIDDEN")}>Hide</SecondaryButton>
                       )}
-                      <button className={cx("min-h-10 rounded-full px-4 py-2 text-sm font-bold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-amber-500 text-stone-950")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)} disabled={photo.visibilityStatus === "HIDDEN"}>
+                      <button className={cx("min-h-10 rounded-[0.95rem] px-4 py-2 text-sm font-extrabold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-[#fff0d8] text-[#653e00]")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)} disabled={photo.visibilityStatus === "HIDDEN"}>
                         {photo.isFeatured ? "Unfeature" : "Feature"}
                       </button>
-                      <button className="min-h-10 rounded-full bg-red-700 px-4 py-2 text-sm font-bold text-white" onClick={() => deletePhoto(photo.id)}>Delete</button>
+                      <button className="min-h-10 rounded-[0.95rem] bg-red-50 px-4 py-2 text-sm font-extrabold text-red-800 ring-1 ring-red-100" onClick={() => deletePhoto(photo.id)}>Delete</button>
                     </div>
                   </div>
                 </div>
@@ -2221,7 +2237,7 @@ function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; 
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {photos.map((photo, index) => (
-        <figure className={cx("group overflow-hidden rounded-[1.5rem]", index === 0 ? "col-span-2 row-span-2" : "", dark ? "bg-white/10" : "bg-white shadow-sm")} key={photo.id}>
+        <figure className={cx("group overflow-hidden rounded-[1.45rem] border", index === 0 ? "col-span-2 row-span-2" : "", dark ? "border-white/10 bg-white/10" : "border-[#eadfce] bg-white shadow-[0_12px_30px_rgba(101,62,0,0.055)]")} key={photo.id}>
           <button className="block h-full w-full text-left" type="button" onClick={() => onPhotoClick?.(photo)}>
             <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
           </button>
@@ -2288,12 +2304,12 @@ function LiveWall() {
       {event && (
         <div className="grid min-h-screen gap-6 p-5 lg:grid-cols-[1fr_360px] lg:p-8">
           <section className="flex min-h-0 flex-col gap-6">
-            <div className="rounded-[2rem] bg-white/10 p-6">
+            <div className="rounded-[2rem] border border-white/10 bg-white/10 p-6 shadow-[0_26px_80px_rgba(0,0,0,0.22)]">
               <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
                 <div>
                   <LiveDemoPill />
                   <h1 className="mt-5 font-display text-5xl font-bold lg:text-7xl">{event.name}</h1>
-                  <p className="mt-4 max-w-3xl text-xl text-stone-200">{event.description || "Guests can scan, upload, and watch the event story grow in real time."}</p>
+                  <p className="mt-4 max-w-3xl text-xl text-stone-200">{event.description || "Scan, upload, and watch the event story grow in real time."}</p>
                 </div>
                 <div className="grid gap-2 text-sm font-bold uppercase tracking-wide text-stone-300">
                   <span>Event: {formatDateTime(event.eventDate)}</span>
@@ -2317,17 +2333,17 @@ function LiveWall() {
           </section>
 
           <aside className="grid content-start gap-5">
-            <section className="rounded-[2rem] bg-white p-5 text-stone-950">
+            <section className="rounded-[2rem] bg-white p-5 text-stone-950 shadow-[0_24px_70px_rgba(0,0,0,0.18)]">
               <p className="text-sm font-bold uppercase tracking-wide text-[#653e00]">Scan to upload</p>
               {data.qrCodeDataUrl && <img className="mt-4 aspect-square w-full rounded-3xl bg-white p-2" src={data.qrCodeDataUrl} alt="Guest upload QR code" />}
               <p className="mt-4 break-all rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-700">{data.eventLink}</p>
             </section>
-            <section className="rounded-[2rem] bg-amber-400 p-5 text-stone-950">
+            <section className="rounded-[2rem] bg-[#e85d3f] p-5 text-white shadow-[0_24px_70px_rgba(232,93,63,0.18)]">
               <p className="text-sm font-bold uppercase tracking-wide">Live count</p>
               <p className="mt-2 font-display text-6xl font-bold">{data.photos.length}</p>
               <p className="text-sm font-bold">photos uploaded</p>
               {error && <p className="mt-4 rounded-2xl bg-red-100 p-3 text-sm font-bold text-red-800">{error}</p>}
-              <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" onClick={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment.")))}>Refresh now</button>
+              <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-[1rem] bg-white px-4 py-2 text-sm font-bold text-[#d94f33]" onClick={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment.")))}>Refresh now</button>
             </section>
             {summary && <ProgressSummaryPanel summary={summary} dark />}
           </aside>
@@ -2384,7 +2400,7 @@ function EventRecap() {
         )}
         {event && (
           <>
-            <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white sm:p-10">
+            <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white shadow-[0_28px_90px_rgba(101,62,0,0.16)] sm:p-10">
               <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-end">
                 <div>
                   <StatusPill>{recap?.templateName || recap?.modeLabel || "EventFilm"}</StatusPill>
@@ -2396,16 +2412,16 @@ function EventRecap() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-3xl bg-white/10 p-5">
+                  <div className="rounded-[1.35rem] bg-white/10 p-5">
                     <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Photos</p>
                     <p className="mt-2 font-display text-5xl font-bold">{recap?.totalPhotos || 0}</p>
                   </div>
-                  <div className="rounded-3xl bg-white/10 p-5">
+                  <div className="rounded-[1.35rem] bg-white/10 p-5">
                     <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Contributors</p>
                     <p className="mt-2 font-display text-5xl font-bold">{recap?.contributorCount || 0}</p>
                   </div>
                   <button
-                    className="col-span-2 min-h-12 rounded-full bg-amber-400 px-5 py-3 text-sm font-bold text-stone-950"
+                    className="col-span-2 min-h-12 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white"
                     onClick={async () => {
                       try {
                         await copyText(data.recapLink);
@@ -2433,7 +2449,7 @@ function EventRecap() {
                 <section className="mt-8">
                   <div className="mb-4">
                     <h2 className="font-display text-3xl font-bold">{recap?.recapTitle || "Highlights"}</h2>
-                    <p className="text-stone-600">{recap?.recapSubtitle || "A first look at the moments guests added most recently."}</p>
+                    <p className="text-stone-600">{recap?.recapSubtitle || "Favorite moments from the event, ready to revisit."}</p>
                   </div>
                   <PhotoMosaic photos={recap?.highlightPhotos || []} onPhotoClick={openPublicPhoto} />
                 </section>
@@ -2690,8 +2706,8 @@ function GuestEvent() {
           {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && (
             <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Color Hunt</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Your group is playing Color Hunt.</h2>
-              <p className="mt-2 text-stone-700">Find things that match your color and upload them here.</p>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Choose your color.</h2>
+              <p className="mt-2 text-stone-700">Find a real moment that matches your color, then send it in.</p>
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
                 Choose your name
                 <select ref={participantSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedParticipantId} onChange={(selectEvent) => saveSelectedParticipant(selectEvent.target.value)} required>
@@ -2716,8 +2732,8 @@ function GuestEvent() {
           {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (
             <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Photo Scavenger Hunt</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Photo Scavenger Hunt</h2>
-              <p className="mt-2 text-stone-700">Pick a prompt, take a photo, and upload it to the event album.</p>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Pick your prompt.</h2>
+              <p className="mt-2 text-stone-700">Choose the moment you are completing before you upload.</p>
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
                 Choose a prompt
                 <select ref={promptSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedPromptId} onChange={(selectEvent) => saveSelectedPrompt(selectEvent.target.value)} required>
@@ -2767,9 +2783,9 @@ function GuestEvent() {
             </section>
           )}
 
-          <form className="mt-6 rounded-3xl border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)] sm:p-6" onSubmit={uploadPhoto}>
+          <form className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6" onSubmit={uploadPhoto}>
             <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
-            <p className="mt-2 text-stone-600">{event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT ? "Pick a photo and send it to the private album." : "Add your name, pick a photo, and send it to the private album."}</p>
+            <p className="mt-2 text-stone-600">{event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT ? "Pick a photo and send it to the private album." : "Add your name, choose a photo, and send it in."}</p>
             {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && selectedParticipant && (
               <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p>
             )}
@@ -2785,7 +2801,7 @@ function GuestEvent() {
                 <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
               </label>
             )}
-            <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-700">
+            <p className="mt-4 rounded-[1rem] bg-[#fffaf6] p-3 text-sm font-bold text-stone-700">
               {remaining === null ? "Checking uploads..." : `${remaining} uploads left`}
             </p>
             {remaining === 0 && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">You have used all uploads for this event.</p>}

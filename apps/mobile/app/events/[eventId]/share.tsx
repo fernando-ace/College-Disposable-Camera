@@ -73,14 +73,14 @@ export default function ShareEventScreen() {
     <Screen>
       <TaskHeader
         eyebrow="Share event"
-        title={event ? `Launch kit for ${event.name}` : "Preparing share link"}
-        body={template ? `${template.name} template. ${template.liveWallCopy}` : "Guests scan the QR code or open the guest link from any browser. No account needed."}
+        title={event ? `${event.name} is ready to share.` : "Preparing share link"}
+        body={template ? `${template.name}. Keep Guest Upload, Live Wall, and Recap in their own moments.` : "Guests scan the QR code or open the guest link from any browser. No account needed."}
       />
       {error ? <ErrorState message={error} /> : null}
       {!event ? <LoadingState label="Loading sharing details..." /> : null}
       {event ? (
         <>
-          <LinkBlock label="Guest upload link" description="Send this anywhere your guests already are. This is the one for QR codes, group chats, and invitations." url={event.eventLink} tone="accent">
+          <LinkBlock label="Guest Upload" description="Use this for QR codes, group chats, and invitations." url={event.eventLink} tone="accent">
             {message ? <SuccessState message={message} /> : null}
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1 }}>
@@ -94,7 +94,7 @@ export default function ShareEventScreen() {
 
           <ShareLinkCard
             title="Live Wall"
-            subtitle="Open this on a laptop, TV, projector, or iPad while guests upload during the event."
+            subtitle="Open this on the display while guests upload."
             url={event.liveWallLink}
             onShare={() => shareLink("Live Wall link", event.liveWallLink)}
             onCopy={() => copyLink("Live Wall link", event.liveWallLink)}
@@ -102,7 +102,7 @@ export default function ShareEventScreen() {
 
           <ShareLinkCard
             title="Recap"
-            subtitle="Share this polished album story after the reveal time."
+            subtitle="Share this finished album story after reveal."
             url={event.recapLink}
             onShare={() => shareLink("Recap link", event.recapLink)}
             onCopy={() => copyLink("Recap link", event.recapLink)}
@@ -112,7 +112,7 @@ export default function ShareEventScreen() {
 
           <Card>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <SectionHeader title="QR code" subtitle="Place this near the entrance, bar, or table." />
+              <SectionHeader title="QR code" subtitle="Place this where guests naturally pause." />
               <Badge>{event.photoCount} photos</Badge>
             </View>
             {event.qrCodeDataUrl ? (
@@ -125,20 +125,20 @@ export default function ShareEventScreen() {
           {launchKit ? (
             <>
               <Card tone="warm">
-                <SectionHeader title="Copy-ready invite text" subtitle="Use this in a group chat, Instagram story, or event message." />
+                <SectionHeader title="Invite text" subtitle="Short enough for a group chat or story." />
                 <Body>{launchKit.inviteText}</Body>
                 <Button tone="secondary" onPress={() => copyText("Guest invite", launchKit.inviteText)}>Copy invite text</Button>
               </Card>
 
               <Card>
-                <SectionHeader title="Host instructions" subtitle="Keep the three links in the right moment." />
+                <SectionHeader title="Host notes" subtitle="A quick reminder for the event flow." />
                 <Body tone="muted">{launchKit.hostInstructions}</Body>
                 <Body tone="muted">{launchKit.modeInstructions}</Body>
                 <Button tone="secondary" onPress={() => copyText("Host instructions", launchKit.hostInstructions)}>Copy host instructions</Button>
               </Card>
 
               <Card>
-                <SectionHeader title="Suggested caption" subtitle="Short enough for Instagram or a group chat." />
+                <SectionHeader title="Suggested caption" subtitle="Ready for social or a group message." />
                 <Body>{launchKit.socialCaption}</Body>
                 <Button tone="secondary" onPress={() => copyText("Caption", launchKit.socialCaption)}>Copy caption</Button>
               </Card>

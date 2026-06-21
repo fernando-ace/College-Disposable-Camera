@@ -95,7 +95,7 @@ export default function EventsScreen() {
     <Screen bottomPadding={112}>
       <TaskHeader
         eyebrow="Host command center"
-        title="Plan it. Share it. Keep the album moving."
+        title="Your events, ready to share."
         body={`Signed in as ${user.email}`}
         action={(
           <View style={{ gap: 10 }}>
@@ -137,7 +137,7 @@ export default function EventsScreen() {
 
       {featuredEvent ? (
         <View style={{ gap: 12 }}>
-          <SectionHeader title="Needs your attention" subtitle="The closest active or upcoming event." />
+          <SectionHeader title="Next up" subtitle="Open this event to share links, check uploads, or prep the room display." />
           <EventCard event={featuredEvent} featured onPress={() => router.push(`/events/${featuredEvent.id}`)} />
         </View>
       ) : null}
@@ -145,7 +145,7 @@ export default function EventsScreen() {
       {analyticsSummary ? (
         <Card>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <SectionHeader title="30-day activity" subtitle="A quick read on hosted event momentum." />
+            <SectionHeader title="30-day activity" subtitle="Compact signal from guest, upload, wall, and recap activity." />
             <Badge tone="stone">Beta</Badge>
           </View>
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -159,7 +159,7 @@ export default function EventsScreen() {
 
       {remainingEvents.length ? (
         <View style={{ gap: 12 }}>
-          <SectionHeader title="All other events" subtitle="Open any event to share links, review uploads, or check the recap." />
+          <SectionHeader title="Other events" subtitle="Sorted by the event closest to now." />
           {remainingEvents.map((event) => (
             <EventCard key={event.id} event={event} onPress={() => router.push(`/events/${event.id}`)} />
           ))}
