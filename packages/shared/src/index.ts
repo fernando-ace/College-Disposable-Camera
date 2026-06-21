@@ -103,6 +103,34 @@ export type Photo = {
   challengeColorSlug?: string | null;
 };
 
+export type ChallengeProgressRow = {
+  id: string;
+  label: string;
+  count: number;
+  total?: number;
+  kind: ChallengeItemKind | "album";
+  colorName?: string;
+  colorHex?: string;
+  colorSlug?: string;
+  complete?: boolean;
+};
+
+export type ChallengeProgressSummary = {
+  mode: ChallengeMode;
+  modeLabel: string;
+  instructions: string;
+  totalPhotos: number;
+  rows: ChallengeProgressRow[];
+};
+
+export type EventRecapMetadata = {
+  modeLabel: string;
+  totalPhotos: number;
+  contributorCount: number;
+  highlightPhotos: Photo[];
+  recentPhotos: Photo[];
+};
+
 export type EventSummary = {
   id: string;
   name: string;
@@ -112,6 +140,8 @@ export type EventSummary = {
   revealAt: ISODateString;
   photoLimitPerGuest: number;
   eventLink: string;
+  liveWallLink?: string;
+  recapLink?: string;
   qrCodeDataUrl?: string;
   photoCount: number;
   previewPhotos?: Photo[];
@@ -558,4 +588,103 @@ export function challengeTypeName(type: ChallengeMode) {
 
 export function photoChallengeLabel(photo: Pick<Photo, "challengeItemLabel" | "challengePromptText" | "challengeColorName">) {
   return photo.challengeItemLabel || photo.challengePromptText || photo.challengeColorName || "";
+}
+
+function countUniqueContributors(photos: Photo[]) {
+  const contributors = new Set<string>();
+  photos.forEach((photo) => {
+    const value = photo.guestNickname || photo.challengeParticipantName;
+    if (value?.trim()) contributors.add(value.trim().toLowerCase());
+  });
+  return contributors.size;
+}
+
+function byCreatedAtDesc(a: Pick<Photo, "createdAt">, b: Pick<Photo, "createdAt">) {
+  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+}
+
+export function buildChallengeProgressSummary(challenge: EventChallenge | null | undefined, photos: Photo[]): ChallengeProgressSummary {
+  const mode = challenge?.type || "NONE";
+  const pack = getChallengePack(mode);
+  const totalPhotos = photos.length;
+
+  if (!challenge) {
+    return {
+      mode: "NONE",
+      modeLabel: pack.name,
+      instructions: pack.guestInstructions,
+      totalPhotos,
+      rows: [],
+    };
+  }
+
+  if (challenge.type === CHALLENGE_TYPES.COLOR_HUNT) {
+    const rows = challenge.participants.map((participant) => {
+      const count = photos.filter((photo) => {
+        if (participant.id && photo.challengeParticipantId === participant.id) return true;
+        return Boolean(participant.colorSlug && photo.challengeColorSlug === participant.colorSlug);
+      }).length;
+      return {
+        id: participant.id || participant.colorSlug,
+        label: participant.displayName || participant.colorName,
+        count,
+        kind: "color" as const,
+        colorName: participant.colorName,
+        colorHex: participant.colorHex,
+        colorSlug: participant.colorSlug,
+        complete: count > 0,
+      };
+    });
+    return { mode: challenge.type, modeLabel: pack.name, instructions: challenge.instructions || pack.guestInstructions, totalPhotos, rows };
+  }
+
+  if (challenge.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
+    const prompts = promptsFromChallenge(challenge);
+    const rows = prompts.map((prompt) => {
+      const count = photos.filter((photo) => photo.challengePromptId === prompt.id || photo.challengeItemId === prompt.id).length;
+      return {
+        id: prompt.id || `prompt-${prompt.order}`,
+        label: prompt.text,
+        count,
+        total: 1,
+        kind: "prompt" as const,
+        complete: count > 0,
+      };
+    });
+    return { mode: challenge.type, modeLabel: pack.name, instructions: challenge.instructions || pack.guestInstructions, totalPhotos, rows };
+  }
+
+  if (challenge.type === CHALLENGE_TYPES.EVENT_AWARDS) {
+    const categories = categoriesFromChallenge(challenge);
+    const rows = categories.map((category) => {
+      const count = photos.filter((photo) => photo.challengeItemId === category.id).length;
+      return {
+        id: category.id || `award-${category.order}`,
+        label: category.label,
+        count,
+        kind: "award" as const,
+        complete: count > 0,
+      };
+    });
+    return { mode: challenge.type, modeLabel: pack.name, instructions: challenge.instructions || pack.guestInstructions, totalPhotos, rows };
+  }
+
+  return {
+    mode: challenge.type,
+    modeLabel: pack.name,
+    instructions: challenge.instructions || pack.guestInstructions,
+    totalPhotos,
+    rows: [],
+  };
+}
+
+export function buildEventRecapMetadata(event: Pick<EventSummary | PublicEvent, "challenge">, photos: Photo[]): EventRecapMetadata {
+  const sortedPhotos = [...photos].sort(byCreatedAtDesc);
+  return {
+    modeLabel: challengeLabel(event.challenge),
+    totalPhotos: photos.length,
+    contributorCount: countUniqueContributors(photos),
+    highlightPhotos: sortedPhotos.slice(0, 5),
+    recentPhotos: sortedPhotos.slice(0, 8),
+  };
 }

@@ -2,10 +2,13 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import { createEventFilmApiClient } from "@eventfilm/api-client";
+import type { EventRecapResponse, LiveWallResponse } from "@eventfilm/api-client";
 import {
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
   COLOR_HUNT_PALETTE,
+  buildChallengeProgressSummary,
+  buildEventRecapMetadata,
   buildChallengePayload,
   categoriesFromChallenge,
   challengeLabel,
@@ -1191,6 +1194,8 @@ function ManageEvent() {
     if (galleryFilter.startsWith("award:")) return photo.challengeItemId === galleryFilter.replace("award:", "");
     return true;
   }) || [];
+  const liveWallLink = event?.liveWallLink || (event ? `${window.location.origin}/wall/${event.slug}` : "");
+  const recapLink = event?.recapLink || (event ? `${window.location.origin}/recap/${event.slug}` : "");
 
   return (
     <Shell wide>
@@ -1236,6 +1241,48 @@ function ManageEvent() {
                 </Button>
                 <SecondaryButton onClick={() => downloadDataUrl(event.qrCodeDataUrl || "", `${event.name}-qr.png`)}>Download QR</SecondaryButton>
                 <SecondaryButton onClick={downloadZip}>Download ZIP</SecondaryButton>
+              </div>
+              <div className="mt-5 grid gap-3 rounded-3xl bg-stone-50 p-4 lg:grid-cols-2">
+                <div>
+                  <p className="text-sm font-bold text-stone-950">Live Wall</p>
+                  <p className="mt-1 text-sm text-stone-600">Open this on a laptop, TV, projector, or iPad while guests are uploading.</p>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" href={liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a>
+                    <SecondaryButton
+                      className="min-h-10 px-4 py-2"
+                      onClick={async () => {
+                        try {
+                          await copyText(liveWallLink);
+                          setCopyStatus("Live Wall link copied");
+                        } catch (err) {
+                          setCopyStatus((err as Error).message);
+                        }
+                      }}
+                    >
+                      Copy wall link
+                    </SecondaryButton>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-stone-950">Recap</p>
+                  <p className="mt-1 text-sm text-stone-600">Share the polished event story after the reveal time.</p>
+                  <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                    <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" href={recapLink} target="_blank" rel="noreferrer">Open Recap</a>
+                    <SecondaryButton
+                      className="min-h-10 px-4 py-2"
+                      onClick={async () => {
+                        try {
+                          await copyText(recapLink);
+                          setCopyStatus("Recap link copied");
+                        } catch (err) {
+                          setCopyStatus((err as Error).message);
+                        }
+                      }}
+                    >
+                      Copy recap link
+                    </SecondaryButton>
+                  </div>
+                </div>
               </div>
             </Card>
             <Card className="grid place-items-center">
@@ -1320,6 +1367,274 @@ function ManageEvent() {
         </>
       )}
     </Shell>
+  );
+}
+
+function ProgressSummaryPanel({ summary, dark = false }: { summary: ReturnType<typeof buildChallengeProgressSummary>; dark?: boolean }) {
+  const hasRows = summary.rows.length > 0;
+  return (
+    <section className={cx("rounded-[2rem] p-5", dark ? "bg-white/10 text-white" : "border border-[#eadfce] bg-white shadow-[0_24px_70px_rgba(101,62,0,0.08)]")}>
+      <p className={cx("text-sm font-bold uppercase tracking-wide", dark ? "text-amber-200" : "text-[#653e00]")}>{summary.modeLabel}</p>
+      <h2 className={cx("mt-2 font-display text-2xl font-bold", dark ? "text-white" : "text-stone-950")}>Challenge progress</h2>
+      <p className={cx("mt-2 text-sm", dark ? "text-stone-200" : "text-stone-600")}>{summary.instructions}</p>
+      {!hasRows && <p className={cx("mt-5 rounded-2xl p-4 text-sm font-semibold", dark ? "bg-white/10 text-stone-100" : "bg-stone-50 text-stone-700")}>Photos are collected as one shared album for this mode.</p>}
+      {hasRows && (
+        <div className="mt-5 grid gap-3">
+          {summary.rows.map((row) => {
+            const percent = row.total ? Math.min(100, Math.round((row.count / row.total) * 100)) : Math.min(100, row.count * 20);
+            return (
+              <div className={cx("rounded-2xl p-4", dark ? "bg-white/10" : "bg-stone-50")} key={row.id}>
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    {row.colorHex && <span className="h-4 w-4 shrink-0 rounded-full border border-white/40" style={{ backgroundColor: row.colorHex }} />}
+                    <p className={cx("truncate text-sm font-bold", dark ? "text-white" : "text-stone-900")}>{row.label}</p>
+                  </div>
+                  <p className={cx("shrink-0 text-sm font-bold tabular-nums", dark ? "text-amber-200" : "text-[#653e00]")}>{row.count}{row.total ? `/${row.total}` : ""}</p>
+                </div>
+                <div className={cx("mt-3 h-2 overflow-hidden rounded-full", dark ? "bg-white/15" : "bg-stone-200")}>
+                  <div className="h-full rounded-full bg-amber-400" style={{ width: `${row.count > 0 ? Math.max(percent, 8) : 0}%` }} />
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PhotoMosaic({ photos, dark = false }: { photos: Photo[]; dark?: boolean }) {
+  if (!photos.length) {
+    return (
+      <div className={cx("grid min-h-72 place-items-center rounded-[2rem] p-8 text-center", dark ? "bg-white/10 text-stone-200" : "border border-[#eadfce] bg-white text-stone-600")}>
+        <div>
+          <p className={cx("font-display text-2xl font-bold", dark ? "text-white" : "text-stone-950")}>No uploads yet</p>
+          <p className="mt-2 text-sm">Once guests start adding photos, the newest moments will appear here.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+      {photos.map((photo, index) => (
+        <figure className={cx("group overflow-hidden rounded-[1.5rem]", index === 0 ? "col-span-2 row-span-2" : "", dark ? "bg-white/10" : "bg-white shadow-sm")} key={photo.id}>
+          <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+          <figcaption className={cx("p-3 text-xs font-bold", dark ? "text-stone-100" : "text-stone-700")}>
+            <span className="block truncate">{photo.challengeParticipantName || photo.guestNickname || "Guest"}</span>
+            {photoChallengeLabel(photo) && <span className={cx("mt-1 block truncate", dark ? "text-amber-200" : "text-[#653e00]")}>{photoChallengeLabel(photo)}</span>}
+          </figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
+function LiveWall() {
+  const { slug = "" } = useParams();
+  const [data, setData] = useState<LiveWallResponse | null>(null);
+  const [error, setError] = useState("");
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+
+  async function load() {
+    const nextData = await api<LiveWallResponse>(`/api/events/${slug}/live-wall`);
+    setData(nextData);
+    setError("");
+    setLastUpdated(new Date());
+  }
+
+  useEffect(() => {
+    let isMounted = true;
+    async function loadIfMounted() {
+      try {
+        const nextData = await api<LiveWallResponse>(`/api/events/${slug}/live-wall`);
+        if (!isMounted) return;
+        setData(nextData);
+        setError("");
+        setLastUpdated(new Date());
+      } catch (err) {
+        if (isMounted) setError((err as Error).message);
+      }
+    }
+    loadIfMounted();
+    const interval = window.setInterval(loadIfMounted, 15_000);
+    return () => {
+      isMounted = false;
+      window.clearInterval(interval);
+    };
+  }, [slug]);
+
+  const event = data?.event;
+  const summary = event ? buildChallengeProgressSummary(event.challenge, data.photos) : null;
+  const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+
+  return (
+    <main className="min-h-screen bg-stone-950 text-white">
+      {!event && (
+        <div className="grid min-h-screen place-items-center p-8">
+          <div className="max-w-xl text-center">
+            <LiveDemoPill />
+            <h1 className="mt-5 font-display text-5xl font-bold">Preparing Live Wall</h1>
+            <p className="mt-3 text-stone-300">{error || "Loading the latest event photos..."}</p>
+          </div>
+        </div>
+      )}
+      {event && (
+        <div className="grid min-h-screen gap-6 p-5 lg:grid-cols-[1fr_360px] lg:p-8">
+          <section className="flex min-h-0 flex-col gap-6">
+            <div className="rounded-[2rem] bg-white/10 p-6">
+              <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
+                <div>
+                  <LiveDemoPill />
+                  <h1 className="mt-5 font-display text-5xl font-bold lg:text-7xl">{event.name}</h1>
+                  <p className="mt-4 max-w-3xl text-xl text-stone-200">{event.description || "Guests can scan, upload, and watch the event story grow in real time."}</p>
+                </div>
+                <div className="grid gap-2 text-sm font-bold uppercase tracking-wide text-stone-300">
+                  <span>Event: {formatDateTime(event.eventDate)}</span>
+                  <span>Reveal: {formatDateTime(event.revealAt)}</span>
+                  {lastUpdated && <span>Updated: {lastUpdated.toLocaleTimeString()}</span>}
+                </div>
+              </div>
+            </div>
+
+            {data.isLocked ? (
+              <section className="grid flex-1 place-items-center rounded-[2rem] bg-amber-100 p-8 text-center text-amber-950">
+                <div className="max-w-2xl">
+                  <Icon className="mx-auto h-14 w-14">lock</Icon>
+                  <h2 className="mt-5 font-display text-5xl font-bold">{capsuleCopy?.revealTitle || "The album is locked"}</h2>
+                  <p className="mt-4 text-xl font-semibold">{capsuleCopy?.revealNote || "Photos are hidden until the reveal time."}</p>
+                </div>
+              </section>
+            ) : (
+              <PhotoMosaic photos={data.photos.slice(0, 13)} dark />
+            )}
+          </section>
+
+          <aside className="grid content-start gap-5">
+            <section className="rounded-[2rem] bg-white p-5 text-stone-950">
+              <p className="text-sm font-bold uppercase tracking-wide text-[#653e00]">Scan to upload</p>
+              {data.qrCodeDataUrl && <img className="mt-4 aspect-square w-full rounded-3xl bg-white p-2" src={data.qrCodeDataUrl} alt="Guest upload QR code" />}
+              <p className="mt-4 break-all rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-700">{data.eventLink}</p>
+            </section>
+            <section className="rounded-[2rem] bg-amber-400 p-5 text-stone-950">
+              <p className="text-sm font-bold uppercase tracking-wide">Live count</p>
+              <p className="mt-2 font-display text-6xl font-bold">{data.photos.length}</p>
+              <p className="text-sm font-bold">photos uploaded</p>
+              {error && <p className="mt-4 rounded-2xl bg-red-100 p-3 text-sm font-bold text-red-800">{error}</p>}
+              <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" onClick={() => load().catch((err) => setError((err as Error).message))}>Refresh now</button>
+            </section>
+            {summary && <ProgressSummaryPanel summary={summary} dark />}
+          </aside>
+        </div>
+      )}
+    </main>
+  );
+}
+
+function EventRecap() {
+  const { slug = "" } = useParams();
+  const [data, setData] = useState<EventRecapResponse | null>(null);
+  const [error, setError] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
+
+  useEffect(() => {
+    api<EventRecapResponse>(`/api/events/${slug}/recap`)
+      .then((nextData) => {
+        setData(nextData);
+        setError("");
+      })
+      .catch((err) => setError((err as Error).message));
+  }, [slug]);
+
+  const event = data?.event;
+  const summary = event ? buildChallengeProgressSummary(event.challenge, data.photos) : null;
+  const recap = event ? buildEventRecapMetadata(event, data.photos) : null;
+  const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+
+  return (
+    <main className="min-h-screen bg-[#fff8ed] text-stone-950">
+      <div className="mx-auto w-full max-w-7xl px-5 py-6 sm:py-10">
+        {!event && (
+          <Card className="text-center">
+            <h1 className="font-display text-3xl font-bold">Loading recap</h1>
+            <p className="mt-2 text-stone-600">{error || "Gathering the event story..."}</p>
+          </Card>
+        )}
+        {event && (
+          <>
+            <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white sm:p-10">
+              <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-end">
+                <div>
+                  <StatusPill>{recap?.modeLabel || "EventFilm"}</StatusPill>
+                  <h1 className="mt-5 font-display text-5xl font-bold lg:text-7xl">{event.name}</h1>
+                  <p className="mt-4 max-w-2xl text-lg text-stone-200">{event.description || "A shared album from the people who were there."}</p>
+                  <div className="mt-6 flex flex-wrap gap-3 text-sm font-bold text-stone-200">
+                    <span className="rounded-full bg-white/10 px-4 py-2">Event: {formatDateTime(event.eventDate)}</span>
+                    <span className="rounded-full bg-white/10 px-4 py-2">Reveal: {formatDateTime(event.revealAt)}</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-3xl bg-white/10 p-5">
+                    <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Photos</p>
+                    <p className="mt-2 font-display text-5xl font-bold">{recap?.totalPhotos || 0}</p>
+                  </div>
+                  <div className="rounded-3xl bg-white/10 p-5">
+                    <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Contributors</p>
+                    <p className="mt-2 font-display text-5xl font-bold">{recap?.contributorCount || 0}</p>
+                  </div>
+                  <button
+                    className="col-span-2 min-h-12 rounded-full bg-amber-400 px-5 py-3 text-sm font-bold text-stone-950"
+                    onClick={async () => {
+                      try {
+                        await copyText(data.recapLink);
+                        setCopyStatus("Recap link copied");
+                      } catch (err) {
+                        setCopyStatus((err as Error).message);
+                      }
+                    }}
+                  >
+                    Share recap
+                  </button>
+                  {copyStatus && <p className="col-span-2 text-sm font-bold text-amber-200">{copyStatus}</p>}
+                </div>
+              </div>
+            </section>
+
+            {data.isLocked ? (
+              <section className="mt-8 rounded-[2rem] border border-amber-200 bg-amber-50 p-8 text-center">
+                <Icon className="mx-auto h-12 w-12 text-[#653e00]">lock</Icon>
+                <h2 className="mt-4 font-display text-4xl font-bold text-[#653e00]">{capsuleCopy?.revealTitle || "The recap opens at reveal time"}</h2>
+                <p className="mx-auto mt-3 max-w-2xl text-amber-900">{capsuleCopy?.revealNote || "Photos are locked until the reveal time. Come back after the event story opens."}</p>
+              </section>
+            ) : (
+              <>
+                <section className="mt-8">
+                  <div className="mb-4">
+                    <h2 className="font-display text-3xl font-bold">Highlights</h2>
+                    <p className="text-stone-600">A first look at the moments guests added most recently.</p>
+                  </div>
+                  <PhotoMosaic photos={recap?.highlightPhotos || []} />
+                </section>
+
+                {summary && (
+                  <section className="mt-8">
+                    <ProgressSummaryPanel summary={summary} />
+                  </section>
+                )}
+
+                <section className="mt-8">
+                  <div className="mb-4">
+                    <h2 className="font-display text-3xl font-bold">Full album</h2>
+                    <p className="text-stone-600">Every revealed photo from the event.</p>
+                  </div>
+                  <PhotoMosaic photos={data.photos} />
+                </section>
+              </>
+            )}
+          </>
+        )}
+      </div>
+    </main>
   );
 }
 
@@ -1695,6 +2010,8 @@ function App() {
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
           <Route path="/dashboard/events/:eventId" element={<ProtectedRoute><ManageEvent /></ProtectedRoute>} />
+          <Route path="/wall/:slug" element={<LiveWall />} />
+          <Route path="/recap/:slug" element={<EventRecap />} />
           <Route path="/e/:slug" element={<GuestEvent />} />
         </Routes>
       </BrowserRouter>

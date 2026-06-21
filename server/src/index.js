@@ -64,6 +64,14 @@ function publicEventUrl(slug) {
   return `${clientUrl}/e/${slug}`;
 }
 
+function liveWallUrl(slug) {
+  return `${clientUrl}/wall/${slug}`;
+}
+
+function recapUrl(slug) {
+  return `${clientUrl}/recap/${slug}`;
+}
+
 const CHALLENGE_TYPE_COLOR_HUNT = "COLOR_HUNT";
 const CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT = "PHOTO_SCAVENGER_HUNT";
 const CHALLENGE_TYPE_EVENT_AWARDS = "EVENT_AWARDS";
@@ -357,12 +365,31 @@ function eventPayload(event, { includePhotos = false } = {}) {
   return {
     ...event,
     eventLink: publicEventUrl(event.slug),
+    liveWallLink: liveWallUrl(event.slug),
+    recapLink: recapUrl(event.slug),
     photoCount: event._count?.photos ?? event.photoCount ?? 0,
     challenge: challengePayload(challenge),
     previewPhotos: event.photos && !includePhotos ? event.photos.map(photoPayload) : event.previewPhotos,
     photos: includePhotos && event.photos ? event.photos.map(photoPayload) : undefined,
     challenges: undefined,
     _count: undefined,
+  };
+}
+
+function publicEventBasePayload(event, isRevealed) {
+  return {
+    id: event.id,
+    name: event.name,
+    description: event.description,
+    slug: event.slug,
+    eventDate: event.eventDate,
+    revealAt: event.revealAt,
+    photoLimitPerGuest: event.photoLimitPerGuest,
+    isRevealed,
+    eventLink: publicEventUrl(event.slug),
+    liveWallLink: liveWallUrl(event.slug),
+    recapLink: recapUrl(event.slug),
+    challenge: publicChallengePayload(event.challenges?.[0]),
   };
 }
 
@@ -628,17 +655,74 @@ app.get("/api/events/:slug", async (req, res) => {
   const isRevealed = event.revealAt <= new Date();
   res.json({
     event: {
-      id: event.id,
-      name: event.name,
-      description: event.description,
-      slug: event.slug,
-      eventDate: event.eventDate,
-      revealAt: event.revealAt,
-      photoLimitPerGuest: event.photoLimitPerGuest,
-      isRevealed,
+      ...publicEventBasePayload(event, isRevealed),
       photoCount: isRevealed ? event._count.photos : null,
-      challenge: publicChallengePayload(event.challenges[0]),
     },
+  });
+});
+
+app.get("/api/events/:slug/live-wall", async (req, res) => {
+  const event = await prisma.event.findUnique({
+    where: { slug: req.params.slug },
+    include: {
+      photos: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        include: { guest: true, challengeParticipant: true },
+      },
+      challenges: activeChallengeInclude(),
+      _count: { select: { photos: { where: { deletedAt: null } } } },
+    },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const isRevealed = event.revealAt <= new Date();
+  const isLocked = event.challenges?.[0]?.type === CHALLENGE_TYPE_MEMORY_CAPSULE && !isRevealed;
+  const eventLink = publicEventUrl(event.slug);
+  const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 360 });
+
+  res.json({
+    event: {
+      ...publicEventBasePayload(event, isRevealed),
+      photoCount: isLocked ? null : event._count.photos,
+      qrCodeDataUrl,
+    },
+    eventLink,
+    liveWallLink: liveWallUrl(event.slug),
+    recapLink: recapUrl(event.slug),
+    qrCodeDataUrl,
+    isLocked,
+    photos: isLocked ? [] : event.photos.map(photoPayload),
+  });
+});
+
+app.get("/api/events/:slug/recap", async (req, res) => {
+  const event = await prisma.event.findUnique({
+    where: { slug: req.params.slug },
+    include: {
+      photos: {
+        where: { deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        include: { guest: true, challengeParticipant: true },
+      },
+      challenges: activeChallengeInclude(),
+      _count: { select: { photos: { where: { deletedAt: null } } } },
+    },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const isRevealed = event.revealAt <= new Date();
+
+  res.json({
+    event: {
+      ...publicEventBasePayload(event, isRevealed),
+      photoCount: isRevealed ? event._count.photos : null,
+    },
+    eventLink: publicEventUrl(event.slug),
+    liveWallLink: liveWallUrl(event.slug),
+    recapLink: recapUrl(event.slug),
+    isLocked: !isRevealed,
+    photos: isRevealed ? event.photos.map(photoPayload) : [],
   });
 });
 

@@ -37,6 +37,34 @@ export type UploadPhotoInput = UploadPhotoMetadata & {
   photo: File | Blob | ReactNativeUploadAsset;
 };
 
+export type LiveWallResponse = {
+  event: PublicEvent & {
+    eventLink: string;
+    liveWallLink: string;
+    recapLink: string;
+    qrCodeDataUrl?: string;
+  };
+  eventLink: string;
+  liveWallLink: string;
+  recapLink: string;
+  qrCodeDataUrl?: string;
+  isLocked: boolean;
+  photos: Photo[];
+};
+
+export type EventRecapResponse = {
+  event: PublicEvent & {
+    eventLink: string;
+    liveWallLink: string;
+    recapLink: string;
+  };
+  eventLink: string;
+  liveWallLink: string;
+  recapLink: string;
+  isLocked: boolean;
+  photos: Photo[];
+};
+
 export type EventFilmApiClientOptions = {
   baseUrl: string;
   tokenProvider?: () => string | null | Promise<string | null>;
@@ -166,8 +194,20 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     getHostEventDownloadUrl(eventId: string) {
       return `${baseUrl}/api/host/events/${encodeURIComponent(eventId)}/download`;
     },
+    getLiveWallUrl(slug: string) {
+      return `/wall/${encodeURIComponent(slug)}`;
+    },
+    getRecapUrl(slug: string) {
+      return `/recap/${encodeURIComponent(slug)}`;
+    },
     getPublicEventBySlug(slug: string) {
       return request<{ event: PublicEvent }>(`/api/events/${encodeURIComponent(slug)}`);
+    },
+    getLiveWallData(slug: string) {
+      return request<LiveWallResponse>(`/api/events/${encodeURIComponent(slug)}/live-wall`);
+    },
+    getRecapData(slug: string) {
+      return request<EventRecapResponse>(`/api/events/${encodeURIComponent(slug)}/recap`);
     },
     getGuestStatus(slug: string, clientId: string) {
       return request<GuestStatus>(`/api/events/${encodeURIComponent(slug)}/guest-status?clientId=${encodeURIComponent(clientId)}`);

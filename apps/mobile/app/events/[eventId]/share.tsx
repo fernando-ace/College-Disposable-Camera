@@ -18,15 +18,15 @@ export default function ShareEventScreen() {
     api.getHostEvent(eventId).then((data) => setEvent(data.event)).catch((err) => setError((err as Error).message));
   }, [api, eventId]);
 
-  async function copyLink() {
-    if (!event?.eventLink) return;
-    await Clipboard.setStringAsync(event.eventLink);
-    setMessage("Copied event link.");
+  async function copyLink(label: string, url?: string) {
+    if (!url) return;
+    await Clipboard.setStringAsync(url);
+    setMessage(`${label} copied.`);
   }
 
-  async function shareLink() {
-    if (!event?.eventLink) return;
-    await Share.share({ message: `Upload photos to ${event.name}: ${event.eventLink}`, url: event.eventLink });
+  async function shareLink(label: string, url?: string) {
+    if (!event || !url) return;
+    await Share.share({ message: `${label} for ${event.name}: ${url}`, url });
   }
 
   return (
@@ -42,19 +42,35 @@ export default function ShareEventScreen() {
         <>
           <Card>
             <SectionHeader title="Guest link" subtitle="Send this anywhere your guests already are." />
-            <Card tone="warm" padding={12}>
+            <View style={{ borderRadius: 18, borderCurve: "continuous", backgroundColor: colors.surfaceWarm, padding: 12, borderWidth: 1, borderColor: "#f1ddc4" }}>
               <Body>{event.eventLink}</Body>
-            </Card>
+            </View>
             {message ? <SuccessState message={message} /> : null}
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1 }}>
-                <Button onPress={shareLink}>Share</Button>
+                <Button onPress={() => shareLink("Guest upload link", event.eventLink)}>Share</Button>
               </View>
               <View style={{ flex: 1 }}>
-                <Button tone="secondary" onPress={copyLink}>Copy link</Button>
+                <Button tone="secondary" onPress={() => copyLink("Guest link", event.eventLink)}>Copy link</Button>
               </View>
             </View>
           </Card>
+
+          <ShareLinkCard
+            title="Live Wall"
+            subtitle="Open this on a laptop, TV, projector, or iPad while guests upload during the event."
+            url={event.liveWallLink}
+            onShare={() => shareLink("Live Wall link", event.liveWallLink)}
+            onCopy={() => copyLink("Live Wall link", event.liveWallLink)}
+          />
+
+          <ShareLinkCard
+            title="Recap"
+            subtitle="Share this polished album story after the reveal time."
+            url={event.recapLink}
+            onShare={() => shareLink("Recap link", event.recapLink)}
+            onCopy={() => copyLink("Recap link", event.recapLink)}
+          />
 
           <Card>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -70,5 +86,36 @@ export default function ShareEventScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+function ShareLinkCard({
+  title,
+  subtitle,
+  url,
+  onShare,
+  onCopy,
+}: {
+  title: string;
+  subtitle: string;
+  url?: string;
+  onShare: () => void;
+  onCopy: () => void;
+}) {
+  return (
+    <Card>
+      <SectionHeader title={title} subtitle={subtitle} />
+      <View style={{ borderRadius: 18, borderCurve: "continuous", backgroundColor: colors.surfaceWarm, padding: 12, borderWidth: 1, borderColor: "#f1ddc4" }}>
+        <Body>{url || "Link unavailable until the event reloads."}</Body>
+      </View>
+      <View style={{ flexDirection: "row", gap: 10 }}>
+        <View style={{ flex: 1 }}>
+          <Button disabled={!url} onPress={onShare}>Share</Button>
+        </View>
+        <View style={{ flex: 1 }}>
+          <Button tone="secondary" disabled={!url} onPress={onCopy}>Copy link</Button>
+        </View>
+      </View>
+    </Card>
   );
 }

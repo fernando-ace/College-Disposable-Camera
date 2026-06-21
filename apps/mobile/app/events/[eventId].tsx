@@ -1,9 +1,9 @@
 import * as React from "react";
 import { Link, useLocalSearchParams } from "expo-router";
-import { View } from "react-native";
+import { Linking, View } from "react-native";
 import type { EventSummary, Photo } from "@eventfilm/shared";
 import { challengeLabel } from "@eventfilm/shared";
-import { Badge, Button, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
+import { Badge, Body, Button, Card, EmptyState, ErrorState, HeroHeader, LoadingState, PhotoCard, Screen, SectionHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function formatDate(value: string) {
@@ -72,7 +72,7 @@ export default function EventDetailScreen() {
             <View style={{ flexDirection: "row", gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Link href={`/events/${event.id}/share`} asChild>
-                  <Button>Share QR</Button>
+                  <Button>Share links</Button>
                 </Link>
               </View>
               <View style={{ flex: 1 }}>
@@ -81,6 +81,18 @@ export default function EventDetailScreen() {
                 </Link>
               </View>
             </View>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
+              </View>
+            </View>
+            <Card tone="warm">
+              <SectionHeader title="Three links, three jobs" subtitle="Guest link is for uploads. Live Wall is for the room during the event. Recap is the polished album story to share after reveal." />
+              <Body tone="muted">Open the Live Wall on a laptop, TV, projector, or iPad while guests are uploading.</Body>
+            </Card>
             <Button tone="secondary" loading={loading} onPress={loadEvent}>Refresh photos</Button>
           </View>
 
