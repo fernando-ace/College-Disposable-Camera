@@ -49,6 +49,10 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto("/dashboard/events/new");
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
+
+    await page.goto("/dashboard/founder");
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
   });
 
   test("seeded guest, Live Wall, and Recap routes render", async ({ page, request }) => {

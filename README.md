@@ -86,6 +86,7 @@ DATABASE_URL="postgresql://postgres:postgres@localhost:5432/eventfilm?schema=pub
 NODE_ENV="development"
 JWT_SECRET="replace-with-a-long-random-secret"
 ANALYTICS_SALT="replace-with-a-long-random-analytics-salt"
+FOUNDER_EMAILS="you@example.com"
 CLIENT_URL="http://localhost:5173"
 SERVER_URL="http://localhost:4000"
 WEB_PUBLIC_URL="http://localhost:5173"
@@ -100,6 +101,11 @@ PORT="4000"
 
 `SUPABASE_SERVICE_ROLE_KEY` must stay server-side only. Do not expose it in the
 client app or commit a real key.
+
+`FOUNDER_EMAILS` is a comma-separated allowlist for `/dashboard/founder`. Only
+signed-in hosts whose email is listed can load the founder beta ops dashboard.
+If it is missing or empty, founder access is denied safely. Use example emails
+in docs and env examples; do not commit private real founder emails.
 
 In production, the API fails fast when required backend values are missing or
 when `JWT_SECRET` still uses the development fallback. Use deployed HTTPS
@@ -288,9 +294,11 @@ Guest:
 - Provision a hosted PostgreSQL database and run Prisma migrations before starting the server.
 - Create the private Supabase Storage bucket named by `SUPABASE_STORAGE_BUCKET`.
 - Configure backend environment variables on the deployment host: `DATABASE_URL`, `NODE_ENV=production`, `JWT_SECRET`, `ANALYTICS_SALT`, `WEB_PUBLIC_URL` or `CLIENT_URL`, `API_PUBLIC_URL` or `SERVER_URL`, `CLIENT_ORIGINS` if needed, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `MAX_FILE_SIZE_MB`, and `PORT`.
+- Configure `FOUNDER_EMAILS` on the API host before using `/dashboard/founder`; leave it empty to disable founder access.
 - Configure the frontend deployment with `VITE_API_URL` pointing at the deployed API.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
 - Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Live Wall, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
+- Verify the founder beta ops dashboard with an allowlisted host account: overview metrics, recent activity, feedback inbox, read-only reported photo review, template/mode insights, and CSV export for Unlock Alabama reporting.
 - See `docs/real-event-qa.md` before testing with a real host.
 - See `docs/deployment-readiness.md` for the deployment, storage, CORS, migration, EAS, smoke, and rollback checklists.
 - See `docs/beta-release-candidate-checklist.md` for the final deployed beta go/no-go checklist.
@@ -348,6 +356,7 @@ Required backend environment variables:
 DATABASE_URL="postgresql://..."
 JWT_SECRET="long-random-secret"
 ANALYTICS_SALT="long-random-analytics-salt"
+FOUNDER_EMAILS="you@example.com"
 WEB_PUBLIC_URL="https://your-frontend-domain"
 API_PUBLIC_URL="https://your-api-domain"
 CLIENT_ORIGINS="https://your-frontend-domain"

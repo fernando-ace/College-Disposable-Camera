@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const { jwtSecret } = require("./config");
+const { founderEmails, isFounderEmail, jwtSecret } = require("./config");
 
 function signToken(user) {
   return jwt.sign({ userId: user.id, email: user.email }, jwtSecret, { expiresIn: "7d" });
@@ -21,4 +21,13 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { signToken, requireAuth };
+function requireFounderAuth(req, res, next) {
+  return requireAuth(req, res, () => {
+    if (!founderEmails.length || !isFounderEmail(req.user?.email, founderEmails)) {
+      return res.status(403).json({ error: "Founder access required" });
+    }
+    next();
+  });
+}
+
+module.exports = { signToken, requireAuth, requireFounderAuth };

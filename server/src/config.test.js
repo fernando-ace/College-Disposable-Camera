@@ -1,6 +1,6 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { createConfig } = require("./config");
+const { createConfig, isFounderEmail, parseFounderEmails } = require("./config");
 
 const productionBaseEnv = {
   NODE_ENV: "production",
@@ -60,4 +60,19 @@ test("fails production config for localhost, http, wildcard, and invalid URLs", 
   expectProductionError({ API_PUBLIC_URL: "http://api.eventfilm.example.com" }, /API_PUBLIC_URL must use HTTPS in production/);
   expectProductionError({ CLIENT_ORIGINS: "*" }, /CLIENT_ORIGINS must not include wildcard origins/);
   expectProductionError({ WEB_PUBLIC_URL: "https://exa mple.com" }, /WEB_PUBLIC_URL must be a valid URL/);
+});
+
+test("parses founder email allowlist safely", () => {
+  assert.deepEqual(parseFounderEmails(""), []);
+  assert.deepEqual(parseFounderEmails(" Founder@Example.com, founder@example.com , second@example.com "), ["founder@example.com", "second@example.com"]);
+});
+
+test("founder allowlist denies by default and matches normalized emails", () => {
+  const emptyConfig = createConfig({ NODE_ENV: "development", FOUNDER_EMAILS: "" });
+  const allowedConfig = createConfig({ NODE_ENV: "development", FOUNDER_EMAILS: "founder@example.com,second@example.com" });
+
+  assert.deepEqual(emptyConfig.founderEmails, []);
+  assert.equal(isFounderEmail("founder@example.com", emptyConfig.founderEmails), false);
+  assert.equal(isFounderEmail(" Founder@Example.com ", allowedConfig.founderEmails), true);
+  assert.equal(isFounderEmail("guest@example.com", allowedConfig.founderEmails), false);
 });

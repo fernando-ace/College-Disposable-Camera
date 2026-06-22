@@ -38,6 +38,7 @@ SERVER_URL="http://localhost:4000"
 WEB_PUBLIC_URL="http://localhost:5173"
 API_PUBLIC_URL="http://localhost:4000"
 CLIENT_ORIGINS=""
+FOUNDER_EMAILS="you@example.com"
 VITE_API_URL="http://localhost:4000"
 EXPO_PUBLIC_API_URL="http://localhost:4000"
 EXPO_PUBLIC_RELEASE_CHANNEL="development"
@@ -51,6 +52,7 @@ SERVER_URL="http://192.168.1.25:4000"
 WEB_PUBLIC_URL="http://localhost:5173"
 API_PUBLIC_URL="http://192.168.1.25:4000"
 CLIENT_ORIGINS="http://localhost:5173"
+FOUNDER_EMAILS="you@example.com"
 VITE_API_URL="http://localhost:4000"
 EXPO_PUBLIC_API_URL="http://192.168.1.25:4000"
 EXPO_PUBLIC_RELEASE_CHANNEL="development"
@@ -65,6 +67,7 @@ NODE_ENV="production"
 WEB_PUBLIC_URL="https://preview.your-eventfilm-domain.com"
 API_PUBLIC_URL="https://api-preview.your-eventfilm-domain.com"
 CLIENT_ORIGINS="https://preview.your-eventfilm-domain.com"
+FOUNDER_EMAILS="you@example.com"
 VITE_API_URL="https://api-preview.your-eventfilm-domain.com"
 EXPO_PUBLIC_API_URL="https://api-preview.your-eventfilm-domain.com"
 EXPO_PUBLIC_RELEASE_CHANNEL="preview"
@@ -77,6 +80,7 @@ NODE_ENV="production"
 WEB_PUBLIC_URL="https://your-eventfilm-domain.com"
 API_PUBLIC_URL="https://api.your-eventfilm-domain.com"
 CLIENT_ORIGINS="https://your-eventfilm-domain.com"
+FOUNDER_EMAILS="you@example.com"
 VITE_API_URL="https://api.your-eventfilm-domain.com"
 EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
 EXPO_PUBLIC_RELEASE_CHANNEL="production"
@@ -106,6 +110,22 @@ Mobile preview public values:
 `CLIENT_URL` and `SERVER_URL` still work for existing hosts. `WEB_PUBLIC_URL` and `API_PUBLIC_URL` are aliases for the same public values. `CLIENT_ORIGIN` or comma-separated `CLIENT_ORIGINS` can add allowed CORS origins for preview domains.
 
 Production startup fails if required database/storage config is missing, if production public URLs point at localhost or non-HTTPS, if wildcard CORS is configured, if `JWT_SECRET` uses the dev fallback, or if production secrets are too short.
+
+`FOUNDER_EMAILS` is a server-only comma-separated allowlist for `/dashboard/founder`. Only authenticated host accounts with a listed email can load the founder beta ops dashboard. Missing or empty values deny access safely. Do not commit real private founder emails; use examples such as `you@example.com` in docs and env templates.
+
+## Founder Beta Ops Dashboard
+
+After signing in with an allowlisted host account, open `/dashboard/founder`.
+
+Use it to check:
+
+- overview metrics: hosts, active hosts in the last 30 days, events, guest joins, uploads, contributors, Recap opens, Live Wall opens, feedback submissions, reports, and hidden photos.
+- recent activity: event creation, guest joins, uploads, Live Wall/Recap opens, host feedback, reported photos, duplicate events, and Event Awards votes when tracked.
+- founder inboxes: recent host feedback and read-only reported photo review.
+- product usage: event modes, event templates, prompt packs, Event Awards votes, Color Hunt usage, and Memory Capsule usage.
+- Unlock Alabama reporting: export the summarized CSV from the dashboard and report the metric definitions shown on the page.
+
+The founder reported-photo section is intentionally read-only. Host-owned moderation remains in the existing event dashboard, and hidden photos are still not exposed through public photo routes.
 
 ## Provider Readiness
 

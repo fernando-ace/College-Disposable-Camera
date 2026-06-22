@@ -10,8 +10,9 @@ const { ZipArchive } = require("archiver");
 const QRCode = require("qrcode");
 const rateLimit = require("express-rate-limit");
 const prisma = require("./prisma");
-const { signToken, requireAuth } = require("./auth");
+const { signToken, requireAuth, requireFounderAuth } = require("./auth");
 const { port, clientUrl, clientOrigins, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction } = require("./config");
+const { buildFounderOverview } = require("./founder");
 const {
   createPhotoObjectKey,
   getPhotoPreviewUrl,
@@ -121,6 +122,11 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "host_feedback_skipped",
   "repeat_event_cta_clicked",
   "recap_shared_after_event",
+  "founder_dashboard_viewed",
+  "founder_feedback_inbox_viewed",
+  "founder_reported_photo_review_viewed",
+  "founder_event_opened_from_dashboard",
+  "founder_metrics_exported",
 ]);
 const PHOTO_VISIBILITY_VISIBLE = "VISIBLE";
 const PHOTO_VISIBILITY_HIDDEN = "HIDDEN";
@@ -161,6 +167,7 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "repeatIntent",
   "feedbackOutcome",
   "skipped",
+  "exportFormat",
 ]);
 
 const upload = multer({
@@ -971,6 +978,22 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       hostFeedback: hostFeedbackPayload(latestFeedback),
     },
   });
+});
+
+app.get("/api/founder/overview", requireFounderAuth, async (req, res) => {
+  try {
+    const overview = await buildFounderOverview({
+      prisma,
+      requesterUserId: req.user.userId,
+      clientUrl,
+      serverUrl,
+      getPhotoPreviewUrl,
+    });
+    res.json({ overview });
+  } catch (error) {
+    console.warn(`Founder overview failed: ${error.message}`);
+    res.status(500).json({ error: "Could not load founder overview" });
+  }
 });
 
 app.post("/api/auth/signup", async (req, res) => {

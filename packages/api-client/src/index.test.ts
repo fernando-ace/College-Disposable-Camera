@@ -105,6 +105,26 @@ test("event analytics summary uses the host event endpoint", async () => {
   assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201/analytics/summary");
 });
 
+test("founder overview helper uses founder endpoint with auth", async () => {
+  const calls: string[] = [];
+  let authHeader = "";
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      authHeader = String(new Headers(init?.headers).get("Authorization") || "");
+      return new Response(JSON.stringify({ overview: { overview: {}, funnel: {}, recentEvents: [], activeEvents: [], recentUploads: [], recentFeedback: [], reportedPhotos: [], usage: {}, activity: [], metricDefinitions: {}, generatedAt: "now" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.getFounderOverview("token");
+  assert.equal(calls[0], "https://api.eventfilm.test/api/founder/overview");
+  assert.equal(authHeader, "Bearer token");
+});
+
 test("live wall and recap helpers accept optional clientId query", async () => {
   const calls: string[] = [];
   const client = createEventFilmApiClient({

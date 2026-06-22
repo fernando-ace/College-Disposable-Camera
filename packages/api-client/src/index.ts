@@ -4,6 +4,7 @@ import type {
   EventChallenge,
   EventChallengeInput,
   EventSummary,
+  FounderOverview,
   HostFeedbackInput,
   GuestStatus,
   AwardVotingSummary,
@@ -127,6 +128,10 @@ export type EventAnalyticsSummary = {
   activeGuests: number;
   eventAwardsVoting?: AwardVotingSummary;
   hostFeedback?: HostEventFeedback | null;
+};
+
+export type FounderOverviewResponse = {
+  overview: FounderOverview;
 };
 
 export type HostEventFeedback = {
@@ -308,6 +313,9 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
         auth: !token,
         token,
       });
+    },
+    getFounderOverview(token?: string | null) {
+      return request<FounderOverviewResponse>("/api/founder/overview", { auth: !token, token });
     },
     getHostEvents(token?: string | null) {
       return request<{ events: EventSummary[] }>("/api/host/events", { auth: !token, token });

@@ -47,7 +47,7 @@ import {
   validateChallengeDraft,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventSummary, EventTemplateSlug, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostLaunchKit, HostShareAssets, HostShareLinkCard, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventSummary, EventTemplateSlug, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostLaunchKit, HostShareAssets, HostShareLinkCard, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -212,6 +212,22 @@ function downloadDataUrl(dataUrl: string, filename: string) {
 
 function safeFilename(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "eventfilm";
+}
+
+function csvCell(value: unknown) {
+  const text = String(value ?? "");
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function downloadCsv(rows: Array<Array<string | number | null | undefined>>, filename: string) {
+  const csv = rows.map((row) => row.map(csvCell).join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 async function copyText(text: string) {
@@ -1997,6 +2013,7 @@ function Dashboard() {
             <p className="mt-3 max-w-2xl text-stone-200">{auth.user?.email}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20 transition hover:bg-white/15" to="/dashboard/founder">Founder ops</Link>
             <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20 transition hover:bg-white/15" to="/dashboard/beta-readiness">Beta readiness</Link>
             <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400" to="/dashboard/events/new">Create event</Link>
           </div>
@@ -2194,6 +2211,336 @@ function BetaReadiness() {
         )}
       </section>
     </Shell>
+  );
+}
+
+const FOUNDER_METRIC_LABELS: Array<[keyof FounderOverview["overview"], string, "default" | "accent" | "green" | "plum"]> = [
+  ["totalHosts", "Total hosts", "default"],
+  ["activeHostsLast30Days", "Active hosts 30d", "green"],
+  ["totalEvents", "Total events", "default"],
+  ["eventsCreatedLast7Days", "Events 7d", "accent"],
+  ["eventsCreatedLast30Days", "Events 30d", "accent"],
+  ["totalGuestJoins", "Guest joins", "green"],
+  ["totalUploads", "Uploads", "accent"],
+  ["uploadsLast7Days", "Uploads 7d", "accent"],
+  ["totalContributors", "Contributors", "green"],
+  ["totalRecapOpens", "Recap opens", "plum"],
+  ["totalLiveWallOpens", "Live Wall opens", "green"],
+  ["totalFeedbackSubmissions", "Feedback", "default"],
+  ["totalReportedPhotos", "Reports", "default"],
+  ["hiddenPhotoCount", "Hidden photos", "default"],
+];
+
+function FounderDashboard() {
+  const auth = useAuth();
+  const [overview, setOverview] = useState<FounderOverview | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const sectionTracked = useRef(false);
+
+  useEffect(() => {
+    trackAnalytics("founder_dashboard_viewed");
+    eventFilmApi
+      .getFounderOverview(auth.token)
+      .then((data) => {
+        setOverview(data.overview);
+        setError("");
+      })
+      .catch((err) => setError((err as Error).message))
+      .finally(() => setLoading(false));
+  }, [auth.token]);
+
+  useEffect(() => {
+    if (!overview || sectionTracked.current) return;
+    sectionTracked.current = true;
+    trackAnalytics("founder_feedback_inbox_viewed", { metadata: { surface: "founder_dashboard" } });
+    trackAnalytics("founder_reported_photo_review_viewed", { metadata: { surface: "founder_dashboard" } });
+  }, [overview]);
+
+  function exportMetrics() {
+    if (!overview) return;
+    const rows: Array<Array<string | number>> = [
+      ["Metric", "Value", "Definition"],
+      ...FOUNDER_METRIC_LABELS.map(([key, label]) => [label, overview.overview[key], overview.metricDefinitions[key] || ""]),
+      ["Funnel hosts", overview.funnel.hosts, "Registered host accounts"],
+      ["Funnel events", overview.funnel.events, "All created events"],
+      ["Funnel guest joins", overview.funnel.guestJoins, "Tracked guest joins"],
+      ["Funnel uploads", overview.funnel.uploads, "Stored non-deleted photos"],
+      ["Funnel Live Wall opens", overview.funnel.liveWallOpens, "Tracked Live Wall opens"],
+      ["Funnel Recap opens", overview.funnel.recapOpens, "Tracked Recap opens"],
+      ["Funnel feedback", overview.funnel.feedbackSubmissions, "Saved host feedback rows"],
+      ["Event Awards votes", overview.usage.eventAwardsVotes, "Stored Event Awards vote rows"],
+      ["Color Hunt events", overview.usage.colorHuntEvents, "Events using Color Hunt"],
+      ["Memory Capsule events", overview.usage.memoryCapsuleEvents, "Events using Memory Capsule"],
+    ];
+    downloadCsv(rows, `eventfilm-founder-metrics-${new Date().toISOString().slice(0, 10)}.csv`);
+    trackAnalytics("founder_metrics_exported", { metadata: { surface: "founder_dashboard", exportFormat: "csv" } });
+  }
+
+  function trackEventOpen(eventId: string, eventSlug: string, label: string) {
+    trackAnalytics("founder_event_opened_from_dashboard", { eventId, eventSlug, metadata: { surface: "founder_dashboard", label } });
+  }
+
+  if (loading) {
+    return (
+      <Shell wide>
+        <Card className="text-center">
+          <StatusPill>Founder ops</StatusPill>
+          <h1 className="mt-4 font-display text-3xl font-bold">Loading founder dashboard</h1>
+          <p className="mt-2 text-stone-600">Gathering beta signals across EventFilm.</p>
+        </Card>
+      </Shell>
+    );
+  }
+
+  if (error || !overview) {
+    return (
+      <Shell wide>
+        <Card className="text-center">
+          <StatusPill tone="red">Founder access</StatusPill>
+          <h1 className="mt-4 font-display text-3xl font-bold">Founder dashboard unavailable</h1>
+          <p className="mx-auto mt-2 max-w-xl text-stone-600">{error || "Founder overview could not be loaded."}</p>
+          <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950" to="/dashboard">Back to dashboard</Link>
+        </Card>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell wide>
+      <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <StatusPill tone="plum">Founder beta ops</StatusPill>
+            <h1 className="mt-4 font-display text-4xl font-bold sm:text-5xl">What is happening across EventFilm?</h1>
+            <p className="mt-3 max-w-2xl text-stone-200">Traction, feedback, reports, modes, and Unlock Alabama-ready signals in one private view.</p>
+            <p className="mt-2 text-sm font-semibold text-stone-400">Generated {formatDateTime(overview.generatedAt)}</p>
+          </div>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            <SecondaryButton type="button" onClick={exportMetrics}>Export CSV</SecondaryButton>
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-amber-500 px-5 py-3 text-sm font-extrabold text-stone-950 shadow-sm transition hover:bg-amber-400" to="/dashboard">Host dashboard</Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {FOUNDER_METRIC_LABELS.map(([key, label, tone]) => (
+          <MetricCard key={key} label={label} value={overview.overview[key]} tone={tone} />
+        ))}
+      </section>
+
+      <section className="mt-8 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
+        <Card>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h2 className="font-display text-2xl font-bold">Beta funnel</h2>
+              <p className="mt-1 text-sm text-stone-600">A quick story from host accounts to post-event signals.</p>
+            </div>
+            <StatusPill>Unlock Alabama</StatusPill>
+          </div>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              ["Hosts", overview.funnel.hosts],
+              ["Events", overview.funnel.events],
+              ["Guest joins", overview.funnel.guestJoins],
+              ["Uploads", overview.funnel.uploads],
+              ["Live Wall", overview.funnel.liveWallOpens],
+              ["Recap", overview.funnel.recapOpens],
+              ["Feedback", overview.funnel.feedbackSubmissions],
+            ].map(([label, value]) => (
+              <div className="rounded-[1.15rem] bg-[#fffaf6] p-4" key={label}>
+                <p className="text-xs font-extrabold uppercase text-stone-500">{label}</p>
+                <p className="mt-2 font-display text-2xl font-bold text-[#653e00]">{value}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <h2 className="font-display text-2xl font-bold">Recent activity</h2>
+          <div className="mt-4 grid gap-3">
+            {overview.activity.slice(0, 8).map((item) => (
+              <div className="rounded-[1.15rem] bg-stone-50 p-4" key={item.id}>
+                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="font-bold text-stone-950">{item.label}</p>
+                  <p className="text-xs font-bold uppercase text-stone-500">{formatDateTime(item.createdAt)}</p>
+                </div>
+                <p className="mt-1 text-sm text-stone-600">{item.eventName}</p>
+              </div>
+            ))}
+            {!overview.activity.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">No beta activity yet.</p>}
+          </div>
+        </Card>
+      </section>
+
+      <section className="mt-8 grid gap-5 lg:grid-cols-2">
+        <FounderEventList title="Active events" events={overview.activeEvents} empty="No active events need attention." onOpen={trackEventOpen} />
+        <FounderEventList title="Recent events" events={overview.recentEvents} empty="No events have been created yet." onOpen={trackEventOpen} />
+      </section>
+
+      <section className="mt-8 grid gap-5 lg:grid-cols-[1fr_1fr]">
+        <FounderFeedbackInbox feedback={overview.recentFeedback} />
+        <FounderReportedPhotos reports={overview.reportedPhotos} />
+      </section>
+
+      <section className="mt-8 grid gap-5 lg:grid-cols-3">
+        <FounderUsageCard title="Event modes" rows={overview.usage.eventModes} empty="No modes used yet." />
+        <FounderUsageCard title="Templates" rows={overview.usage.eventTemplates} empty="No templates used yet." />
+        <FounderUsageCard title="Prompt packs" rows={overview.usage.promptPacks} empty="No prompt packs used yet." />
+      </section>
+
+      <section className="mt-8 grid gap-5 lg:grid-cols-3">
+        <MetricCard label="Event Awards votes" value={overview.usage.eventAwardsVotes} tone="plum" />
+        <MetricCard label="Color Hunt events" value={overview.usage.colorHuntEvents} tone="green" />
+        <MetricCard label="Memory Capsule events" value={overview.usage.memoryCapsuleEvents} tone="accent" />
+      </section>
+
+      <section className="mt-8">
+        <Card>
+          <h2 className="font-display text-2xl font-bold">Metric definitions</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {Object.entries(overview.metricDefinitions).map(([key, value]) => (
+              <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm text-stone-700" key={key}>
+                <strong className="text-stone-950">{key}:</strong> {value}
+              </p>
+            ))}
+          </div>
+        </Card>
+      </section>
+    </Shell>
+  );
+}
+
+function FounderEventList({ title, events, empty, onOpen }: { title: string; events: FounderOverview["recentEvents"]; empty: string; onOpen: (eventId: string, eventSlug: string, label: string) => void }) {
+  return (
+    <Card>
+      <h2 className="font-display text-2xl font-bold">{title}</h2>
+      <div className="mt-4 grid gap-4">
+        {events.map((event) => (
+          <div className="rounded-[1.25rem] border border-[#eadfce] bg-[#fffaf6] p-4" key={event.id}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <StatusPill tone={event.reportCount ? "red" : event.photoCount ? "green" : "stone"}>{event.modeLabel}</StatusPill>
+                <h3 className="mt-3 font-display text-xl font-bold text-stone-950">{event.name}</h3>
+                <p className="mt-1 text-sm text-stone-600">{event.hostEmail || "Unknown host"}</p>
+                <p className="text-sm text-stone-600">Created {formatDateTime(event.createdAt)}</p>
+              </div>
+              <div className="rounded-[1rem] bg-white px-4 py-3 text-center">
+                <p className="font-display text-2xl font-bold text-[#d94f33]">{event.photoCount}</p>
+                <p className="text-xs font-bold uppercase text-stone-500">Photos</p>
+              </div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {event.hostEventPath && <Link className="rounded-full bg-stone-950 px-3 py-2 text-xs font-bold text-white hover:bg-stone-800" to={event.hostEventPath} onClick={() => onOpen(event.id, event.slug, "host_event_detail")}>Manage</Link>}
+              <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={event.eventLink} target="_blank" rel="noreferrer" onClick={() => onOpen(event.id, event.slug, "guest_link")}>Guest link</a>
+              <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={event.liveWallLink} target="_blank" rel="noreferrer" onClick={() => onOpen(event.id, event.slug, "live_wall")}>Live Wall</a>
+              <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={event.recapLink} target="_blank" rel="noreferrer" onClick={() => onOpen(event.id, event.slug, "recap")}>Recap</a>
+            </div>
+          </div>
+        ))}
+        {!events.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">{empty}</p>}
+      </div>
+    </Card>
+  );
+}
+
+function FounderFeedbackInbox({ feedback }: { feedback: FounderOverview["recentFeedback"] }) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold">Host feedback inbox</h2>
+          <p className="mt-1 text-sm text-stone-600">Recent host notes, repeat intent, confusion, and feature asks.</p>
+        </div>
+        <StatusPill>{feedback.length}</StatusPill>
+      </div>
+      <div className="mt-4 grid gap-4">
+        {feedback.map((item) => (
+          <div className="rounded-[1.25rem] bg-[#fffaf6] p-4" key={item.id}>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-display text-xl font-bold text-stone-950">{item.eventName}</h3>
+                <p className="mt-1 text-sm text-stone-600">{item.hostEmail || "Unknown host"} - {formatDateTime(item.createdAt)}</p>
+              </div>
+              <StatusPill tone={item.skippedAt ? "stone" : item.outcome === "great" ? "green" : item.outcome === "rough" ? "red" : "amber"}>{item.skippedAt ? "Skipped" : item.outcome || "Feedback"}</StatusPill>
+            </div>
+            <div className="mt-3 grid gap-2 text-sm text-stone-700">
+              <p><strong className="text-stone-950">Would use again:</strong> {item.repeatIntent || "Not answered"}</p>
+              {item.guestConfusion && <p><strong className="text-stone-950">Confusion:</strong> {item.guestConfusion}</p>}
+              {item.featureRequest && <p><strong className="text-stone-950">Feature request:</strong> {item.featureRequest}</p>}
+              {item.note && <p><strong className="text-stone-950">Note:</strong> {item.note}</p>}
+            </div>
+            {item.hostEventPath && <Link className="mt-3 inline-flex text-sm font-bold text-[#653e00] hover:text-stone-950" to={item.hostEventPath}>Open event</Link>}
+          </div>
+        ))}
+        {!feedback.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">No host feedback has been submitted yet.</p>}
+      </div>
+    </Card>
+  );
+}
+
+function FounderReportedPhotos({ reports }: { reports: FounderOverview["reportedPhotos"] }) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold">Reported photo review</h2>
+          <p className="mt-1 text-sm text-stone-600">Read-only founder view. Host-owned moderation remains the action path.</p>
+        </div>
+        <StatusPill tone={reports.length ? "red" : "green"}>{reports.length}</StatusPill>
+      </div>
+      <div className="mt-4 grid gap-4">
+        {reports.map((report) => (
+          <div className="rounded-[1.25rem] bg-[#fffaf6] p-4" key={report.id}>
+            <div className="flex gap-4">
+              <div className="h-24 w-20 shrink-0 overflow-hidden rounded-[1rem] bg-stone-200">
+                {report.previewUrl ? <img className="h-full w-full object-cover" src={report.previewUrl} alt={`${report.eventName} reported photo`} /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs font-bold text-stone-500">No public preview</div>}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <h3 className="font-display text-xl font-bold text-stone-950">{report.eventName}</h3>
+                    <p className="mt-1 text-sm text-stone-600">{report.hostEmail || "Unknown host"} - {formatDateTime(report.createdAt)}</p>
+                  </div>
+                  <StatusPill tone={report.visibilityStatus === "HIDDEN" ? "stone" : "red"}>{report.visibilityStatus === "HIDDEN" ? "Hidden" : `${report.reportCount} reported`}</StatusPill>
+                </div>
+                <p className="mt-2 text-sm text-stone-700"><strong className="text-stone-950">Reason:</strong> {report.reason}</p>
+                {report.note && <p className="mt-1 text-sm text-stone-700"><strong className="text-stone-950">Note:</strong> {report.note}</p>}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {report.hostEventPath && <Link className="rounded-full bg-stone-950 px-3 py-2 text-xs font-bold text-white hover:bg-stone-800" to={report.hostEventPath}>Open host event</Link>}
+                  {report.recapLink && <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={report.recapLink} target="_blank" rel="noreferrer">Recap</a>}
+                  {report.liveWallLink && <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={report.liveWallLink} target="_blank" rel="noreferrer">Live Wall</a>}
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+        {!reports.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">No open reported photos need review.</p>}
+      </div>
+    </Card>
+  );
+}
+
+function FounderUsageCard({ title, rows, empty }: { title: string; rows: FounderOverview["usage"]["eventModes"]; empty: string }) {
+  return (
+    <Card>
+      <h2 className="font-display text-2xl font-bold">{title}</h2>
+      <div className="mt-4 grid gap-3">
+        {rows.map((row) => (
+          <div className="rounded-[1.15rem] bg-stone-50 p-4" key={row.key}>
+            <div className="flex items-center justify-between gap-3">
+              <p className="font-bold text-stone-950">{row.label}</p>
+              <p className="font-display text-2xl font-bold text-[#653e00]">{row.count}</p>
+            </div>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-white">
+              <div className="h-full rounded-full bg-[#e85d3f]" style={{ width: `${Math.max(4, row.percent)}%` }} />
+            </div>
+            <p className="mt-1 text-xs font-bold uppercase text-stone-500">{row.percent}% of events</p>
+          </div>
+        ))}
+        {!rows.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">{empty}</p>}
+      </div>
+    </Card>
   );
 }
 
@@ -3847,6 +4194,7 @@ function App() {
             <Route path="/signup" element={<AuthForm mode="signup" />} />
             <Route path="/login" element={<AuthForm mode="login" />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/dashboard/founder" element={<ProtectedRoute><FounderDashboard /></ProtectedRoute>} />
             <Route path="/dashboard/beta-readiness" element={<ProtectedRoute><BetaReadiness /></ProtectedRoute>} />
             <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
             <Route path="/dashboard/events/:eventId/poster" element={<ProtectedRoute><EventPosterPage /></ProtectedRoute>} />

@@ -80,6 +80,22 @@ function parseClientOrigins(env, primaryClientUrl, production) {
   return [...new Set(origins)];
 }
 
+function parseFounderEmails(value) {
+  return [
+    ...new Set(
+      String(value || "")
+        .split(",")
+        .map((email) => email.trim().toLowerCase())
+        .filter(Boolean),
+    ),
+  ];
+}
+
+function isFounderEmail(email, founderEmails) {
+  const normalized = String(email || "").trim().toLowerCase();
+  return Boolean(normalized && founderEmails.includes(normalized));
+}
+
 function createConfig(env = process.env) {
   const isProduction = isProductionEnv(env);
   const maxFileSizeMb = Number(env.MAX_FILE_SIZE_MB || 10);
@@ -95,6 +111,7 @@ function createConfig(env = process.env) {
   const clientUrl = normalizeBaseUrl(requireEnv(env, ["CLIENT_URL", "WEB_PUBLIC_URL"], "http://localhost:5173"), "WEB_PUBLIC_URL", { production: isProduction });
   const serverUrl = normalizeBaseUrl(requireEnv(env, ["SERVER_URL", "API_PUBLIC_URL"], "http://localhost:4000"), "API_PUBLIC_URL", { production: isProduction });
   const clientOrigins = parseClientOrigins(env, clientUrl, isProduction);
+  const founderEmails = parseFounderEmails(env.FOUNDER_EMAILS);
 
   return {
     port: Number(env.PORT || 4000),
@@ -107,6 +124,7 @@ function createConfig(env = process.env) {
     serverUrl,
     apiPublicUrl: serverUrl,
     clientOrigins,
+    founderEmails,
     maxFileSizeMb,
     maxFileSizeBytes: maxFileSizeMb * 1024 * 1024,
     supabaseUrl: requireEnv(env, "SUPABASE_URL", ""),
@@ -118,4 +136,6 @@ function createConfig(env = process.env) {
 module.exports = {
   ...createConfig(),
   createConfig,
+  isFounderEmail,
+  parseFounderEmails,
 };

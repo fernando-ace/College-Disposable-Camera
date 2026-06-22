@@ -394,6 +394,11 @@ export const ANALYTICS_EVENT_NAMES = [
   "host_feedback_skipped",
   "repeat_event_cta_clicked",
   "recap_shared_after_event",
+  "founder_dashboard_viewed",
+  "founder_feedback_inbox_viewed",
+  "founder_reported_photo_review_viewed",
+  "founder_event_opened_from_dashboard",
+  "founder_metrics_exported",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
@@ -454,6 +459,152 @@ export const BETA_METRIC_DEFINITIONS = {
 } as const;
 
 export type BetaMetricKey = keyof typeof BETA_METRIC_DEFINITIONS;
+
+export type FounderOverviewMetrics = {
+  totalHosts: number;
+  activeHostsLast30Days: number;
+  totalEvents: number;
+  eventsCreatedLast7Days: number;
+  eventsCreatedLast30Days: number;
+  totalGuestJoins: number;
+  totalUploads: number;
+  uploadsLast7Days: number;
+  totalContributors: number;
+  totalRecapOpens: number;
+  totalLiveWallOpens: number;
+  totalFeedbackSubmissions: number;
+  totalReportedPhotos: number;
+  hiddenPhotoCount: number;
+};
+
+export type FounderFunnelMetrics = {
+  hosts: number;
+  events: number;
+  guestJoins: number;
+  uploads: number;
+  liveWallOpens: number;
+  recapOpens: number;
+  feedbackSubmissions: number;
+};
+
+export type FounderEventSummary = {
+  id: string;
+  name: string;
+  slug: string;
+  hostEmail?: string | null;
+  isOwnEvent: boolean;
+  eventDate: ISODateString;
+  revealAt: ISODateString;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+  eventTemplateSlug?: string | null;
+  promptPackSlug?: string | null;
+  mode: ChallengeMode | ChallengeType | string;
+  modeLabel: string;
+  photoCount: number;
+  guestCount: number;
+  reportCount: number;
+  eventLink: string;
+  liveWallLink: string;
+  recapLink: string;
+  hostEventPath?: string | null;
+};
+
+export type FounderUploadSummary = {
+  id: string;
+  eventId: string;
+  eventName: string;
+  eventSlug: string;
+  guestNickname?: string | null;
+  createdAt: ISODateString;
+  visibilityStatus?: PhotoVisibilityStatus;
+  challengeItemLabel?: string | null;
+  previewUrl?: string | null;
+  eventLink?: string | null;
+  liveWallLink?: string | null;
+  recapLink?: string | null;
+};
+
+export type FounderFeedbackSummary = {
+  id: string;
+  eventId: string;
+  eventName: string;
+  eventSlug: string;
+  hostEmail?: string | null;
+  isOwnEvent: boolean;
+  hostEventPath?: string | null;
+  outcome?: string | null;
+  repeatIntent?: string | null;
+  guestConfusion?: string | null;
+  featureRequest?: string | null;
+  note?: string | null;
+  skippedAt?: ISODateString | null;
+  createdAt: ISODateString;
+  updatedAt: ISODateString;
+};
+
+export type FounderReportedPhotoSummary = {
+  id: string;
+  photoId: string;
+  eventId: string;
+  eventName: string;
+  eventSlug: string;
+  hostEmail?: string | null;
+  isOwnEvent: boolean;
+  hostEventPath?: string | null;
+  reason: string;
+  note?: string | null;
+  createdAt: ISODateString;
+  reviewedAt?: ISODateString | null;
+  dismissedAt?: ISODateString | null;
+  reportCount: number;
+  visibilityStatus: PhotoVisibilityStatus;
+  hiddenReason?: string | null;
+  previewUrl?: string | null;
+  eventLink?: string | null;
+  liveWallLink?: string | null;
+  recapLink?: string | null;
+};
+
+export type FounderUsageRow = {
+  key: string;
+  label: string;
+  count: number;
+  percent: number;
+};
+
+export type FounderUsageInsights = {
+  eventModes: FounderUsageRow[];
+  eventTemplates: FounderUsageRow[];
+  promptPacks: FounderUsageRow[];
+  eventAwardsVotes: number;
+  colorHuntEvents: number;
+  memoryCapsuleEvents: number;
+};
+
+export type FounderActivityItem = {
+  id: string;
+  type: string;
+  label: string;
+  eventId?: string | null;
+  eventName: string;
+  eventSlug?: string | null;
+  createdAt: ISODateString;
+};
+
+export type FounderOverview = {
+  generatedAt: ISODateString;
+  overview: FounderOverviewMetrics;
+  funnel: FounderFunnelMetrics;
+  recentEvents: FounderEventSummary[];
+  activeEvents: FounderEventSummary[];
+  recentUploads: FounderUploadSummary[];
+  recentFeedback: FounderFeedbackSummary[];
+  reportedPhotos: FounderReportedPhotoSummary[];
+  usage: FounderUsageInsights;
+  activity: FounderActivityItem[];
+  metricDefinitions: Record<string, string>;
+};
 
 export type EventSummary = {
   id: string;

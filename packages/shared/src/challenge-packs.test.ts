@@ -129,6 +129,11 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_feedback_skipped"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("repeat_event_cta_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_shared_after_event"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_dashboard_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_feedback_inbox_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_reported_photo_review_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_event_opened_from_dashboard"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_metrics_exported"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
 });
 
