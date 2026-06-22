@@ -144,7 +144,8 @@ Vercel build settings:
 - Use Node.js 22.x for the web deployment.
 - Do not omit optional dependencies during install. Avoid install commands that use `--omit=optional` or `--no-optional`.
 - If a custom install command is needed, make optional dependencies explicit, for example `npm install --include=optional`.
-- If the build fails with a Rolldown native binding error such as missing `@rolldown/binding-linux-x64-gnu`, clear the Vercel build cache and redeploy after the package and lockfile fix is committed.
+- The client package intentionally pins Linux native optional dependencies for Vercel: `@rolldown/binding-linux-x64-gnu` and `@tailwindcss/oxide-linux-x64-gnu`.
+- After changing native optional dependencies, redeploy from Vercel with Clear Build Cache.
 
 Railway API from `server/`:
 
