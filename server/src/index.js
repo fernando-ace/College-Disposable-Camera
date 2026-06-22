@@ -112,6 +112,15 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "challenge_progress_viewed",
   "guest_share_clicked",
   "guest_returned_to_event",
+  "event_lifecycle_viewed",
+  "post_event_summary_viewed",
+  "duplicate_event_clicked",
+  "duplicate_event_created",
+  "host_feedback_opened",
+  "host_feedback_submitted",
+  "host_feedback_skipped",
+  "repeat_event_cta_clicked",
+  "recap_shared_after_event",
 ]);
 const PHOTO_VISIBILITY_VISIBLE = "VISIBLE";
 const PHOTO_VISIBILITY_HIDDEN = "HIDDEN";
@@ -146,6 +155,12 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "method",
   "photoCount",
   "remainingUploads",
+  "lifecycleStatus",
+  "duplicateSourceEventId",
+  "duplicateEventId",
+  "repeatIntent",
+  "feedbackOutcome",
+  "skipped",
 ]);
 
 const upload = multer({
@@ -645,6 +660,64 @@ function challengeCreateData(eventId, challengeSetup) {
   };
 }
 
+function addHours(date, hours) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function duplicateEventDefaults(event, overrides = {}) {
+  const eventDate = overrides.eventDate ? new Date(overrides.eventDate) : addDays(new Date(), 7);
+  const revealAt = overrides.revealAt ? new Date(overrides.revealAt) : addHours(eventDate, 4);
+  return {
+    name: String(overrides.name || `${event.name} (Copy)`).trim(),
+    description: typeof overrides.description === "string" ? overrides.description.trim() || null : event.description,
+    eventDate,
+    revealAt,
+    photoLimitPerGuest: Number.isInteger(Number(overrides.photoLimitPerGuest)) ? Number(overrides.photoLimitPerGuest) : event.photoLimitPerGuest,
+  };
+}
+
+function cleanFeedbackText(value, maxLength) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  return normalized ? normalized.slice(0, maxLength).trim() : null;
+}
+
+function validateHostFeedback(input = {}) {
+  if (input.skipped) {
+    return { skipped: true, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note: null };
+  }
+  const outcome = ["great", "okay", "rough"].includes(input.outcome) ? input.outcome : null;
+  const repeatIntent = ["yes", "maybe", "no"].includes(input.repeatIntent) ? input.repeatIntent : null;
+  if (!outcome) throw new Error("Choose how the event went.");
+  if (!repeatIntent) throw new Error("Choose whether you would use EventFilm again.");
+  return {
+    skipped: false,
+    outcome,
+    repeatIntent,
+    guestConfusion: cleanFeedbackText(input.guestConfusion, 500),
+    featureRequest: cleanFeedbackText(input.featureRequest, 500),
+    note: cleanFeedbackText(input.note, 1000),
+  };
+}
+
+function hostFeedbackPayload(feedback) {
+  if (!feedback) return null;
+  return {
+    id: feedback.id,
+    outcome: feedback.outcome,
+    repeatIntent: feedback.repeatIntent,
+    guestConfusion: feedback.guestConfusion,
+    featureRequest: feedback.featureRequest,
+    note: feedback.note,
+    skippedAt: feedback.skippedAt,
+    createdAt: feedback.createdAt,
+    updatedAt: feedback.updatedAt,
+  };
+}
+
 function eventPayload(event, { includePhotos = false, includeModeration = false } = {}) {
   const challenge = event.challenges?.[0] || null;
   return {
@@ -854,6 +927,7 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     liveWallOpens,
     recapOpens,
     activeGuestRows,
+    latestFeedback,
   ] = await Promise.all([
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id }) }),
     prisma.photo.count({ where: visiblePhotoWhere({ eventId: event.id }) }),
@@ -873,6 +947,10 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       distinct: ["anonymousIdHash"],
       select: { anonymousIdHash: true },
     }),
+    prisma.hostEventFeedback.findFirst({
+      where: { eventId: event.id, hostId: req.user.userId },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   res.json({
@@ -890,6 +968,7 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       recapOpens,
       activeGuests: activeGuestRows.length,
       eventAwardsVoting: await loadAwardVotingSummary(event),
+      hostFeedback: hostFeedbackPayload(latestFeedback),
     },
   });
 });
@@ -1024,6 +1103,108 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
       qrCodeDataUrl,
     },
   });
+});
+
+app.post("/api/host/events/:eventId/duplicate", requireAuth, async (req, res) => {
+  const source = await prisma.event.findFirst({
+    where: { id: req.params.eventId, hostId: req.user.userId },
+    include: { challenges: activeChallengeInclude() },
+  });
+  if (!source) return res.status(404).json({ error: "Event not found" });
+
+  const defaults = duplicateEventDefaults(source, req.body || {});
+  if (!defaults.name) return res.status(400).json({ error: "Event name is required" });
+  if (!Number.isInteger(defaults.photoLimitPerGuest) || defaults.photoLimitPerGuest < 1) {
+    return res.status(400).json({ error: "Photo limit must be at least 1" });
+  }
+  if (Number.isNaN(defaults.eventDate.getTime()) || Number.isNaN(defaults.revealAt.getTime())) {
+    return res.status(400).json({ error: "Valid event and reveal dates are required" });
+  }
+
+  const sourceChallenge = source.challenges?.[0] || null;
+  let challengeSetup = null;
+  if (sourceChallenge) {
+    try {
+      challengeSetup = normalizeChallengeSetup(challengePayload(sourceChallenge));
+    } catch (error) {
+      return res.status(400).json({ error: `Could not copy event mode: ${error.message}` });
+    }
+  }
+
+  const slug = crypto.randomBytes(12).toString("base64url");
+  const event = await prisma.event.create({
+    data: {
+      hostId: req.user.userId,
+      name: defaults.name,
+      description: defaults.description,
+      slug,
+      eventDate: defaults.eventDate,
+      revealAt: defaults.revealAt,
+      photoLimitPerGuest: defaults.photoLimitPerGuest,
+      eventTemplateSlug: source.eventTemplateSlug,
+      promptPackSlug: source.promptPackSlug,
+      ...(challengeSetup
+        ? {
+            challenges: {
+              create: challengeCreateData(undefined, challengeSetup),
+            },
+          }
+        : {}),
+    },
+    include: { challenges: activeChallengeInclude(), _count: { select: { photos: { where: visiblePhotoWhere() } } } },
+  });
+
+  trackApiAnalytics("duplicate_event_created", {
+    userId: req.user.userId,
+    eventId: event.id,
+    eventSlug: event.slug,
+    metadata: { duplicateSourceEventId: source.id, duplicateEventId: event.id },
+  });
+
+  const eventLink = publicEventUrl(event.slug);
+  const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 320 });
+  res.status(201).json({ event: { ...eventPayload(event), qrCodeDataUrl } });
+});
+
+app.post("/api/host/events/:eventId/feedback", requireAuth, async (req, res) => {
+  const event = await prisma.event.findFirst({
+    where: { id: req.params.eventId, hostId: req.user.userId },
+    select: { id: true, slug: true },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  let feedbackInput;
+  try {
+    feedbackInput = validateHostFeedback(req.body || {});
+  } catch (error) {
+    return res.status(400).json({ error: error.message });
+  }
+
+  const feedback = await prisma.hostEventFeedback.create({
+    data: {
+      eventId: event.id,
+      hostId: req.user.userId,
+      outcome: feedbackInput.outcome,
+      repeatIntent: feedbackInput.repeatIntent,
+      guestConfusion: feedbackInput.guestConfusion,
+      featureRequest: feedbackInput.featureRequest,
+      note: feedbackInput.note,
+      skippedAt: feedbackInput.skipped ? new Date() : null,
+    },
+  });
+
+  trackApiAnalytics(feedbackInput.skipped ? "host_feedback_skipped" : "host_feedback_submitted", {
+    userId: req.user.userId,
+    eventId: event.id,
+    eventSlug: event.slug,
+    metadata: {
+      skipped: feedbackInput.skipped,
+      feedbackOutcome: feedbackInput.outcome,
+      repeatIntent: feedbackInput.repeatIntent,
+    },
+  });
+
+  res.status(201).json({ feedback: hostFeedbackPayload(feedback) });
 });
 
 app.get("/api/host/events/:eventId/links/verify", requireAuth, async (req, res) => {

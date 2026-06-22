@@ -191,3 +191,44 @@ test("create event sends template and prompt pack slugs", async () => {
   assert.equal(payload.eventTemplateSlug, "birthday-party");
   assert.equal(payload.promptPackSlug, "birthday");
 });
+
+test("duplicate host event posts overrides to duplicate endpoint", async () => {
+  const calls: string[] = [];
+  let body = "";
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      body = String(init?.body || "");
+      return new Response(JSON.stringify({ event: { id: "event-copy" } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.duplicateHostEvent("event 1", { name: "Next Formal" }, "token");
+
+  assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201/duplicate");
+  assert.equal(body, JSON.stringify({ name: "Next Formal" }));
+});
+
+test("host feedback helper posts submit and skip payloads", async () => {
+  const bodies: string[] = [];
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (_url, init) => {
+      bodies.push(String(init?.body || ""));
+      return new Response(JSON.stringify({ feedback: { id: "feedback-1", createdAt: "now", updatedAt: "now" } }), {
+        status: 201,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.submitHostEventFeedback("event-1", { outcome: "great", repeatIntent: "yes", note: "Guests got it." }, "token");
+  await client.submitHostEventFeedback("event-1", { skipped: true }, "token");
+
+  assert.equal(bodies[0], JSON.stringify({ outcome: "great", repeatIntent: "yes", note: "Guests got it." }));
+  assert.equal(bodies[1], JSON.stringify({ skipped: true }));
+});

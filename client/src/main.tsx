@@ -18,6 +18,8 @@ import {
   buildChallengeProgressSummary,
   buildEventRecapMetadata,
   buildChallengePayload,
+  buildDuplicateEventInput,
+  buildPostEventHostSummary,
   categoriesFromChallenge,
   challengeLabel,
   colorBySlug,
@@ -35,6 +37,7 @@ import {
   hasDuplicateCategories,
   hasDuplicateParticipantColors,
   hasDuplicatePrompts,
+  deriveEventLifecycleStatus,
   isPhotoVisible,
   memoryCapsuleFromChallenge,
   photoChallengeLabel,
@@ -42,8 +45,9 @@ import {
   sanitizeGuestDisplayName,
   validateUploadFile,
   validateChallengeDraft,
+  validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostLaunchKit, HostShareAssets, HostShareLinkCard, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventSummary, EventTemplateSlug, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostLaunchKit, HostShareAssets, HostShareLinkCard, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -403,12 +407,13 @@ function Icon({ children, className = "" }: { children: React.ReactNode; classNa
   return <svg {...common}>{paths[icon] || <circle cx="12" cy="12" r="8" />}</svg>;
 }
 
-function StatusPill({ children, tone = "amber" }: { children: React.ReactNode; tone?: "amber" | "green" | "stone" | "red" }) {
+function StatusPill({ children, tone = "amber" }: { children: React.ReactNode; tone?: "amber" | "green" | "stone" | "red" | "plum" }) {
   const tones = {
     amber: "bg-[#fff0d8] text-[#7c3f00] ring-[#f7d89c]",
     green: "bg-emerald-50 text-emerald-800 ring-emerald-100",
     stone: "bg-stone-100 text-stone-700 ring-stone-200",
     red: "bg-red-50 text-red-800 ring-red-100",
+    plum: "bg-fuchsia-50 text-fuchsia-800 ring-fuchsia-100",
   };
   return <span className={cx("inline-flex items-center rounded-full px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide ring-1", tones[tone])}>{children}</span>;
 }
@@ -1244,6 +1249,257 @@ function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: 
   );
 }
 
+function LifecycleBadge({ lifecycle }: { lifecycle: EventLifecycle }) {
+  return <StatusPill tone={lifecycle.tone}>{lifecycle.label}</StatusPill>;
+}
+
+function RepeatEventActions({ event, lifecycle, compact = false, onDuplicated }: { event: EventSummary; lifecycle: EventLifecycle; compact?: boolean; onDuplicated?: (event: EventSummary) => void }) {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const duplicateDefaults = buildDuplicateEventInput(event);
+  const assets = buildHostShareAssets(event);
+
+  async function createSimilar() {
+    setBusy(true);
+    setStatus("");
+    trackAnalytics("duplicate_event_clicked", {
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: compact ? "dashboard_card" : "event_detail", duplicateSourceEventId: event.id },
+    });
+    trackAnalytics("repeat_event_cta_clicked", {
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: compact ? "dashboard_card" : "event_detail", label: "create_similar" },
+    });
+    try {
+      const data = await eventFilmApi.duplicateHostEvent(
+        event.id,
+        {
+          name: duplicateDefaults.name,
+          description: duplicateDefaults.description,
+          eventDate: duplicateDefaults.eventDate,
+          revealAt: duplicateDefaults.revealAt,
+          photoLimitPerGuest: duplicateDefaults.photoLimitPerGuest,
+        },
+        auth.token,
+      );
+      trackAnalytics("duplicate_event_created", {
+        eventId: data.event.id,
+        eventSlug: data.event.slug,
+        metadata: { surface: compact ? "dashboard_card" : "event_detail", duplicateSourceEventId: event.id, duplicateEventId: data.event.id },
+      });
+      onDuplicated?.(data.event);
+      navigate(`/dashboard/events/${data.event.id}`);
+    } catch (err) {
+      setStatus((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function shareRecap() {
+    try {
+      await shareOrCopyText({
+        title: `${event.name} recap`,
+        text: assets.recapShareText,
+        url: event.recapLink,
+        fallbackLabel: "Recap",
+        analyticsName: "recap_shared_after_event",
+        eventId: event.id,
+        eventSlug: event.slug,
+        surface: compact ? "dashboard_card" : "event_detail",
+        onStatus: setStatus,
+      });
+      trackAnalytics("repeat_event_cta_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: compact ? "dashboard_card" : "event_detail", label: "share_recap" } });
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  if (!lifecycle.shouldShowRepeatCta && compact) return null;
+
+  return (
+    <div className={cx("grid gap-3", compact ? "mt-4" : "rounded-[1.45rem] border border-[#ffd4c7] bg-[#fff3ee] p-5")}>
+      {!compact && (
+        <div>
+          <StatusPill tone="plum">Next event loop</StatusPill>
+          <h3 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Turn this event into the next one.</h3>
+          <p className="mt-2 text-sm font-semibold text-amber-950">Copy the setup, review what worked, share the recap, and gather host feedback while the event is fresh.</p>
+        </div>
+      )}
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <Button type="button" onClick={createSimilar} disabled={busy}>{busy ? "Creating..." : "Create similar event"}</Button>
+        {event.recapLink ? <SecondaryButton type="button" onClick={shareRecap}>Share recap</SecondaryButton> : null}
+        {!compact ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900" href="#post-event-summary">View what worked</a> : null}
+      </div>
+      {status ? <p className="text-sm font-bold text-amber-800">{status}</p> : null}
+    </div>
+  );
+}
+
+function PostEventSummaryPanel({ event, analytics }: { event: EventSummary & { photos: Photo[] }; analytics: EventAnalyticsSummary | null }) {
+  const summary = buildPostEventHostSummary(event, event.photos, analytics || {});
+  const hasTrend = summary.uploadsOverTime.length > 0;
+
+  useEffect(() => {
+    trackAnalytics("post_event_summary_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
+  }, [event.id, event.slug]);
+
+  return (
+    <section id="post-event-summary" className="mt-8">
+      <div className="mb-4">
+        <StatusPill tone="plum">Post-event summary</StatusPill>
+        <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">What happened at this event?</h2>
+        <p className="text-sm text-stone-600">A host-safe recap of activity, contributors, challenge progress, sharing, and moderation.</p>
+      </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricCard label="Total photos" value={summary.totalPhotos} tone="accent" />
+        <MetricCard label="Contributors" value={summary.totalContributors} />
+        <MetricCard label="Guest joins" value={summary.guestJoins} tone="green" />
+        <MetricCard label="Recap opens" value={summary.recapOpens} tone="plum" />
+        <MetricCard label="Live Wall opens" value={summary.liveWallOpens} tone="green" />
+        <MetricCard label="Hidden photos" value={summary.hiddenPhotos} />
+        <MetricCard label="Reported photos" value={summary.reportedPhotos} />
+        <MetricCard label="Featured photos" value={summary.featuredPhotos} />
+      </div>
+      <div className="mt-5 grid gap-5 lg:grid-cols-3">
+        <Card>
+          <h3 className="font-display text-2xl font-bold text-stone-950">Top contributors</h3>
+          <p className="mt-1 text-sm text-stone-600">{summary.visiblePhotos} visible photos from named guests.</p>
+          <div className="mt-4 grid gap-2">
+            {summary.topContributors.length ? summary.topContributors.map((contributor) => (
+              <div className="flex items-center justify-between rounded-2xl bg-stone-50 p-3 text-sm font-bold" key={contributor.displayName}>
+                <span>{contributor.displayName}</span>
+                <span className="text-[#653e00]">{contributor.photoCount}</span>
+              </div>
+            )) : <p className="rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-600">No named contributors yet.</p>}
+          </div>
+        </Card>
+        <Card>
+          <h3 className="font-display text-2xl font-bold text-stone-950">Uploads over time</h3>
+          <div className="mt-4 grid gap-3">
+            {hasTrend ? summary.uploadsOverTime.map((bucket) => {
+              const max = Math.max(...summary.uploadsOverTime.map((item) => item.count), 1);
+              return (
+                <div key={bucket.label}>
+                  <div className="flex justify-between text-sm font-bold text-stone-700"><span>{bucket.label}</span><span>{bucket.count}</span></div>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-[#e85d3f]" style={{ width: `${Math.max(8, Math.round((bucket.count / max) * 100))}%` }} /></div>
+                </div>
+              );
+            }) : <p className="rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-600">No upload trend yet.</p>}
+          </div>
+        </Card>
+        <Card>
+          <h3 className="font-display text-2xl font-bold text-stone-950">Challenge completion</h3>
+          <p className="mt-1 text-sm font-semibold text-stone-600">{summary.challengeCompletion.modeLabel}</p>
+          <div className="mt-4 grid gap-2">
+            {summary.challengeCompletion.rows.length ? summary.challengeCompletion.rows.slice(0, 5).map((row) => (
+              <div className="flex items-center justify-between rounded-2xl bg-stone-50 p-3 text-sm font-bold" key={row.id}>
+                <span className="truncate">{row.label}</span>
+                <span className={row.complete ? "text-emerald-700" : "text-stone-500"}>{row.count}{row.total ? `/${row.total}` : ""}</span>
+              </div>
+            )) : <p className="rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-600">Classic album mode collected photos without challenge steps.</p>}
+          </div>
+        </Card>
+      </div>
+      {summary.awardWinners.length ? (
+        <Card className="mt-5">
+          <h3 className="font-display text-2xl font-bold text-stone-950">Event Awards winners</h3>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {summary.awardWinners.map((winner) => (
+              <div className="rounded-2xl bg-[#fffaf6] p-4" key={winner.categoryId}>
+                <p className="font-bold text-stone-950">{winner.categoryLabel}</p>
+                <p className="mt-1 text-sm font-semibold text-stone-600">{winner.photoId ? `${winner.voteCount} ${winner.voteCount === 1 ? "vote" : "votes"}` : "No winner yet"}{winner.isTie ? " - tie" : ""}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+    </section>
+  );
+}
+
+function HostFeedbackPanel({ event, analytics, onSubmitted }: { event: EventSummary; analytics: EventAnalyticsSummary | null; onSubmitted: () => Promise<void> }) {
+  const auth = useAuth();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<HostFeedbackInput>({ outcome: "great", repeatIntent: "yes", guestConfusion: "", featureRequest: "", note: "" });
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const existingFeedback = analytics?.hostFeedback;
+
+  function openForm() {
+    setOpen(true);
+    trackAnalytics("host_feedback_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
+  }
+
+  async function submit(input: HostFeedbackInput) {
+    const validation = validateHostFeedback(input);
+    if (!validation.ok) {
+      setStatus(validation.message);
+      return;
+    }
+    setBusy(true);
+    setStatus("");
+    try {
+      await eventFilmApi.submitHostEventFeedback(event.id, validation.value, auth.token);
+      setStatus(validation.value.skipped ? "Feedback skipped. We will not ask again on this event." : "Thanks. Feedback saved.");
+      await onSubmitted();
+    } catch (err) {
+      setStatus((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (existingFeedback) {
+    return (
+      <Card className="mt-5 bg-emerald-50">
+        <StatusPill tone="green">Feedback saved</StatusPill>
+        <h3 className="mt-3 font-display text-2xl font-bold text-emerald-950">Thanks for the host notes.</h3>
+        <p className="mt-2 text-sm font-semibold text-emerald-800">{existingFeedback.skippedAt ? "This event feedback was skipped." : "This event has host feedback saved for review."}</p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="mt-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <StatusPill tone="amber">Host feedback</StatusPill>
+          <h3 className="mt-3 font-display text-2xl font-bold text-stone-950">How did this event go?</h3>
+          <p className="mt-2 text-sm text-stone-600">A short host-only note helps shape the next event loop. Nothing here is shown to guests.</p>
+        </div>
+        {!open ? <Button type="button" onClick={openForm}>Give feedback</Button> : null}
+      </div>
+      {open ? (
+        <div className="mt-5 grid gap-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[["great", "Great"], ["okay", "Okay"], ["rough", "Rough"]].map(([value, label]) => (
+              <button type="button" className={cx("rounded-[1.15rem] border px-4 py-3 text-sm font-extrabold", form.outcome === value ? "border-[#e85d3f] bg-[#fff3ee] text-[#653e00]" : "border-[#eadfce] bg-white text-stone-700")} onClick={() => setForm((current) => ({ ...current, outcome: value }))} key={value}>{label}</button>
+            ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {[["yes", "Use again"], ["maybe", "Maybe"], ["no", "Not yet"]].map(([value, label]) => (
+              <button type="button" className={cx("rounded-[1.15rem] border px-4 py-3 text-sm font-extrabold", form.repeatIntent === value ? "border-[#e85d3f] bg-[#fff3ee] text-[#653e00]" : "border-[#eadfce] bg-white text-stone-700")} onClick={() => setForm((current) => ({ ...current, repeatIntent: value }))} key={value}>{label}</button>
+            ))}
+          </div>
+          <TextArea rows={2} value={form.guestConfusion || ""} onChange={(event) => setForm((current) => ({ ...current, guestConfusion: event.target.value }))} placeholder="What confused guests?" />
+          <TextArea rows={2} value={form.featureRequest || ""} onChange={(event) => setForm((current) => ({ ...current, featureRequest: event.target.value }))} placeholder="What feature would help next?" />
+          <TextArea rows={3} value={form.note || ""} onChange={(event) => setForm((current) => ({ ...current, note: event.target.value }))} placeholder="Optional note" />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="button" disabled={busy} onClick={() => submit(form)}>{busy ? "Saving..." : "Submit feedback"}</Button>
+            <SecondaryButton type="button" disabled={busy} onClick={() => submit({ skipped: true })}>Skip</SecondaryButton>
+          </div>
+        </div>
+      ) : null}
+      {status ? <p className="mt-3 text-sm font-bold text-amber-800">{status}</p> : null}
+    </Card>
+  );
+}
+
 function EventPosterPage() {
   const { eventId = "" } = useParams();
   const auth = useAuth();
@@ -1728,7 +1984,7 @@ function Dashboard() {
     });
   }, [auth.token, events]);
 
-  const liveEvents = events.filter((event) => new Date(event.revealAt).getTime() > Date.now()).length;
+  const liveEvents = events.filter((event) => deriveEventLifecycleStatus(event).phase !== "after").length;
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
 
   return (
@@ -1778,13 +2034,15 @@ function Dashboard() {
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
           {events.map((event) => (
-            <Link className="group overflow-hidden rounded-[1.65rem] border border-[#eadfce] bg-white shadow-[0_18px_54px_rgba(101,62,0,0.075)] transition hover:-translate-y-1 hover:shadow-[0_30px_80px_rgba(232,93,63,0.12)]" to={`/dashboard/events/${event.id}`} key={event.id}>
-              <EventPhotoBanner photos={event.previewPhotos || []} eventName={event.name} />
+            <div className="overflow-hidden rounded-[1.65rem] border border-[#eadfce] bg-white shadow-[0_18px_54px_rgba(101,62,0,0.075)] transition hover:-translate-y-1 hover:shadow-[0_30px_80px_rgba(232,93,63,0.12)]" key={event.id}>
+              <Link className="group block" to={`/dashboard/events/${event.id}`}>
+                <EventPhotoBanner photos={event.previewPhotos || []} eventName={event.name} />
+              </Link>
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <StatusPill tone={new Date(event.revealAt).getTime() > Date.now() ? "green" : "stone"}>{new Date(event.revealAt).getTime() > Date.now() ? "Live" : "Revealed"}</StatusPill>
-                    <h3 className="mt-3 font-display text-xl font-bold text-stone-950">{event.name}</h3>
+                    <LifecycleBadge lifecycle={deriveEventLifecycleStatus(event)} />
+                    <Link to={`/dashboard/events/${event.id}`}><h3 className="mt-3 font-display text-xl font-bold text-stone-950">{event.name}</h3></Link>
                     <p className="mt-1 text-sm text-stone-600">Event: {formatDateTime(event.eventDate)}</p>
                     <p className="text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
                   </div>
@@ -1793,8 +2051,10 @@ function Dashboard() {
                     <p className="text-xs font-bold uppercase text-stone-500">Photos</p>
                   </div>
                 </div>
+                <p className="mt-3 text-sm font-semibold text-stone-600">{deriveEventLifecycleStatus(event).description}</p>
+                <RepeatEventActions event={event} lifecycle={deriveEventLifecycleStatus(event)} compact onDuplicated={(created) => setEvents((current) => [created, ...current])} />
               </div>
-            </Link>
+            </div>
           ))}
         </div>
         {!events.length && (
@@ -2199,6 +2459,16 @@ function ManageEvent() {
   const hiddenCount = event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0;
   const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
   const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
+  const lifecycle = event ? deriveEventLifecycleStatus(event, eventAnalytics || undefined) : null;
+
+  useEffect(() => {
+    if (!event || !lifecycle) return;
+    trackAnalytics("event_lifecycle_viewed", {
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail", lifecycleStatus: lifecycle.status },
+    });
+  }, [event?.id, event?.slug, lifecycle?.status]);
 
   async function handleHostPhotoAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) {
     if (action === "hide") return updatePhotoVisibility(photo, "HIDDEN");
@@ -2216,7 +2486,9 @@ function ManageEvent() {
           <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
               <StatusPill>Live event dashboard</StatusPill>
+              {lifecycle ? <span className="ml-2"><LifecycleBadge lifecycle={lifecycle} /></span> : null}
               <h1 className="mt-3 font-display text-4xl font-bold text-stone-950">{event.name}</h1>
+              {lifecycle ? <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">{lifecycle.description}</p> : null}
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-stone-600">
                 <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">calendar_today</Icon>{formatDateTime(event.eventDate)}</span>
                 <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">photo_library</Icon>{event.photoCount} photos</span>
@@ -2232,6 +2504,7 @@ function ManageEvent() {
 
           <section className="mt-8">
             <HostLaunchKitPanel event={event} qrCodeDataUrl={event.qrCodeDataUrl} />
+            {lifecycle ? <div className="mt-5"><RepeatEventActions event={event} lifecycle={lifecycle} /></div> : null}
             <div className="mt-4 grid gap-3 rounded-3xl bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
               <p className="text-sm font-semibold text-stone-600">Visible export excludes hidden and reported photos by default.</p>
               <SecondaryButton onClick={() => downloadZip("visible")}>Download visible ZIP</SecondaryButton>
@@ -2278,6 +2551,13 @@ function ManageEvent() {
               <HostAwardVotingSummary awardVoting={eventAnalytics.eventAwardsVoting} photos={event.photos} onFeatureWinner={(photo) => updatePhotoFeatured(photo, true)} />
             </section>
           )}
+
+          {lifecycle?.phase === "after" ? (
+            <>
+              <PostEventSummaryPanel event={event} analytics={eventAnalytics} />
+              <HostFeedbackPanel event={event} analytics={eventAnalytics} onSubmitted={load} />
+            </>
+          ) : null}
 
           <section className="mt-8">
             <Card className="lg:p-8">

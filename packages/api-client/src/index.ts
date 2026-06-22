@@ -4,6 +4,7 @@ import type {
   EventChallenge,
   EventChallengeInput,
   EventSummary,
+  HostFeedbackInput,
   GuestStatus,
   AwardVotingSummary,
   Photo,
@@ -125,6 +126,27 @@ export type EventAnalyticsSummary = {
   recapOpens: number;
   activeGuests: number;
   eventAwardsVoting?: AwardVotingSummary;
+  hostFeedback?: HostEventFeedback | null;
+};
+
+export type HostEventFeedback = {
+  id: string;
+  outcome?: string | null;
+  repeatIntent?: string | null;
+  guestConfusion?: string | null;
+  featureRequest?: string | null;
+  note?: string | null;
+  skippedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type DuplicateEventOverrides = {
+  name?: string;
+  description?: string | null;
+  eventDate?: string;
+  revealAt?: string;
+  photoLimitPerGuest?: number;
 };
 
 export type LaunchLinkVerification = {
@@ -302,6 +324,22 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
       return request<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${encodeURIComponent(eventId)}`, {
         auth: !token,
         token,
+      });
+    },
+    duplicateHostEvent(eventId: string, overrides: DuplicateEventOverrides = {}, token?: string | null) {
+      return request<{ event: EventSummary }>(`/api/host/events/${encodeURIComponent(eventId)}/duplicate`, {
+        method: "POST",
+        auth: !token,
+        token,
+        body: JSON.stringify(overrides),
+      });
+    },
+    submitHostEventFeedback(eventId: string, input: HostFeedbackInput, token?: string | null) {
+      return request<{ feedback: HostEventFeedback }>(`/api/host/events/${encodeURIComponent(eventId)}/feedback`, {
+        method: "POST",
+        auth: !token,
+        token,
+        body: JSON.stringify(input),
       });
     },
     verifyHostEventLinks(eventId: string, token?: string | null) {

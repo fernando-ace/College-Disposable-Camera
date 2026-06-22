@@ -1,10 +1,10 @@
 import * as React from "react";
-import { Link, useLocalSearchParams } from "expo-router";
+import { Link, router, useLocalSearchParams } from "expo-router";
 import { Linking, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
-import type { EventSummary, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
-import { buildHostLaunchKit, buildHostShareAssets, challengeLabel, getEventTemplate } from "@eventfilm/shared";
-import { Badge, Body, Button, Card, EmptyState, ErrorState, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
+import type { EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
+import { buildDuplicateEventInput, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateHostFeedback } from "@eventfilm/shared";
+import { Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function formatDate(value: string) {
@@ -108,6 +108,20 @@ export default function EventDetailScreen() {
   const launchKit = event ? buildHostLaunchKit(event) : null;
   const shareAssets = event ? buildHostShareAssets(event) : null;
   const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
+  const lifecycle = event ? deriveEventLifecycleStatus(event, analyticsSummary || undefined) : null;
+  const lifecycleStatus = lifecycle?.status;
+
+  React.useEffect(() => {
+    if (!event || !lifecycleStatus) return;
+    api.trackAnalyticsEvent({
+      name: "event_lifecycle_viewed",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail", lifecycleStatus },
+    }).catch(() => {});
+  }, [api, event, lifecycleStatus]);
 
   return (
     <Screen bottomPadding={96} wide>
@@ -115,6 +129,7 @@ export default function EventDetailScreen() {
         <TaskHeader eyebrow="Event hub" title={event.name} body={event.description || "Share the guest link, monitor uploads, and keep the album moving."} action={(
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Badge>{event.photoCount} photos</Badge>
+            {lifecycle ? <Badge tone={lifecycle.tone === "green" ? "green" : lifecycle.tone === "plum" ? "dark" : lifecycle.tone === "amber" ? "amber" : "stone"}>{lifecycle.label}</Badge> : null}
             {template ? <Badge tone="amber">{template.name}</Badge> : null}
             <Badge tone="stone">{challengeLabel(event.challenge)}</Badge>
           </View>
@@ -180,9 +195,16 @@ export default function EventDetailScreen() {
                 </View>
               </Card>
             ) : null}
+            {lifecycle ? <RepeatEventPanel event={event} lifecycle={lifecycle} /> : null}
             <LinkHealthPanel linkChecks={linkChecks} />
             <EventMetricsPanel summary={analyticsSummary} />
             <EventAwardsVotingPanel summary={analyticsSummary} photos={event.photos} recapLink={event.recapLink} />
+            {lifecycle?.phase === "after" ? (
+              <>
+                <PostEventSummaryPanel event={event} summary={analyticsSummary} />
+                <HostFeedbackPanel event={event} summary={analyticsSummary} onSubmitted={loadEvent} />
+              </>
+            ) : null}
             <RunOfShow />
             <Button tone="secondary" loading={loading} onPress={loadEvent}>Refresh photos</Button>
           </View>
@@ -232,6 +254,230 @@ export default function EventDetailScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+function RepeatEventPanel({ event, lifecycle }: { event: EventSummary; lifecycle: ReturnType<typeof deriveEventLifecycleStatus> }) {
+  const { api } = useAuth();
+  const [status, setStatus] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const duplicateDefaults = buildDuplicateEventInput(event);
+
+  async function createSimilar() {
+    setBusy(true);
+    setStatus("");
+    api.trackAnalyticsEvent({
+      name: "duplicate_event_clicked",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail", duplicateSourceEventId: event.id },
+    }).catch(() => {});
+    api.trackAnalyticsEvent({
+      name: "repeat_event_cta_clicked",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail", label: "create_similar" },
+    }).catch(() => {});
+    try {
+      const data = await api.duplicateHostEvent(event.id, {
+        name: duplicateDefaults.name,
+        description: duplicateDefaults.description,
+        eventDate: duplicateDefaults.eventDate,
+        revealAt: duplicateDefaults.revealAt,
+        photoLimitPerGuest: duplicateDefaults.photoLimitPerGuest,
+      });
+      api.trackAnalyticsEvent({
+        name: "duplicate_event_created",
+        source: "mobile",
+        path: `/events/${event.id}`,
+        eventId: data.event.id,
+        eventSlug: data.event.slug,
+        metadata: { surface: "event_detail", duplicateSourceEventId: event.id, duplicateEventId: data.event.id },
+      }).catch(() => {});
+      router.replace(`/events/${data.event.id}`);
+    } catch (err) {
+      setStatus((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function shareRecap() {
+    if (!event.recapLink) return;
+    try {
+      await Linking.openURL(event.recapLink);
+      api.trackAnalyticsEvent({
+        name: "recap_shared_after_event",
+        source: "mobile",
+        path: `/events/${event.id}`,
+        eventId: event.id,
+        eventSlug: event.slug,
+        metadata: { surface: "event_detail", method: "open_url" },
+      }).catch(() => {});
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  if (!lifecycle.shouldShowRepeatCta) {
+    return (
+      <Card tone="warm">
+        <SectionHeader title={lifecycle.label} subtitle={lifecycle.description} />
+      </Card>
+    );
+  }
+
+  return (
+    <Card tone="accent">
+      <SectionHeader title="Run it again" subtitle="Copy this setup into a fresh event, then adjust the new date before sharing." />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 150 }}>
+          <Button loading={busy} onPress={createSimilar}>Create similar</Button>
+        </View>
+        <View style={{ flex: 1, minWidth: 150 }}>
+          <Button tone="secondary" disabled={!event.recapLink} onPress={shareRecap}>Share recap</Button>
+        </View>
+      </View>
+      {status ? <Body tone="danger">{status}</Body> : null}
+    </Card>
+  );
+}
+
+function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { photos: Photo[] }; summary: EventAnalyticsSummary | null }) {
+  const { api } = useAuth();
+  const postSummary = buildPostEventHostSummary(event, event.photos, summary || {});
+
+  React.useEffect(() => {
+    api.trackAnalyticsEvent({
+      name: "post_event_summary_viewed",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+  }, [api, event.id, event.slug]);
+
+  return (
+    <Card>
+      <SectionHeader title="Post-event summary" subtitle="The quick host view of what happened and what worked." />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        <StatTile label="Photos" value={postSummary.totalPhotos} tone="accent" />
+        <StatTile label="Contributors" value={postSummary.totalContributors} />
+        <StatTile label="Guest joins" value={postSummary.guestJoins} />
+        <StatTile label="Recaps" value={postSummary.recapOpens} />
+        <StatTile label="Hidden" value={postSummary.hiddenPhotos} />
+        <StatTile label="Reported" value={postSummary.reportedPhotos} />
+      </View>
+      {postSummary.topContributors.length ? (
+        <View style={{ gap: 8 }}>
+          <SectionHeader title="Top contributors" />
+          {postSummary.topContributors.map((contributor) => (
+            <View key={contributor.displayName} style={{ flexDirection: "row", justifyContent: "space-between", gap: 10, borderRadius: 16, borderCurve: "continuous", backgroundColor: "#faf7f2", padding: 12 }}>
+              <Body>{contributor.displayName}</Body>
+              <Badge tone="stone">{contributor.photoCount}</Badge>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {postSummary.awardWinners.length ? (
+        <View style={{ gap: 8 }}>
+          <SectionHeader title="Award winners" />
+          {postSummary.awardWinners.slice(0, 4).map((winner) => (
+            <Body key={winner.categoryId} tone={winner.photoId ? "success" : "muted"}>{winner.categoryLabel}: {winner.photoId ? `${winner.voteCount} votes${winner.isTie ? " - tie" : ""}` : "No winner yet"}</Body>
+          ))}
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
+function HostFeedbackPanel({ event, summary, onSubmitted }: { event: EventSummary; summary: EventAnalyticsSummary | null; onSubmitted: () => Promise<void> }) {
+  const { api } = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const [form, setForm] = React.useState<HostFeedbackInput>({ outcome: "great", repeatIntent: "yes", guestConfusion: "", featureRequest: "", note: "" });
+  const [status, setStatus] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  if (summary?.hostFeedback) {
+    return (
+      <Card tone="success">
+        <SectionHeader title="Feedback saved" subtitle={summary.hostFeedback.skippedAt ? "This event feedback was skipped." : "Thanks. Host feedback is stored for review."} />
+      </Card>
+    );
+  }
+
+  function openForm() {
+    setOpen(true);
+    api.trackAnalyticsEvent({
+      name: "host_feedback_opened",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+  }
+
+  async function submit(input: HostFeedbackInput) {
+    const validation = validateHostFeedback(input);
+    if (!validation.ok) {
+      setStatus(validation.message);
+      return;
+    }
+    setBusy(true);
+    setStatus("");
+    try {
+      await api.submitHostEventFeedback(event.id, validation.value);
+      setStatus(validation.value.skipped ? "Skipped." : "Thanks. Feedback saved.");
+      await onSubmitted();
+    } catch (err) {
+      setStatus((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <SectionHeader title="Host feedback" subtitle="A quick private note about how the event went." action={!open ? <Button onPress={openForm}>Open</Button> : undefined} />
+      {open ? (
+        <View style={{ gap: 12 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {(["great", "okay", "rough"] as const).map((outcome) => (
+              <Button key={outcome} tone={form.outcome === outcome ? "primary" : "secondary"} onPress={() => setForm((current) => ({ ...current, outcome }))}>{outcome}</Button>
+            ))}
+          </View>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {(["yes", "maybe", "no"] as const).map((repeatIntent) => (
+              <Button key={repeatIntent} tone={form.repeatIntent === repeatIntent ? "primary" : "secondary"} onPress={() => setForm((current) => ({ ...current, repeatIntent }))}>{repeatIntent}</Button>
+            ))}
+          </View>
+          <FieldGroup label="Guest confusion">
+            <Field value={form.guestConfusion || ""} onChangeText={(guestConfusion) => setForm((current) => ({ ...current, guestConfusion }))} multiline />
+          </FieldGroup>
+          <FieldGroup label="Feature request">
+            <Field value={form.featureRequest || ""} onChangeText={(featureRequest) => setForm((current) => ({ ...current, featureRequest }))} multiline />
+          </FieldGroup>
+          <FieldGroup label="Optional note">
+            <Field value={form.note || ""} onChangeText={(note) => setForm((current) => ({ ...current, note }))} multiline />
+          </FieldGroup>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            <View style={{ flex: 1, minWidth: 140 }}>
+              <Button loading={busy} onPress={() => submit(form)}>Submit</Button>
+            </View>
+            <View style={{ flex: 1, minWidth: 140 }}>
+              <Button tone="secondary" disabled={busy} onPress={() => submit({ skipped: true })}>Skip</Button>
+            </View>
+          </View>
+        </View>
+      ) : null}
+      {status ? <Body tone={status.includes("Thanks") || status.includes("Skipped") ? "success" : "danger"}>{status}</Body> : null}
+    </Card>
   );
 }
 

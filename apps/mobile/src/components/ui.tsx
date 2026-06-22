@@ -1,7 +1,7 @@
 import * as React from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import type { EventSummary, Photo } from "@eventfilm/shared";
-import { challengeLabel, photoChallengeLabel } from "@eventfilm/shared";
+import { challengeLabel, deriveEventLifecycleStatus, photoChallengeLabel } from "@eventfilm/shared";
 
 export const colors = {
   ink: "#1c1917",
@@ -517,6 +517,8 @@ function isLocalhostUrl(value?: string | null) {
 export function EventCard({ event, onPress, featured = false }: { event: EventSummary; onPress?: () => void; featured?: boolean }) {
   const eventDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.eventDate));
   const revealDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.revealAt));
+  const lifecycle = deriveEventLifecycleStatus(event);
+  const lifecycleTone: "amber" | "dark" | "green" | "red" | "stone" = lifecycle.tone === "green" ? "green" : lifecycle.tone === "amber" ? "amber" : lifecycle.tone === "plum" ? "dark" : "stone";
 
   return (
     <Pressable disabled={!onPress} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.78 : 1 })}>
@@ -533,9 +535,11 @@ export function EventCard({ event, onPress, featured = false }: { event: EventSu
           <Caption>Reveal: {revealDate}</Caption>
         </View>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+          <Badge tone={lifecycleTone}>{lifecycle.label}</Badge>
           <Badge tone="stone">{challengeLabel(event.challenge)}</Badge>
           {featured ? <Badge>Active focus</Badge> : null}
         </View>
+        <Caption>{lifecycle.description}</Caption>
       </Card>
     </Pressable>
   );

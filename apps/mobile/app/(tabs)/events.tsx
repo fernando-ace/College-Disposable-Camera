@@ -3,6 +3,7 @@ import { Link, router } from "expo-router";
 import { View } from "react-native";
 import type { AnalyticsSummary } from "@eventfilm/api-client";
 import type { EventSummary } from "@eventfilm/shared";
+import { deriveEventLifecycleStatus } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, EventCard, LoadingState, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -89,7 +90,7 @@ export default function EventsScreen() {
   const featuredEvent = sortedEvents[0];
   const remainingEvents = sortedEvents.slice(1);
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
-  const activeEvents = events.filter((event) => new Date(event.revealAt).getTime() >= Date.now()).length;
+  const activeEvents = events.filter((event) => deriveEventLifecycleStatus(event).phase !== "after").length;
 
   return (
     <Screen bottomPadding={112}>

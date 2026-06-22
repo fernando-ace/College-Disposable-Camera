@@ -48,6 +48,27 @@ export type UploadValidationResult =
   | { ok: true }
   | { ok: false; reason: "missing" | "unsupported_type" | "too_large"; message: string };
 
+export type HostFeedbackRating = "great" | "okay" | "rough";
+export type HostFeedbackRepeatIntent = "yes" | "maybe" | "no";
+
+export type EventLifecycleStatus =
+  | "draft_or_upcoming"
+  | "live_or_happening_soon"
+  | "collecting_photos"
+  | "reveal_locked"
+  | "recap_ready"
+  | "archived_or_past";
+
+export type EventLifecycle = {
+  status: EventLifecycleStatus;
+  label: string;
+  description: string;
+  phase: "before" | "during" | "after";
+  tone: "stone" | "green" | "amber" | "plum";
+  shouldShowRepeatCta: boolean;
+  shouldAskFeedback: boolean;
+};
+
 export type User = {
   id: string;
   email: string;
@@ -216,6 +237,35 @@ export type EventRecapMetadata = {
   recentPhotos: Photo[];
 };
 
+export type UploadTrendBucket = {
+  label: string;
+  count: number;
+};
+
+export type AwardWinnerSummary = {
+  categoryId: string;
+  categoryLabel: string;
+  photoId?: string;
+  voteCount: number;
+  isTie: boolean;
+};
+
+export type PostEventHostSummary = {
+  totalPhotos: number;
+  visiblePhotos: number;
+  hiddenPhotos: number;
+  reportedPhotos: number;
+  featuredPhotos: number;
+  totalContributors: number;
+  topContributors: ContributorSummaryItem[];
+  guestJoins: number;
+  liveWallOpens: number;
+  recapOpens: number;
+  uploadsOverTime: UploadTrendBucket[];
+  challengeCompletion: ChallengeProgressSummary;
+  awardWinners: AwardWinnerSummary[];
+};
+
 export type HostLaunchKitLink = {
   key: "guest" | "live-wall" | "recap";
   label: string;
@@ -335,6 +385,15 @@ export const ANALYTICS_EVENT_NAMES = [
   "challenge_progress_viewed",
   "guest_share_clicked",
   "guest_returned_to_event",
+  "event_lifecycle_viewed",
+  "post_event_summary_viewed",
+  "duplicate_event_clicked",
+  "duplicate_event_created",
+  "host_feedback_opened",
+  "host_feedback_submitted",
+  "host_feedback_skipped",
+  "repeat_event_cta_clicked",
+  "recap_shared_after_event",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
@@ -372,6 +431,19 @@ export type AnalyticsEventInput = {
   anonymousId?: string;
   metadata?: Record<string, string | number | boolean | null>;
 };
+
+export type HostFeedbackInput = {
+  outcome?: HostFeedbackRating | string | null;
+  repeatIntent?: HostFeedbackRepeatIntent | string | null;
+  guestConfusion?: string | null;
+  featureRequest?: string | null;
+  note?: string | null;
+  skipped?: boolean;
+};
+
+export type HostFeedbackValidationResult =
+  | { ok: true; value: Required<Pick<HostFeedbackInput, "skipped">> & { outcome: HostFeedbackRating | null; repeatIntent: HostFeedbackRepeatIntent | null; guestConfusion: string | null; featureRequest: string | null; note: string | null } }
+  | { ok: false; message: string };
 
 export const BETA_METRIC_DEFINITIONS = {
   activeHost: "A signed-in host who opens the host dashboard in the last 30 days.",
@@ -1402,6 +1474,218 @@ export function buildChallengePayload(draft: ChallengeDraft): EventChallengeInpu
     },
     isActive: true,
     participants: [],
+  };
+}
+
+function addHours(date: Date, hours: number) {
+  return new Date(date.getTime() + hours * 60 * 60 * 1000);
+}
+
+function addDays(date: Date, days: number) {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+export function deriveEventLifecycleStatus(
+  event: Pick<EventSummary | PublicEvent, "eventDate" | "revealAt" | "photoCount" | "challenge">,
+  counts: { totalPhotos?: number | null; visiblePhotos?: number | null; recapOpens?: number | null } = {},
+  now: Date = new Date(),
+): EventLifecycle {
+  const eventAt = new Date(event.eventDate);
+  const revealAt = new Date(event.revealAt);
+  const totalPhotos = counts.totalPhotos ?? event.photoCount ?? 0;
+  const visibleCount = counts.visiblePhotos ?? totalPhotos;
+  const isRevealLocked = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && revealAt.getTime() > now.getTime();
+  const happeningSoonAt = addHours(now, 24);
+  const archiveCutoff = addDays(revealAt, 14);
+
+  if (revealAt.getTime() <= now.getTime() && archiveCutoff.getTime() < now.getTime()) {
+    return {
+      status: "archived_or_past",
+      label: "Past event",
+      description: "The recap has been available for a while. This is a good moment to reuse the setup.",
+      phase: "after",
+      tone: "stone",
+      shouldShowRepeatCta: true,
+      shouldAskFeedback: false,
+    };
+  }
+
+  if (revealAt.getTime() <= now.getTime()) {
+    return {
+      status: "recap_ready",
+      label: "Recap ready",
+      description: visibleCount > 0 ? "The event story is ready to share and review." : "The recap is open, but the album still needs photos.",
+      phase: "after",
+      tone: "plum",
+      shouldShowRepeatCta: true,
+      shouldAskFeedback: true,
+    };
+  }
+
+  if (isRevealLocked && totalPhotos > 0) {
+    return {
+      status: "reveal_locked",
+      label: "Reveal locked",
+      description: "Photos are coming in, but the public album stays locked until reveal.",
+      phase: "during",
+      tone: "amber",
+      shouldShowRepeatCta: false,
+      shouldAskFeedback: false,
+    };
+  }
+
+  if (totalPhotos > 0) {
+    return {
+      status: "collecting_photos",
+      label: "Collecting photos",
+      description: "Guests have started uploading. Keep the Live Wall and moderation close.",
+      phase: "during",
+      tone: "green",
+      shouldShowRepeatCta: false,
+      shouldAskFeedback: false,
+    };
+  }
+
+  if (eventAt.getTime() <= happeningSoonAt.getTime()) {
+    return {
+      status: "live_or_happening_soon",
+      label: eventAt.getTime() <= now.getTime() ? "Happening now" : "Happening soon",
+      description: "Share the guest link, keep the QR handy, and open the Live Wall when guests arrive.",
+      phase: "during",
+      tone: "green",
+      shouldShowRepeatCta: false,
+      shouldAskFeedback: false,
+    };
+  }
+
+  return {
+    status: "draft_or_upcoming",
+    label: "Upcoming",
+    description: "The event is ready to prep. Share links before guests arrive.",
+    phase: "before",
+    tone: "stone",
+    shouldShowRepeatCta: false,
+    shouldAskFeedback: false,
+  };
+}
+
+export function buildDuplicateEventInput(event: Pick<EventSummary, "name" | "description" | "photoLimitPerGuest" | "eventTemplateSlug" | "promptPackSlug" | "challenge">, now: Date = new Date()): CreateEventInput {
+  const eventDate = addDays(now, 7);
+  const revealAt = addHours(eventDate, 4);
+  const draft = draftFromChallenge(event.challenge);
+  const challenge = buildChallengePayload({
+    ...draft,
+    eventTemplateSlug: (event.eventTemplateSlug as EventTemplateSlug | null) || draft.eventTemplateSlug,
+    promptPackSlug: (event.promptPackSlug as PromptPackSlug | null) || draft.promptPackSlug,
+  });
+
+  return {
+    name: `${event.name} (Copy)`,
+    description: event.description || null,
+    eventDate: eventDate.toISOString(),
+    revealAt: revealAt.toISOString(),
+    photoLimitPerGuest: event.photoLimitPerGuest,
+    eventTemplateSlug: event.eventTemplateSlug || null,
+    promptPackSlug: event.promptPackSlug || null,
+    challenge,
+  };
+}
+
+function uploadBucketLabel(date: Date) {
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date);
+}
+
+function buildUploadTrend(photos: Photo[], limit = 5): UploadTrendBucket[] {
+  const buckets = new Map<string, UploadTrendBucket>();
+  for (const item of visiblePhotos(photos)) {
+    const date = new Date(item.createdAt);
+    const key = date.toISOString().slice(0, 10);
+    const bucket = buckets.get(key) || { label: uploadBucketLabel(date), count: 0 };
+    bucket.count += 1;
+    buckets.set(key, bucket);
+  }
+  return Array.from(buckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-limit)
+    .map(([, bucket]) => bucket);
+}
+
+export function buildPostEventHostSummary(
+  event: Pick<EventSummary, "challenge">,
+  photos: Photo[],
+  analytics: {
+    guestJoins?: number | null;
+    liveWallOpens?: number | null;
+    recapOpens?: number | null;
+    featuredPhotos?: number | null;
+    eventAwardsVoting?: AwardVotingSummary | null;
+  } = {},
+): PostEventHostSummary {
+  const contributorSummary = buildContributorSummary(photos, 5);
+  const visible = visiblePhotos(photos);
+  const hiddenPhotos = photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length;
+  const reportedPhotos = photos.filter((photo) => Boolean(photo.reportCount)).length;
+  const featuredPhotos = analytics.featuredPhotos ?? photos.filter((photo) => Boolean(photo.isFeatured)).length;
+  const winners = (analytics.eventAwardsVoting?.categories || []).map((category) => {
+    const leaderPhotoId = category.leaderPhotoIds[0];
+    const leaderVotes = leaderPhotoId ? category.voteTotals.find((vote) => vote.photoId === leaderPhotoId)?.voteCount || 0 : 0;
+    return {
+      categoryId: category.categoryId,
+      categoryLabel: category.categoryLabel,
+      photoId: leaderPhotoId,
+      voteCount: leaderVotes,
+      isTie: category.isTie,
+    };
+  });
+
+  return {
+    totalPhotos: photos.length,
+    visiblePhotos: visible.length,
+    hiddenPhotos,
+    reportedPhotos,
+    featuredPhotos,
+    totalContributors: contributorSummary.contributorCount,
+    topContributors: contributorSummary.topContributors,
+    guestJoins: analytics.guestJoins ?? 0,
+    liveWallOpens: analytics.liveWallOpens ?? 0,
+    recapOpens: analytics.recapOpens ?? 0,
+    uploadsOverTime: buildUploadTrend(photos),
+    challengeCompletion: buildChallengeProgressSummary(event.challenge, visible),
+    awardWinners: winners,
+  };
+}
+
+function cleanFeedbackText(value: unknown, maxLength: number) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  return normalized ? normalized.slice(0, maxLength).trim() : null;
+}
+
+export function validateHostFeedback(input: HostFeedbackInput): HostFeedbackValidationResult {
+  const skipped = Boolean(input.skipped);
+  if (skipped) {
+    return {
+      ok: true,
+      value: { skipped: true, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note: null },
+    };
+  }
+
+  const outcomes: HostFeedbackRating[] = ["great", "okay", "rough"];
+  const repeatIntents: HostFeedbackRepeatIntent[] = ["yes", "maybe", "no"];
+  const outcome = outcomes.includes(input.outcome as HostFeedbackRating) ? (input.outcome as HostFeedbackRating) : null;
+  const repeatIntent = repeatIntents.includes(input.repeatIntent as HostFeedbackRepeatIntent) ? (input.repeatIntent as HostFeedbackRepeatIntent) : null;
+  if (!outcome) return { ok: false, message: "Choose how the event went." };
+  if (!repeatIntent) return { ok: false, message: "Choose whether you would use EventFilm again." };
+
+  return {
+    ok: true,
+    value: {
+      skipped: false,
+      outcome,
+      repeatIntent,
+      guestConfusion: cleanFeedbackText(input.guestConfusion, 500),
+      featureRequest: cleanFeedbackText(input.featureRequest, 500),
+      note: cleanFeedbackText(input.note, 1000),
+    },
   };
 }
 

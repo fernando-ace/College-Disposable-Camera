@@ -7,11 +7,13 @@ import {
   EVENT_TEMPLATES,
   PROMPT_PACKS,
   applyEventTemplateToDraft,
+  buildDuplicateEventInput,
   buildContributorSummary,
   buildGuestChallengeProgress,
   buildGuestUploadSuccessSummary,
   buildHostLaunchKit,
   buildHostShareAssets,
+  buildPostEventHostSummary,
   buildChallengeProgressSummary,
   buildAwardVotingSummary,
   isAwardVotingEnabled,
@@ -26,9 +28,11 @@ import {
   isAnonymousGuestDisplayName,
   normalizeReportReason,
   sanitizeGuestDisplayName,
+  deriveEventLifecycleStatus,
   validateUploadFile,
   visiblePhotos,
   validateChallengeDraft,
+  validateHostFeedback,
 } from "./index.ts";
 import type { EventChallenge, EventSummary, GuestUploadLocalMetadata, Photo, PublicEvent } from "./index.ts";
 
@@ -116,6 +120,15 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("challenge_progress_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_share_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_returned_to_event"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("event_lifecycle_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("post_event_summary_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("duplicate_event_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("duplicate_event_created"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("host_feedback_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("host_feedback_submitted"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("host_feedback_skipped"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("repeat_event_cta_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_shared_after_event"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
 });
 
@@ -215,6 +228,135 @@ test("unknown templates and old events use safe fallbacks", () => {
   assert.equal(metadata.templateName, undefined);
   assert.equal(metadata.recapTitle, "Event recap");
   assert.equal(metadata.recapSubtitle, "A shared album from the people who were there.");
+});
+
+test("event lifecycle status is derived from dates, photo state, and reveal state", () => {
+  const now = new Date("2026-06-22T12:00:00.000Z");
+  const base = {
+    id: "event",
+    name: "Formal",
+    slug: "formal",
+    eventDate: "2026-06-25T12:00:00.000Z",
+    revealAt: "2026-06-25T16:00:00.000Z",
+    photoLimitPerGuest: 10,
+    eventLink: "https://example.com/e/formal",
+    photoCount: 0,
+    challenge: null,
+  } satisfies EventSummary;
+
+  assert.equal(deriveEventLifecycleStatus(base, {}, now).status, "draft_or_upcoming");
+  assert.equal(deriveEventLifecycleStatus({ ...base, eventDate: "2026-06-23T08:00:00.000Z" }, {}, now).status, "live_or_happening_soon");
+  assert.equal(deriveEventLifecycleStatus(base, { totalPhotos: 3 }, now).status, "collecting_photos");
+  assert.equal(
+    deriveEventLifecycleStatus({ ...base, challenge: { id: "challenge", type: CHALLENGE_TYPES.MEMORY_CAPSULE, title: "Capsule", instructions: "Upload.", participants: [] } }, { totalPhotos: 3 }, now).status,
+    "reveal_locked",
+  );
+  assert.equal(deriveEventLifecycleStatus({ ...base, revealAt: "2026-06-22T11:00:00.000Z" }, { visiblePhotos: 3 }, now).status, "recap_ready");
+  assert.equal(deriveEventLifecycleStatus({ ...base, revealAt: "2026-06-01T11:00:00.000Z" }, { visiblePhotos: 3 }, now).status, "archived_or_past");
+});
+
+test("duplicate event input copies setup only and resets timing", () => {
+  const source = {
+    id: "event",
+    name: "Chapter Formal",
+    description: "Spring formal.",
+    slug: "chapter-formal",
+    eventDate: "2026-06-01T00:00:00.000Z",
+    revealAt: "2026-06-02T00:00:00.000Z",
+    photoLimitPerGuest: 12,
+    eventLink: "https://example.com/e/chapter-formal",
+    photoCount: 42,
+    eventTemplateSlug: "greek-life-event",
+    promptPackSlug: "greek-life",
+    challenge: {
+      id: "challenge",
+      type: CHALLENGE_TYPES.EVENT_AWARDS,
+      title: "Event Awards",
+      instructions: "Choose a category.",
+      participants: [],
+      categories: [{ id: "best-fit", label: "Best fit", order: 0 }, { id: "best-group", label: "Best group", order: 1 }],
+    },
+  } satisfies EventSummary;
+
+  const duplicate = buildDuplicateEventInput(source, new Date("2026-06-22T12:00:00.000Z"));
+
+  assert.equal(duplicate.name, "Chapter Formal (Copy)");
+  assert.equal(duplicate.description, "Spring formal.");
+  assert.equal(duplicate.photoLimitPerGuest, 12);
+  assert.equal(duplicate.eventTemplateSlug, "greek-life-event");
+  assert.equal(duplicate.promptPackSlug, "greek-life");
+  assert.equal(duplicate.eventDate, "2026-06-29T12:00:00.000Z");
+  assert.equal(duplicate.revealAt, "2026-06-29T16:00:00.000Z");
+  assert.equal(duplicate.challenge?.type, CHALLENGE_TYPES.EVENT_AWARDS);
+  assert.deepEqual(duplicate.challenge && "categories" in duplicate.challenge ? duplicate.challenge.categories?.map((category) => category.label) : [], ["Best fit", "Best group"]);
+});
+
+test("post-event host summary combines visible photos, contributors, analytics, challenge progress, and award winners", () => {
+  const event = {
+    id: "event",
+    name: "Awards Night",
+    slug: "awards-night",
+    eventDate: "2026-06-01T00:00:00.000Z",
+    revealAt: "2026-06-02T00:00:00.000Z",
+    photoLimitPerGuest: 10,
+    eventLink: "https://example.com/e/awards-night",
+    photoCount: 3,
+    challenge: {
+      id: "challenge",
+      type: CHALLENGE_TYPES.EVENT_AWARDS,
+      title: "Event Awards",
+      instructions: "Submit winners.",
+      participants: [],
+      categories: [{ id: "funny", label: "Funniest", order: 0 }],
+    },
+  } satisfies EventSummary;
+  const summary = buildPostEventHostSummary(
+    event,
+    [
+      photo({ id: "one", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T01:00:00.000Z", isFeatured: true }),
+      photo({ id: "two", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T02:00:00.000Z", reportCount: 1 }),
+      photo({ id: "hidden", guestNickname: "Alex", visibilityStatus: "HIDDEN", createdAt: "2026-06-02T02:00:00.000Z" }),
+    ],
+    {
+      guestJoins: 8,
+      liveWallOpens: 3,
+      recapOpens: 5,
+      eventAwardsVoting: {
+        votingEnabled: true,
+        categories: [{ categoryId: "funny", categoryLabel: "Funniest", submissionCount: 2, totalVotes: 2, voteTotals: [{ photoId: "one", voteCount: 2 }], leaderPhotoIds: ["one"], isTie: false, noSubmissions: false, noVotes: false }],
+      },
+    },
+  );
+
+  assert.equal(summary.totalPhotos, 3);
+  assert.equal(summary.visiblePhotos, 2);
+  assert.equal(summary.hiddenPhotos, 1);
+  assert.equal(summary.reportedPhotos, 1);
+  assert.equal(summary.totalContributors, 1);
+  assert.equal(summary.guestJoins, 8);
+  assert.equal(summary.uploadsOverTime[0].count, 2);
+  assert.equal(summary.challengeCompletion.rows[0].count, 2);
+  assert.deepEqual(summary.awardWinners, [{ categoryId: "funny", categoryLabel: "Funniest", photoId: "one", voteCount: 2, isTie: false }]);
+});
+
+test("host feedback validation supports submit and skip states with bounded text", () => {
+  const submitted = validateHostFeedback({
+    outcome: "great",
+    repeatIntent: "yes",
+    guestConfusion: "  QR code   placement  ",
+    featureRequest: "a".repeat(600),
+    note: "Loved it",
+  });
+  const skipped = validateHostFeedback({ skipped: true });
+  const invalid = validateHostFeedback({ outcome: "great" });
+
+  assert.equal(submitted.ok, true);
+  if (submitted.ok) {
+    assert.equal(submitted.value.guestConfusion, "QR code placement");
+    assert.equal(submitted.value.featureRequest?.length, 500);
+  }
+  assert.equal(skipped.ok, true);
+  assert.equal(invalid.ok, false);
 });
 
 test("report reasons and upload validation stay beta-safe", () => {

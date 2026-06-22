@@ -32,6 +32,7 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
   events       Event[]
+  hostEventFeedback HostEventFeedback[]
 }
 
 model Event {
@@ -54,6 +55,7 @@ model Event {
   challenges EventChallenge[]
   photoReports       PhotoReport[]
   photoVotes         PhotoVote[]
+  hostFeedback       HostEventFeedback[]
 
   @@index([hostId])
 }
@@ -200,4 +202,25 @@ model AnalyticsEvent {
   @@index([createdAt])
   @@index([userId])
   @@index([eventId])
+}
+
+model HostEventFeedback {
+  id             String    @id @default(cuid())
+  eventId        String
+  hostId         String
+  outcome        String?
+  repeatIntent   String?
+  guestConfusion String?
+  featureRequest String?
+  note           String?
+  skippedAt      DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  event          Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  host           User      @relation(fields: [hostId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@index([hostId])
+  @@index([eventId, hostId])
 }
