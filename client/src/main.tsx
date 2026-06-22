@@ -11,6 +11,7 @@ import {
   PROMPT_PACKS,
   applyEventTemplateToDraft,
   buildHostLaunchKit,
+  buildHostShareAssets,
   buildChallengeProgressSummary,
   buildEventRecapMetadata,
   buildChallengePayload,
@@ -38,7 +39,7 @@ import {
   validateUploadFile,
   validateChallengeDraft,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, HostLaunchKit, HostLaunchKitLink, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, HostLaunchKit, HostShareAssets, HostShareLinkCard, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -201,6 +202,10 @@ function downloadDataUrl(dataUrl: string, filename: string) {
   a.click();
 }
 
+function safeFilename(value: string) {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "eventfilm";
+}
+
 async function copyText(text: string) {
   if (navigator.clipboard?.writeText) {
     try {
@@ -231,6 +236,21 @@ async function copyText(text: string) {
   } finally {
     document.body.removeChild(textarea);
   }
+}
+
+async function shareOrCopyText({ title, text, url, fallbackLabel, onStatus, analyticsName, eventId, eventSlug, surface }: { title: string; text: string; url?: string; fallbackLabel: string; onStatus: (value: string) => void; analyticsName: AnalyticsEventName; eventId?: string; eventSlug?: string; surface: string }) {
+  const payload = url ? { title, text, url } : { title, text };
+  if (navigator.share) {
+    trackAnalytics("native_share_opened", { eventId, eventSlug, metadata: { surface } });
+    await navigator.share(payload);
+    trackAnalytics(analyticsName, { eventId, eventSlug, metadata: { surface, method: "native" } });
+    onStatus(`${fallbackLabel} shared`);
+    return;
+  }
+
+  await copyText(url ? `${text} ${url}` : text);
+  trackAnalytics(analyticsName, { eventId, eventSlug, metadata: { surface, method: "copy_fallback" } });
+  onStatus(`${fallbackLabel} copied`);
 }
 
 function readFileAsDataUrl(file: File) {
@@ -1054,14 +1074,32 @@ function LaunchKitCopyBlock({ title, value, onCopy }: { title: string; value: st
   );
 }
 
-function LaunchKitLinkCard({ link, event }: { link: HostLaunchKitLink; event: EventSummary }) {
+function LaunchKitLinkCard({ link, event }: { link: HostShareLinkCard; event: EventSummary }) {
   const [status, setStatus] = useState("");
 
   async function copyLink() {
     try {
-      await copyText(link.url);
+      await copyText(link.copyText || link.url);
       setStatus(`${link.label} copied`);
-      if (link.key === "guest") trackAnalytics("guest_link_copied", { eventId: event.id, eventSlug: event.slug });
+      trackAnalytics(link.copyAnalyticsName, { eventId: event.id, eventSlug: event.slug, metadata: { surface: "launch_kit" } });
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  async function shareLink() {
+    try {
+      await shareOrCopyText({
+        title: `${event.name} on EventFilm`,
+        text: link.shareText,
+        url: link.url,
+        fallbackLabel: link.label,
+        onStatus: setStatus,
+        analyticsName: link.shareAnalyticsName,
+        eventId: event.id,
+        eventSlug: event.slug,
+        surface: "launch_kit",
+      });
     } catch (err) {
       setStatus((err as Error).message);
     }
@@ -1079,15 +1117,18 @@ function LaunchKitLinkCard({ link, event }: { link: HostLaunchKitLink; event: Ev
           <p className="font-display text-lg font-bold text-stone-950">{link.label}</p>
           <p className="mt-1 text-sm text-stone-600">{link.purpose}</p>
         </div>
-        <StatusPill tone={link.key === "guest" ? "amber" : link.key === "live-wall" ? "green" : "stone"}>{link.key === "guest" ? "Guests" : link.key === "live-wall" ? "During" : "After"}</StatusPill>
+        <StatusPill tone={link.key === "guest" ? "amber" : link.key === "live-wall" ? "green" : "stone"}>{link.timing}</StatusPill>
+      </div>
+      <div className="mt-4 grid gap-2 rounded-[1rem] bg-white/70 p-3 text-sm text-stone-700">
+        <p><strong className="text-stone-950">Who:</strong> {link.audience}</p>
+        <p><strong className="text-stone-950">When:</strong> {link.timing}</p>
       </div>
       <input className="mt-4 w-full rounded-[1rem] border border-[#eadfce] bg-white px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={link.url} />
       <p className="mt-3 text-sm font-semibold text-stone-700">{link.instruction}</p>
       {status && <p className="mt-2 text-sm font-semibold text-amber-700">{status}</p>}
       <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        {link.key === "guest" ? (
-          <Button type="button" className="min-h-10 px-4 py-2" onClick={copyLink}>Copy link</Button>
-        ) : (
+        <Button type="button" className="min-h-10 px-4 py-2" onClick={shareLink}>Share</Button>
+        {link.key !== "guest" && (
           <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" href={link.url} target="_blank" rel="noreferrer" onClick={openLink}>Open</a>
         )}
         <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={copyLink}>Copy</SecondaryButton>
@@ -1098,6 +1139,7 @@ function LaunchKitLinkCard({ link, event }: { link: HostLaunchKitLink; event: Ev
 
 function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: EventSummary; qrCodeDataUrl?: string; compact?: boolean }) {
   const kit: HostLaunchKit = buildHostLaunchKit(event);
+  const assets: HostShareAssets = buildHostShareAssets(event);
   const [copyStatus, setCopyStatus] = useState("");
 
   useEffect(() => {
@@ -1119,9 +1161,13 @@ function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: 
         <div>
           <StatusPill>Host launch kit</StatusPill>
           <h2 className="mt-4 font-display text-3xl font-bold text-stone-950">Everything to run {kit.eventName}</h2>
-          <p className="mt-2 max-w-2xl text-stone-600">Guest Upload, Live Wall, and Recap each have one job. Keep them separate and hosting stays simple.</p>
+          <p className="mt-2 max-w-2xl text-stone-600">Poster, Guest Upload, Live Wall, and Recap each have one job. Keep them separate and hosting stays simple.</p>
         </div>
-        <StatusPill tone="stone">{kit.modeLabel}</StatusPill>
+        <div className="flex flex-wrap gap-2">
+          <Link className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white" to={assets.poster.posterPath}>View poster</Link>
+          <Link className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#eadfce] bg-white px-4 py-2 text-sm font-bold text-stone-900" to={`${assets.poster.posterPath}?print=1`}>Print poster</Link>
+          <StatusPill tone="stone">{assets.modeLabel}</StatusPill>
+        </div>
       </div>
 
       <div className="mt-6 grid gap-3 sm:grid-cols-5">
@@ -1134,30 +1180,125 @@ function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: 
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {kit.links.map((link) => <LaunchKitLinkCard key={link.key} link={link} event={event} />)}
+        {assets.links.map((link) => <LaunchKitLinkCard key={link.key} link={link} event={event} />)}
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <LaunchKitCopyBlock title="Guest invite text" value={kit.inviteText} onCopy={() => copyLaunchText("Guest invite", kit.inviteText)} />
-        <LaunchKitCopyBlock title="Host instructions" value={kit.hostInstructions} onCopy={() => copyLaunchText("Host instructions", kit.hostInstructions)} />
-        <LaunchKitCopyBlock title="Instagram or group chat caption" value={kit.socialCaption} onCopy={() => copyLaunchText("Caption", kit.socialCaption)} />
+        <LaunchKitCopyBlock title="Guest invite text" value={assets.inviteText} onCopy={() => copyLaunchText("Guest invite", assets.inviteText)} />
+        <LaunchKitCopyBlock title="Social story or post" value={assets.socialPostCopy} onCopy={() => copyLaunchText("Social copy", assets.socialPostCopy)} />
+        <LaunchKitCopyBlock title="Live Wall display prompt" value={assets.liveWallDisplayPrompt} onCopy={() => copyLaunchText("Live Wall prompt", assets.liveWallDisplayPrompt)} />
       </div>
 
       <div className="mt-6 grid gap-4 lg:grid-cols-[220px_1fr]">
         {qrCodeDataUrl && (
           <div className="rounded-3xl bg-stone-50 p-4">
             <img className="mx-auto h-48 w-48 rounded-2xl bg-white" src={qrCodeDataUrl} alt="Event QR code" />
-            <SecondaryButton type="button" className="mt-4 w-full" onClick={() => downloadDataUrl(qrCodeDataUrl, `${event.name}-qr.png`)}>Download QR</SecondaryButton>
+            <SecondaryButton type="button" className="mt-4 w-full" onClick={() => downloadDataUrl(qrCodeDataUrl, `${safeFilename(event.name)}-qr.png`)}>Download QR</SecondaryButton>
           </div>
         )}
         <div className="rounded-[1.45rem] border border-[#ffd4c7] bg-[#fff3ee] p-5">
           <p className="text-sm font-bold uppercase tracking-wide text-[#d94f33]">Mode instructions</p>
-          <p className="mt-2 font-display text-xl font-bold text-[#653e00]">{kit.modeLabel}</p>
-          <p className="mt-2 text-sm font-semibold text-amber-950">{kit.modeInstructions}</p>
+          <p className="mt-2 font-display text-xl font-bold text-[#653e00]">{assets.modeLabel}</p>
+          <p className="mt-2 text-sm font-semibold text-amber-950">{assets.poster.challengeInstruction}</p>
+          <p className="mt-3 text-sm font-semibold text-stone-700">{assets.recapShareText}</p>
           {copyStatus && <p className="mt-3 text-sm font-bold text-amber-800">{copyStatus}</p>}
         </div>
       </div>
     </Card>
+  );
+}
+
+function EventPosterPage() {
+  const { eventId = "" } = useParams();
+  const auth = useAuth();
+  const [event, setEvent] = useState<EventSummary | null>(null);
+  const [error, setError] = useState("");
+  const [status, setStatus] = useState("");
+
+  useEffect(() => {
+    api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${eventId}`, { token: auth.token })
+      .then((data) => {
+        setEvent(data.event);
+        trackAnalytics("invite_poster_viewed", { eventId: data.event.id, eventSlug: data.event.slug, metadata: { surface: "poster_page" } });
+      })
+      .catch((err) => setError((err as Error).message));
+  }, [auth.token, eventId]);
+
+  useEffect(() => {
+    if (!event) return;
+    if (new URLSearchParams(window.location.search).get("print") !== "1") return;
+    const timer = window.setTimeout(() => {
+      trackAnalytics("invite_poster_printed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "poster_page_auto" } });
+      window.print();
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [event]);
+
+  async function copyPosterText(value: string, label: string) {
+    try {
+      await copyText(value);
+      setStatus(`${label} copied`);
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  function printPoster() {
+    if (!event) return;
+    trackAnalytics("invite_poster_printed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "poster_page" } });
+    window.print();
+  }
+
+  const assets = event ? buildHostShareAssets(event) : null;
+
+  return (
+    <Shell wide>
+      {!event && <Card className="text-center"><h1 className="font-display text-3xl font-bold">Loading poster</h1><p className="mt-2 text-stone-600">{error || "Building the host invite poster..."}</p></Card>}
+      {event && assets && (
+        <div className="poster-page mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_320px]">
+          <section className="poster-sheet overflow-hidden rounded-[2rem] bg-[#fffaf2] p-8 text-stone-950 shadow-[0_28px_90px_rgba(101,62,0,0.14)]">
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-display text-2xl font-bold text-[#653e00]">{assets.poster.brandLine}</p>
+              <div className="flex flex-wrap justify-end gap-2">
+                {assets.poster.templateBadge ? <span className="rounded-full bg-[#ffe0b7] px-4 py-2 text-sm font-extrabold text-[#653e00]">{assets.poster.templateBadge}</span> : null}
+                <span className="rounded-full bg-stone-950 px-4 py-2 text-sm font-extrabold text-white">{assets.poster.modeBadge}</span>
+              </div>
+            </div>
+            <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_300px] lg:items-center">
+              <div>
+                <p className="text-sm font-extrabold uppercase tracking-wide text-[#d94f33]">{assets.poster.noDownloadCopy}</p>
+                <h1 className="mt-4 font-display text-5xl font-black leading-tight text-stone-950 lg:text-7xl">{assets.poster.title}</h1>
+                <p className="mt-6 font-display text-3xl font-bold text-[#653e00]">{assets.poster.instruction}</p>
+                {assets.poster.challengeInstruction ? <p className="mt-5 max-w-2xl text-xl font-semibold leading-8 text-stone-700">{assets.poster.challengeInstruction}</p> : null}
+              </div>
+              <div className="rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_50px_rgba(101,62,0,0.09)]">
+                {event.qrCodeDataUrl ? <img className="aspect-square w-full rounded-[1.25rem] bg-white" src={event.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
+                <p className="mt-4 break-all rounded-[1rem] bg-[#fff3ee] p-3 text-center text-sm font-extrabold text-[#653e00]">{assets.poster.guestLink}</p>
+              </div>
+            </div>
+            <div className="mt-10 rounded-[1.5rem] border border-[#ffd4c7] bg-white/70 p-5">
+              <p className="text-sm font-bold uppercase tracking-wide text-[#d94f33]">Invite copy</p>
+              <p className="mt-2 text-xl font-bold leading-8 text-stone-800">{assets.poster.inviteText}</p>
+            </div>
+          </section>
+
+          <aside className="poster-actions grid content-start gap-3">
+            <Card>
+              <h2 className="font-display text-2xl font-bold">Poster actions</h2>
+              <p className="mt-2 text-sm text-stone-600">Use browser print to save as PDF or send to a printer. Standalone poster image export is intentionally out of scope for this pass.</p>
+              {status && <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-800">{status}</p>}
+              <div className="mt-4 grid gap-2">
+                <Button type="button" onClick={printPoster}>Print or save PDF</Button>
+                <SecondaryButton type="button" onClick={() => copyPosterText(assets.poster.guestLink, "Guest link")}>Copy guest link</SecondaryButton>
+                <SecondaryButton type="button" onClick={() => copyPosterText(assets.poster.inviteText, "Invite text")}>Copy invite text</SecondaryButton>
+                {event.qrCodeDataUrl ? <SecondaryButton type="button" onClick={() => downloadDataUrl(event.qrCodeDataUrl || "", `${safeFilename(event.name)}-qr.png`)}>Download QR PNG</SecondaryButton> : null}
+                <Link className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900" to={`/dashboard/events/${event.id}`}>Back to event</Link>
+              </div>
+            </Card>
+          </aside>
+        </div>
+      )}
+    </Shell>
   );
 }
 
@@ -1834,7 +1975,9 @@ function CreateEvent() {
       <Shell>
         <div className="mx-auto max-w-5xl">
           <HostLaunchKitPanel event={created} qrCodeDataUrl={created.qrCodeDataUrl} />
-          <div className="mt-5 flex justify-center">
+          <div className="mt-5 flex flex-wrap justify-center gap-3">
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" to={`/dashboard/events/${created.id}/poster`}>View poster</Link>
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900" to={`/dashboard/events/${created.id}/poster?print=1`}>Print poster</Link>
             <SecondaryButton onClick={() => navigate(`/dashboard/events/${created.id}`)}>Manage event</SecondaryButton>
           </div>
         </div>
@@ -2043,7 +2186,11 @@ function ManageEvent() {
                 <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">lock</Icon>Reveal: {formatDateTime(event.revealAt)}</span>
               </div>
             </div>
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
+            <div className="flex flex-wrap gap-2">
+              <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
+              <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" to={`/dashboard/events/${event.id}/poster`}>View poster</Link>
+              <Link className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster?print=1`}>Print poster</Link>
+            </div>
           </section>
 
           <section className="mt-8">
@@ -2572,12 +2719,69 @@ function LiveWall() {
   );
 }
 
+function RecapSharePanel({ event, data, assets, hasWinners }: { event: PublicEvent; data: EventRecapResponse; assets: HostShareAssets; hasWinners: boolean }) {
+  const [status, setStatus] = useState("");
+  const primaryText = data.isLocked && assets.memoryCapsuleRevealCopy ? assets.memoryCapsuleRevealCopy : hasWinners ? assets.winnerShareText : assets.recapShareText;
+  const empty = data.photos.length === 0;
+
+  async function copyRecapLink() {
+    try {
+      await copyText(data.recapLink);
+      trackAnalytics("recap_link_copied", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap" } });
+      setStatus("Recap link copied");
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  async function copyShareText() {
+    try {
+      await copyText(primaryText);
+      trackAnalytics("recap_share_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", method: "copy_text" } });
+      setStatus("Recap share text copied");
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  async function shareRecap() {
+    try {
+      await shareOrCopyText({
+        title: `${event.name} recap`,
+        text: primaryText,
+        url: data.recapLink,
+        fallbackLabel: "Recap",
+        onStatus: setStatus,
+        analyticsName: "recap_link_shared",
+        eventId: event.id,
+        eventSlug: event.slug,
+        surface: "recap",
+      });
+      trackAnalytics("recap_share_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", method: "native_or_copy" } });
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  return (
+    <div className="rounded-[1.35rem] bg-white/10 p-5">
+      <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Share this recap</p>
+      <p className="mt-3 text-sm leading-6 text-stone-200">{empty ? assets.emptyRecapCopy : primaryText}</p>
+      {status && <p className="mt-3 text-sm font-bold text-amber-200">{status}</p>}
+      <div className="mt-4 grid gap-2">
+        <button className="min-h-12 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" type="button" onClick={shareRecap}>Share recap</button>
+        <button className="min-h-12 rounded-[1.15rem] bg-white px-5 py-3 text-sm font-bold text-stone-950" type="button" onClick={copyRecapLink}>Copy recap link</button>
+        <button className="min-h-12 rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-bold text-white" type="button" onClick={copyShareText}>Copy share text</button>
+      </div>
+    </div>
+  );
+}
+
 function EventRecap() {
   const { slug = "" } = useParams();
   const [{ session }] = useState(() => getGuestSession(slug));
   const [data, setData] = useState<EventRecapResponse | null>(null);
   const [error, setError] = useState("");
-  const [copyStatus, setCopyStatus] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
 
@@ -2597,6 +2801,15 @@ function EventRecap() {
   const summary = event ? buildChallengeProgressSummary(event.challenge, data.photos) : null;
   const recap = event ? buildEventRecapMetadata(event, data.photos) : null;
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+  const shareAssets = event
+    ? buildHostShareAssets({
+        ...event,
+        eventLink: data.eventLink,
+        liveWallLink: data.liveWallLink,
+        recapLink: data.recapLink,
+      })
+    : null;
+  const hasAwardWinners = Boolean(data?.awardVoting?.categories.some((category) => category.leaderPhotoIds.length > 0));
 
   async function reportSelectedPhoto(reason: PhotoReportReason, note: string) {
     if (!selectedPhoto) return;
@@ -2642,20 +2855,7 @@ function EventRecap() {
                     <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Contributors</p>
                     <p className="mt-2 font-display text-5xl font-bold">{recap?.contributorCount || 0}</p>
                   </div>
-                  <button
-                    className="col-span-2 min-h-12 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white"
-                    onClick={async () => {
-                      try {
-                        await copyText(data.recapLink);
-                        setCopyStatus("Recap link copied");
-                      } catch (err) {
-                        setCopyStatus((err as Error).message);
-                      }
-                    }}
-                  >
-                    Share recap
-                  </button>
-                  {copyStatus && <p className="col-span-2 text-sm font-bold text-amber-200">{copyStatus}</p>}
+                  {shareAssets ? <div className="col-span-2"><RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} /></div> : null}
                 </div>
               </div>
             </section>
@@ -2673,6 +2873,12 @@ function EventRecap() {
                     <h2 className="font-display text-3xl font-bold">{recap?.recapTitle || "Highlights"}</h2>
                     <p className="text-stone-600">{recap?.recapSubtitle || "Favorite moments from the event, ready to revisit."}</p>
                   </div>
+                  {data.photos.length === 0 && shareAssets ? (
+                    <Card className="mb-4 border-dashed text-center">
+                      <h3 className="font-display text-2xl font-bold">No photos yet</h3>
+                      <p className="mx-auto mt-2 max-w-xl text-stone-600">{shareAssets.emptyRecapCopy}</p>
+                    </Card>
+                  ) : null}
                   <PhotoMosaic photos={recap?.highlightPhotos || []} onPhotoClick={openPublicPhoto} />
                 </section>
 
@@ -3140,6 +3346,7 @@ function App() {
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/dashboard/beta-readiness" element={<ProtectedRoute><BetaReadiness /></ProtectedRoute>} />
             <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
+            <Route path="/dashboard/events/:eventId/poster" element={<ProtectedRoute><EventPosterPage /></ProtectedRoute>} />
             <Route path="/dashboard/events/:eventId" element={<ProtectedRoute><ManageEvent /></ProtectedRoute>} />
             <Route path="/wall/:slug" element={<LiveWall />} />
             <Route path="/recap/:slug" element={<EventRecap />} />

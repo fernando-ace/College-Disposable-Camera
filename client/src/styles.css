@@ -59,3 +59,41 @@ textarea {
     transform: translateX(calc(-1 * var(--strip-shift, 25%)));
   }
 }
+
+@media print {
+  @page {
+    size: letter portrait;
+    margin: 0.35in;
+  }
+
+  body {
+    background: #fffaf2;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .poster-sheet,
+  .poster-sheet * {
+    visibility: visible;
+  }
+
+  .poster-page {
+    display: block !important;
+    max-width: none !important;
+  }
+
+  .poster-actions {
+    display: none !important;
+  }
+
+  .poster-sheet {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    min-height: 10.2in;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+}

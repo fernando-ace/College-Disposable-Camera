@@ -3,12 +3,20 @@ import { Link, useLocalSearchParams } from "expo-router";
 import { Linking, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
-import { buildHostLaunchKit, challengeLabel, getEventTemplate } from "@eventfilm/shared";
+import { buildHostLaunchKit, buildHostShareAssets, challengeLabel, getEventTemplate } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function buildWebUrl(event: EventSummary, path: string) {
+  try {
+    return new URL(path, event.eventLink).toString();
+  } catch {
+    return path;
+  }
 }
 
 export default function EventDetailScreen() {
@@ -98,6 +106,7 @@ export default function EventDetailScreen() {
   }, [api, event]);
 
   const launchKit = event ? buildHostLaunchKit(event) : null;
+  const shareAssets = event ? buildHostShareAssets(event) : null;
   const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
 
   return (
@@ -135,6 +144,13 @@ export default function EventDetailScreen() {
                 </View>
               </View>
             </LinkBlock>
+            {shareAssets ? (
+              <Card tone="warm">
+                <SectionHeader title="Invite poster" subtitle="Web-only print page for table signs, group chats, and QR handoffs." />
+                <Body tone="muted">{shareAssets.poster.instruction}. {shareAssets.poster.noDownloadCopy}.</Body>
+                <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open poster page</Button>
+              </Card>
+            ) : null}
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
               <View style={{ flex: 1, minWidth: 150 }}>
                 <LinkBlock label="Live Wall" description="Open on a TV, projector, or laptop while guests upload." url={event.liveWallLink}>

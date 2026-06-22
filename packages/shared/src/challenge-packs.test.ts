@@ -8,6 +8,7 @@ import {
   PROMPT_PACKS,
   applyEventTemplateToDraft,
   buildHostLaunchKit,
+  buildHostShareAssets,
   buildChallengeProgressSummary,
   buildAwardVotingSummary,
   isAwardVotingEnabled,
@@ -92,6 +93,15 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("prompts_customized"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("event_created_from_template"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("template_skipped"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("invite_poster_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("invite_poster_printed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_link_shared"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_copied"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_shared"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_copied"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_shared"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_share_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("native_share_opened"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
 });
 
@@ -462,4 +472,85 @@ test("host launch kit separates guest, live wall, and recap jobs", () => {
   assert.match(kit.inviteText, /birthday/i);
   assert.match(kit.links[1].instruction, /birthday energy/);
   assert.equal(kit.checklist.length, 5);
+});
+
+test("host share assets generate poster and share card metadata", () => {
+  const assets = buildHostShareAssets({
+    id: "event 1",
+    name: "Spring Formal",
+    slug: "spring-formal",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/spring-formal",
+    liveWallLink: "https://example.com/wall/spring-formal",
+    recapLink: "https://example.com/recap/spring-formal",
+    photoCount: 0,
+    eventTemplateSlug: "birthday-party",
+    promptPackSlug: "birthday",
+    challenge: { id: "challenge", type: CHALLENGE_TYPES.EVENT_AWARDS, title: "Awards", instructions: "Choose an award category.", participants: [] },
+  });
+
+  assert.equal(assets.poster.posterPath, "/dashboard/events/event%201/poster");
+  assert.equal(assets.poster.noDownloadCopy, "No app download needed");
+  assert.match(assets.inviteText, /birthday/i);
+  assert.match(assets.socialPostCopy, /birthday recap/i);
+  assert.match(assets.winnerShareText, /Event Awards winners/i);
+  assert.deepEqual(assets.links.map((link) => [link.key, link.audience, link.timing]), [
+    ["guest", "Guests", "Before event"],
+    ["live-wall", "Host display", "During event"],
+    ["recap", "Everyone", "After reveal"],
+  ]);
+});
+
+test("host share assets keep fallback copy useful for old events", () => {
+  const assets = buildHostShareAssets({
+    id: "legacy",
+    name: "Legacy Night",
+    slug: "legacy-night",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/legacy-night",
+    liveWallLink: "",
+    recapLink: "https://example.com/recap/legacy-night",
+    photoCount: 0,
+    eventTemplateSlug: null,
+    promptPackSlug: null,
+    challenge: null,
+  });
+
+  assert.match(assets.inviteText, /Legacy Night/);
+  assert.match(assets.inviteText, /No app download needed/);
+  assert.match(assets.liveWallDisplayPrompt, /Live Wall/);
+  assert.match(assets.emptyRecapCopy, /No photos yet/);
+});
+
+test("host share assets use template-aware copy for common event presets", () => {
+  const cases = [
+    ["birthday-party", /birthday/i],
+    ["wedding-engagement", /celebration/i],
+    ["greek-life-event", /chapter/i],
+    ["graduation-party", /graduation/i],
+    ["friend-trip", /trip/i],
+  ] as const;
+
+  for (const [eventTemplateSlug, expected] of cases) {
+    const assets = buildHostShareAssets({
+      id: eventTemplateSlug,
+      name: "Event",
+      slug: eventTemplateSlug,
+      eventDate: "2026-01-01T00:00:00.000Z",
+      revealAt: "2026-01-02T00:00:00.000Z",
+      photoLimitPerGuest: 5,
+      eventLink: `https://example.com/e/${eventTemplateSlug}`,
+      liveWallLink: `https://example.com/wall/${eventTemplateSlug}`,
+      recapLink: `https://example.com/recap/${eventTemplateSlug}`,
+      photoCount: 0,
+      eventTemplateSlug,
+      promptPackSlug: null,
+      challenge: null,
+    });
+    assert.match(assets.inviteText, expected);
+  }
 });

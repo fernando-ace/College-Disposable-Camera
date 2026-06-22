@@ -1,12 +1,20 @@
 import * as React from "react";
 import * as Clipboard from "expo-clipboard";
 import { useLocalSearchParams } from "expo-router";
-import { Image, Share, View } from "react-native";
+import { Image, Linking, Share, View } from "react-native";
 import type { LaunchLinkVerification } from "@eventfilm/api-client";
-import type { EventSummary, Photo } from "@eventfilm/shared";
-import { buildHostLaunchKit, getEventTemplate } from "@eventfilm/shared";
+import type { AnalyticsEventName, EventSummary, Photo } from "@eventfilm/shared";
+import { buildHostLaunchKit, buildHostShareAssets, getEventTemplate } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, ErrorState, LinkBlock, LoadingState, Screen, SectionHeader, SuccessState, TaskHeader, colors } from "../../../src/components/ui";
 import { useAuth } from "../../../src/auth";
+
+function buildWebUrl(event: EventSummary, path: string) {
+  try {
+    return new URL(path, event.eventLink).toString();
+  } catch {
+    return path;
+  }
+}
 
 export default function ShareEventScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
@@ -41,24 +49,30 @@ export default function ShareEventScreen() {
     }).catch(() => {});
   }, [api, event]);
 
-  async function copyLink(label: string, url?: string) {
+  function trackShareAction(name: AnalyticsEventName, surface: string) {
+    if (!event) return;
+    api.trackAnalyticsEvent({
+      name,
+      source: "mobile",
+      path: `/events/${event.id}/share`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface },
+    }).catch(() => {});
+  }
+
+  async function copyLink(label: string, url?: string, analyticsName: AnalyticsEventName = "guest_link_copied") {
     if (!url) return;
     await Clipboard.setStringAsync(url);
     setMessage(`${label} copied.`);
-    if (label === "Guest link" && event) {
-      api.trackAnalyticsEvent({
-        name: "guest_link_copied",
-        source: "mobile",
-        path: `/events/${event.id}/share`,
-        eventId: event.id,
-        eventSlug: event.slug,
-      }).catch(() => {});
-    }
+    trackShareAction(analyticsName, "share_screen");
   }
 
-  async function shareLink(label: string, url?: string) {
+  async function shareLink(label: string, url?: string, text?: string, analyticsName: AnalyticsEventName = "guest_link_shared") {
     if (!event || !url) return;
-    await Share.share({ message: `${label} for ${event.name}: ${url}`, url });
+    trackShareAction("native_share_opened", "share_screen");
+    await Share.share({ message: text || `${label} for ${event.name}: ${url}`, url });
+    trackShareAction(analyticsName, "share_screen");
   }
 
   async function copyText(label: string, value: string) {
@@ -67,6 +81,7 @@ export default function ShareEventScreen() {
   }
 
   const launchKit = event ? buildHostLaunchKit(event) : null;
+  const shareAssets = event ? buildHostShareAssets(event) : null;
   const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
 
   return (
@@ -80,33 +95,28 @@ export default function ShareEventScreen() {
       {!event ? <LoadingState label="Loading sharing details..." /> : null}
       {event ? (
         <>
-          <LinkBlock label="Guest Upload" description="Use this for QR codes, group chats, and invitations." url={event.eventLink} tone="accent">
-            {message ? <SuccessState message={message} /> : null}
-            <View style={{ flexDirection: "row", gap: 10 }}>
-              <View style={{ flex: 1 }}>
-                <Button onPress={() => shareLink("Guest upload link", event.eventLink)}>Share</Button>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button tone="secondary" onPress={() => copyLink("Guest link", event.eventLink)}>Copy link</Button>
-              </View>
-            </View>
-          </LinkBlock>
+          {shareAssets ? (
+            <>
+              {shareAssets.links.map((link) => (
+                <ShareLinkCard
+                  key={link.key}
+                  title={link.label}
+                  subtitle={`${link.audience}. ${link.timing}. ${link.purpose}`}
+                  url={link.url}
+                  tone={link.key === "guest" ? "accent" : undefined}
+                  onShare={() => shareLink(link.label, link.url, link.shareText, link.shareAnalyticsName)}
+                  onCopy={() => copyLink(link.label, link.url, link.copyAnalyticsName)}
+                />
+              ))}
+              {message ? <SuccessState message={message} /> : null}
 
-          <ShareLinkCard
-            title="Live Wall"
-            subtitle="Open this on the display while guests upload."
-            url={event.liveWallLink}
-            onShare={() => shareLink("Live Wall link", event.liveWallLink)}
-            onCopy={() => copyLink("Live Wall link", event.liveWallLink)}
-          />
-
-          <ShareLinkCard
-            title="Recap"
-            subtitle="Share this finished album story after reveal."
-            url={event.recapLink}
-            onShare={() => shareLink("Recap link", event.recapLink)}
-            onCopy={() => copyLink("Recap link", event.recapLink)}
-          />
+              <Card tone="warm">
+                <SectionHeader title="Invite poster" subtitle="Web-only poster page for printing or saving as PDF." />
+                <Body>{shareAssets.poster.instruction}. {shareAssets.poster.noDownloadCopy}.</Body>
+                <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open poster page</Button>
+              </Card>
+            </>
+          ) : null}
 
           <LinkHealthPanel linkChecks={linkChecks} />
 
@@ -127,7 +137,7 @@ export default function ShareEventScreen() {
               <Card tone="warm">
                 <SectionHeader title="Invite text" subtitle="Short enough for a group chat or story." />
                 <Body>{launchKit.inviteText}</Body>
-                <Button tone="secondary" onPress={() => copyText("Guest invite", launchKit.inviteText)}>Copy invite text</Button>
+                <Button tone="secondary" onPress={() => copyText("Guest invite", shareAssets?.inviteText || launchKit.inviteText)}>Copy invite text</Button>
               </Card>
 
               <Card>
@@ -139,8 +149,8 @@ export default function ShareEventScreen() {
 
               <Card>
                 <SectionHeader title="Suggested caption" subtitle="Ready for social or a group message." />
-                <Body>{launchKit.socialCaption}</Body>
-                <Button tone="secondary" onPress={() => copyText("Caption", launchKit.socialCaption)}>Copy caption</Button>
+                <Body>{shareAssets?.socialPostCopy || launchKit.socialCaption}</Body>
+                <Button tone="secondary" onPress={() => copyText("Caption", shareAssets?.socialPostCopy || launchKit.socialCaption)}>Copy caption</Button>
               </Card>
             </>
           ) : null}
@@ -172,17 +182,19 @@ function ShareLinkCard({
   title,
   subtitle,
   url,
+  tone,
   onShare,
   onCopy,
 }: {
   title: string;
   subtitle: string;
   url?: string;
+  tone?: "accent";
   onShare: () => void;
   onCopy: () => void;
 }) {
   return (
-    <LinkBlock label={title} description={subtitle} url={url || "Link unavailable until the event reloads."}>
+    <LinkBlock label={title} description={subtitle} url={url || "Link unavailable until the event reloads."} tone={tone}>
       <View style={{ flexDirection: "row", gap: 10 }}>
         <View style={{ flex: 1 }}>
           <Button disabled={!url} onPress={onShare}>Share</Button>

@@ -189,6 +189,47 @@ export type HostLaunchKitLink = {
   instruction: string;
 };
 
+export type HostShareLinkTiming = "Before event" | "During event" | "After reveal";
+
+export type HostShareLinkAudience = "Guests" | "Host display" | "Everyone";
+
+export type HostShareLinkCard = HostLaunchKitLink & {
+  audience: HostShareLinkAudience;
+  timing: HostShareLinkTiming;
+  copyText: string;
+  shareText: string;
+  copyAnalyticsName: AnalyticsEventName;
+  shareAnalyticsName: AnalyticsEventName;
+};
+
+export type HostInvitePoster = {
+  title: string;
+  instruction: string;
+  guestLink: string;
+  posterPath: string;
+  modeBadge: string;
+  templateBadge?: string;
+  challengeInstruction?: string;
+  noDownloadCopy: string;
+  brandLine: string;
+  inviteText: string;
+};
+
+export type HostShareAssets = {
+  eventName: string;
+  modeLabel: string;
+  templateName?: string;
+  poster: HostInvitePoster;
+  links: HostShareLinkCard[];
+  inviteText: string;
+  socialPostCopy: string;
+  liveWallDisplayPrompt: string;
+  recapShareText: string;
+  winnerShareText: string;
+  memoryCapsuleRevealCopy?: string;
+  emptyRecapCopy: string;
+};
+
 export type HostLaunchKitChecklistItem = {
   key: "create-event" | "choose-mode" | "copy-guest-link" | "open-live-wall" | "share-recap";
   label: string;
@@ -218,7 +259,16 @@ export const ANALYTICS_EVENT_NAMES = [
   "prompts_customized",
   "event_created_from_template",
   "template_skipped",
+  "invite_poster_viewed",
+  "invite_poster_printed",
   "guest_link_copied",
+  "guest_link_shared",
+  "live_wall_link_copied",
+  "live_wall_link_shared",
+  "recap_link_copied",
+  "recap_link_shared",
+  "recap_share_clicked",
+  "native_share_opened",
   "live_wall_opened",
   "recap_opened",
   "guest_joined_event",
@@ -868,6 +918,104 @@ export function sortPhotosForRecap(photos: Photo[]) {
     if (featuredDelta) return featuredDelta;
     return byCreatedAtDesc(a, b);
   });
+}
+
+function buildPosterPath(event: Pick<EventSummary | PublicEvent, "id">) {
+  return `/dashboard/events/${encodeURIComponent(event.id)}/poster`;
+}
+
+function eventLinkOrFallback(value: string | undefined | null) {
+  return value || "";
+}
+
+export function buildHostShareAssets(
+  event: Pick<EventSummary, "id" | "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge" | "eventTemplateSlug">,
+): HostShareAssets {
+  const pack = getChallengePack(event.challenge?.type || "NONE");
+  const template = getEventTemplate(event.eventTemplateSlug);
+  const guestLink = eventLinkOrFallback(event.eventLink);
+  const liveWallLink = eventLinkOrFallback(event.liveWallLink);
+  const recapLink = eventLinkOrFallback(event.recapLink);
+  const challengeInstruction = event.challenge?.instructions || pack.guestInstructions;
+  const inviteText = template ? `${template.inviteCopy} ${guestLink}` : `Upload your photos from ${event.name} here: ${guestLink}. No app download needed.`;
+  const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
+  const recapShareText = template ? `${template.recapFraming} View the recap: ${recapLink}` : `See the EventFilm recap for ${event.name}: ${recapLink}`;
+  const winnerShareText =
+    event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
+      ? `The Event Awards winners from ${event.name} are ready. View the recap: ${recapLink}`
+      : recapShareText;
+  const memoryCapsuleRevealCopy =
+    event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE
+      ? `${memoryCapsuleFromChallenge(event.challenge).revealNote} Share the recap when the reveal opens: ${recapLink}`
+      : undefined;
+
+  const links: HostShareLinkCard[] = [
+    {
+      key: "guest",
+      label: "Guest upload link",
+      url: guestLink,
+      purpose: "Send this to guests so they can upload photos without an account or app download.",
+      instruction: inviteText,
+      audience: "Guests",
+      timing: "Before event",
+      copyText: inviteText,
+      shareText: inviteText,
+      copyAnalyticsName: "guest_link_copied",
+      shareAnalyticsName: "guest_link_shared",
+    },
+    {
+      key: "live-wall",
+      label: "Live Wall link",
+      url: liveWallLink,
+      purpose: "Use this on a TV, projector, or laptop while guests are uploading.",
+      instruction: template ? template.liveWallCopy : "Open this on a room display while guests upload photos.",
+      audience: "Host display",
+      timing: "During event",
+      copyText: liveWallLink,
+      shareText: `Open the ${event.name} Live Wall during the event: ${liveWallLink}`,
+      copyAnalyticsName: "live_wall_link_copied",
+      shareAnalyticsName: "live_wall_link_shared",
+    },
+    {
+      key: "recap",
+      label: "Recap link",
+      url: recapLink,
+      purpose: "Share this after reveal so everyone can view the finished album story.",
+      instruction: template ? template.recapFraming : "Share this after the event so everyone can view the final album and highlights.",
+      audience: "Everyone",
+      timing: "After reveal",
+      copyText: recapShareText,
+      shareText: recapShareText,
+      copyAnalyticsName: "recap_link_copied",
+      shareAnalyticsName: "recap_link_shared",
+    },
+  ];
+
+  return {
+    eventName: event.name,
+    modeLabel: pack.name,
+    templateName: template?.name,
+    poster: {
+      title: event.name,
+      instruction: "Scan to upload your photos",
+      guestLink,
+      posterPath: buildPosterPath(event),
+      modeBadge: pack.name,
+      templateBadge: template?.name,
+      challengeInstruction,
+      noDownloadCopy: "No app download needed",
+      brandLine: "EventFilm",
+      inviteText,
+    },
+    links,
+    inviteText,
+    socialPostCopy,
+    liveWallDisplayPrompt: template ? template.liveWallCopy : "Open the Live Wall while guests upload photos.",
+    recapShareText,
+    winnerShareText,
+    memoryCapsuleRevealCopy,
+    emptyRecapCopy: "No photos yet. Share the guest upload link so the recap has moments to show.",
+  };
 }
 
 export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge" | "eventTemplateSlug">): HostLaunchKit {
