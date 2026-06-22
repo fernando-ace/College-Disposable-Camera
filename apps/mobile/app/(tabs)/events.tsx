@@ -1,10 +1,9 @@
 import * as React from "react";
 import { Link, router } from "expo-router";
 import { View } from "react-native";
-import type { AnalyticsSummary } from "@eventfilm/api-client";
 import type { EventSummary } from "@eventfilm/shared";
 import { deriveEventLifecycleStatus } from "@eventfilm/shared";
-import { Badge, Body, Button, Card, EmptyState, ErrorState, EventCard, LoadingState, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
+import { Body, Button, Card, EmptyState, ErrorState, EventCard, LoadingState, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function eventTime(value: string) {
@@ -23,7 +22,6 @@ function sortEvents(events: EventSummary[]) {
 export default function EventsScreen() {
   const { api, user, signOut } = useAuth();
   const [events, setEvents] = React.useState<EventSummary[]>([]);
-  const [analyticsSummary, setAnalyticsSummary] = React.useState<AnalyticsSummary | null>(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -32,12 +30,8 @@ export default function EventsScreen() {
     setLoading(true);
     setError("");
     try {
-      const [data, analytics] = await Promise.all([
-        api.getHostEvents(),
-        api.getAnalyticsSummary().catch(() => null),
-      ]);
+      const data = await api.getHostEvents();
       setEvents(data.events);
-      if (analytics) setAnalyticsSummary(analytics.summary);
     } catch (err) {
       setError(`${(err as Error).message}. Check your connection and API URL, then try again.`);
     } finally {
@@ -49,14 +43,10 @@ export default function EventsScreen() {
     let isMounted = true;
 
     if (user) {
-      Promise.all([
-        api.getHostEvents(),
-        api.getAnalyticsSummary().catch(() => null),
-      ])
-        .then(([data, analytics]) => {
+      api.getHostEvents()
+        .then((data) => {
           if (!isMounted) return;
           setEvents(data.events);
-          if (analytics) setAnalyticsSummary(analytics.summary);
         })
         .catch((err) => {
           if (isMounted) setError(`${(err as Error).message}. Check your connection and API URL, then try again.`);
@@ -72,7 +62,7 @@ export default function EventsScreen() {
     return (
       <Screen>
         <TaskHeader
-          eyebrow="Host command center"
+          eyebrow="Host dashboard"
           title="Sign in to manage your events."
           body="Sign in to create albums, share QR links, and watch guest photos arrive in one organized place."
         />
@@ -90,12 +80,13 @@ export default function EventsScreen() {
   const featuredEvent = sortedEvents[0];
   const remainingEvents = sortedEvents.slice(1);
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
-  const activeEvents = events.filter((event) => deriveEventLifecycleStatus(event).phase !== "after").length;
+  const upcomingEvents = events.filter((event) => deriveEventLifecycleStatus(event).status === "draft_or_upcoming").length;
+  const recapsReady = events.filter((event) => deriveEventLifecycleStatus(event).phase === "after").length;
 
   return (
     <Screen bottomPadding={112}>
       <TaskHeader
-        eyebrow="Host command center"
+        eyebrow="Host dashboard"
         title="Your events, ready to share."
         body={`Signed in as ${user.email}`}
         action={(
@@ -116,9 +107,9 @@ export default function EventsScreen() {
       />
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-        <StatTile label="Events" value={events.length} tone="accent" />
-        <StatTile label="Active or upcoming" value={activeEvents} />
+        <StatTile label="Upcoming" value={upcomingEvents} tone="accent" />
         <StatTile label="Photos" value={totalPhotos} />
+        <StatTile label="Recaps ready" value={recapsReady} />
       </View>
 
       {error ? <ErrorState message={error} /> : null}
@@ -141,21 +132,6 @@ export default function EventsScreen() {
           <SectionHeader title="Next up" subtitle="Open this event to share links, check uploads, or prep the room display." />
           <EventCard event={featuredEvent} featured onPress={() => router.push(`/events/${featuredEvent.id}`)} />
         </View>
-      ) : null}
-
-      {analyticsSummary ? (
-        <Card>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-            <SectionHeader title="30-day activity" subtitle="Compact signal from guest, upload, wall, and recap activity." />
-            <Badge tone="stone">Beta</Badge>
-          </View>
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-            <StatTile label="Guest joins" value={analyticsSummary.guestJoins} />
-            <StatTile label="Uploads" value={analyticsSummary.uploads} />
-            <StatTile label="Live Wall" value={analyticsSummary.liveWallOpens} />
-            <StatTile label="Recaps" value={analyticsSummary.recapOpens} />
-          </View>
-        </Card>
       ) : null}
 
       {remainingEvents.length ? (

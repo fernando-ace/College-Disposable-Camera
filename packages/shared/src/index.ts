@@ -1165,6 +1165,19 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
   },
 ];
 
+export const HOST_VISIBLE_TEMPLATE_SLUGS: EventTemplateSlug[] = [
+  "birthday-party",
+  "wedding-engagement",
+  "greek-life-event",
+  "graduation-party",
+  "student-org-event",
+  "open-custom-event",
+];
+
+export function getHostVisibleEventTemplates() {
+  return HOST_VISIBLE_TEMPLATE_SLUGS.map((slug) => getEventTemplate(slug)).filter((template): template is EventTemplateDefinition => Boolean(template));
+}
+
 export const CHALLENGE_PACKS: ChallengePackDefinition[] = [
   {
     mode: "NONE",
@@ -1253,6 +1266,14 @@ export function getPromptPack(slug?: PromptPackSlug | string | null) {
 
 export function getEventTemplate(slug?: EventTemplateSlug | string | null) {
   return EVENT_TEMPLATES.find((template) => template.slug === slug) || null;
+}
+
+export function plainModeLabel(mode?: ChallengeMode | ChallengeType | null) {
+  if (mode === CHALLENGE_TYPES.COLOR_HUNT) return "Color Hunt";
+  if (mode === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) return "Photo Prompts";
+  if (mode === CHALLENGE_TYPES.EVENT_AWARDS) return "Awards";
+  if (mode === CHALLENGE_TYPES.MEMORY_CAPSULE) return "Memory Capsule";
+  return "Simple Album";
 }
 
 export function isAnalyticsEventName(value: string): value is AnalyticsEventName {
@@ -1833,7 +1854,7 @@ export function deriveEventLifecycleStatus(
     return {
       status: "archived_or_past",
       label: "Past event",
-      description: "The recap has been available for a while. This is a good moment to reuse the setup.",
+      description: "Your recap is ready to share again.",
       phase: "after",
       tone: "stone",
       shouldShowRepeatCta: true,
@@ -1856,8 +1877,8 @@ export function deriveEventLifecycleStatus(
   if (isRevealLocked && totalPhotos > 0) {
     return {
       status: "reveal_locked",
-      label: "Reveal locked",
-      description: "Photos are coming in, but the public album stays locked until reveal.",
+      label: "Reveal time",
+      description: "Photos are coming in, and the public album opens at reveal time.",
       phase: "during",
       tone: "amber",
       shouldShowRepeatCta: false,
@@ -1892,12 +1913,26 @@ export function deriveEventLifecycleStatus(
   return {
     status: "draft_or_upcoming",
     label: "Upcoming",
-    description: "The event is ready to prep. Share links before guests arrive.",
+    description: "Share the guest link before people arrive.",
     phase: "before",
     tone: "stone",
     shouldShowRepeatCta: false,
     shouldAskFeedback: false,
   };
+}
+
+export function buildHostNextStep(
+  event: Pick<EventSummary | PublicEvent, "eventDate" | "revealAt" | "photoCount" | "challenge">,
+  counts: { totalPhotos?: number | null; visiblePhotos?: number | null; recapOpens?: number | null } = {},
+  now: Date = new Date(),
+) {
+  const lifecycle = deriveEventLifecycleStatus(event, counts, now);
+  if (lifecycle.status === "draft_or_upcoming") return "Share the guest link before people arrive.";
+  if (lifecycle.status === "live_or_happening_soon") return "Share the guest upload link.";
+  if (lifecycle.status === "collecting_photos") return "Open the Live Wall.";
+  if (lifecycle.status === "reveal_locked") return "Keep collecting photos until reveal time.";
+  if (lifecycle.status === "recap_ready") return "Share the recap.";
+  return "Your recap is ready to share again.";
 }
 
 export function buildDuplicateEventInput(event: Pick<EventSummary, "name" | "description" | "photoLimitPerGuest" | "eventTemplateSlug" | "promptPackSlug" | "challenge">, now: Date = new Date()): CreateEventInput {

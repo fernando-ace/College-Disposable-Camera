@@ -12,6 +12,7 @@ import {
   buildGuestChallengeProgress,
   buildGuestUploadSuccessSummary,
   buildHostLaunchKit,
+  buildHostNextStep,
   buildHostShareAssets,
   buildLiveWallChallengeDisplaySummary,
   buildLiveWallDisplayLinks,
@@ -27,8 +28,10 @@ import {
   createEmptyChallengeDraft,
   createStarterPrompts,
   getChallengePack,
+  getHostVisibleEventTemplates,
   getEventTemplate,
   getPromptPack,
+  plainModeLabel,
   isAnonymousGuestDisplayName,
   normalizeReportReason,
   parseLiveWallMode,
@@ -276,6 +279,19 @@ test("template and prompt pack registries expose requested presets", () => {
   );
 });
 
+test("host create flow exposes six simple template choices first", () => {
+  assert.deepEqual(
+    getHostVisibleEventTemplates().map((template) => template.slug),
+    ["birthday-party", "wedding-engagement", "greek-life-event", "graduation-party", "student-org-event", "open-custom-event"],
+  );
+});
+
+test("plain mode labels use host-friendly names without changing registry values", () => {
+  assert.equal(plainModeLabel("NONE"), "Simple Album");
+  assert.equal(plainModeLabel(CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT), "Photo Prompts");
+  assert.equal(plainModeLabel(CHALLENGE_TYPES.EVENT_AWARDS), "Awards");
+});
+
 test("prompt packs contain the requested default items", () => {
   const expectedPacks: Record<string, string[]> = {
     birthday: ["Best group selfie", "Funniest moment", "Best outfit", "Photo with the birthday person", "Most chaotic photo", "Best candid", "Main character moment", "Final group photo"],
@@ -369,6 +385,26 @@ test("event lifecycle status is derived from dates, photo state, and reveal stat
   );
   assert.equal(deriveEventLifecycleStatus({ ...base, revealAt: "2026-06-22T11:00:00.000Z" }, { visiblePhotos: 3 }, now).status, "recap_ready");
   assert.equal(deriveEventLifecycleStatus({ ...base, revealAt: "2026-06-01T11:00:00.000Z" }, { visiblePhotos: 3 }, now).status, "archived_or_past");
+});
+
+test("host next step copy follows the simplified lifecycle hierarchy", () => {
+  const now = new Date("2026-06-22T12:00:00.000Z");
+  const base = {
+    id: "event",
+    name: "Spring Formal",
+    slug: "spring-formal",
+    eventDate: "2026-06-25T12:00:00.000Z",
+    revealAt: "2026-06-25T16:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/spring-formal",
+    photoCount: 0,
+    challenge: null,
+  } satisfies EventSummary;
+
+  assert.equal(buildHostNextStep(base, {}, now), "Share the guest link before people arrive.");
+  assert.equal(buildHostNextStep({ ...base, eventDate: "2026-06-22T11:00:00.000Z" }, {}, now), "Share the guest upload link.");
+  assert.equal(buildHostNextStep(base, { totalPhotos: 3 }, now), "Open the Live Wall.");
+  assert.equal(buildHostNextStep({ ...base, revealAt: "2026-06-22T11:00:00.000Z" }, { visiblePhotos: 3 }, now), "Share the recap.");
 });
 
 test("duplicate event input copies setup only and resets timing", () => {

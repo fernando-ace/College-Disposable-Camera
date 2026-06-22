@@ -21,6 +21,7 @@ import {
   buildEventRecapStory,
   buildChallengePayload,
   buildDuplicateEventInput,
+  buildHostNextStep,
   buildPostEventHostSummary,
   categoriesFromChallenge,
   challengeLabel,
@@ -34,8 +35,10 @@ import {
   createStarterPrompts,
   draftFromChallenge,
   getEventTemplate,
+  getHostVisibleEventTemplates,
   getChallengePack,
   getPromptPack,
+  plainModeLabel,
   hasDuplicateCategories,
   hasDuplicateParticipantColors,
   hasDuplicatePrompts,
@@ -614,35 +617,43 @@ function PhotoDetailModal({
   );
 }
 
+const TEMPLATE_DISPLAY_NAMES: Partial<Record<EventTemplateSlug, string>> = {
+  "birthday-party": "Birthday",
+  "wedding-engagement": "Wedding",
+  "greek-life-event": "Greek life",
+  "graduation-party": "Graduation",
+  "student-org-event": "Club or team event",
+  "open-custom-event": "Custom",
+};
+
+function templateDisplayName(template: { slug: EventTemplateSlug; name: string }) {
+  return TEMPLATE_DISPLAY_NAMES[template.slug] || template.name;
+}
+
 function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
+  const [showMoreTemplates, setShowMoreTemplates] = useState(false);
+  const visibleTemplates = getHostVisibleEventTemplates();
+  const hiddenTemplates = EVENT_TEMPLATES.filter((template) => !visibleTemplates.some((visible) => visible.slug === template.slug));
+  const templates = showMoreTemplates ? [...visibleTemplates, ...hiddenTemplates] : visibleTemplates;
+
   return (
-    <section className="rounded-[1.75rem] bg-stone-950 p-5 text-white sm:p-6">
+    <section className="rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.055)] sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-extrabold uppercase tracking-wide text-amber-200">Event templates</p>
-          <h2 className="mt-1 font-display text-2xl font-bold">Choose the event shape.</h2>
-          <p className="mt-2 max-w-2xl text-sm text-stone-300">Pick a polished setup, then adjust timing, prompts, and mode details before launch.</p>
+          <h2 className="font-display text-2xl font-bold text-stone-950">What are you hosting?</h2>
+          <p className="mt-2 max-w-2xl text-sm text-stone-600">Choose the closest starting point. EventFilm will suggest the mode and prompts.</p>
         </div>
-        <button type="button" className="min-h-10 rounded-full bg-white/10 px-4 py-2 text-sm font-extrabold text-white ring-1 ring-white/15 hover:bg-white/15" onClick={onSkip}>Open custom event</button>
+        <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={onSkip}>Start custom</SecondaryButton>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {EVENT_TEMPLATES.map((template) => {
-          const pack = getPromptPack(template.promptPackSlug);
+        {templates.map((template) => {
           const mode = getChallengePack(template.recommendedMode);
           const selected = draft.eventTemplateSlug === template.slug;
           return (
-            <article className={cx("rounded-[1.35rem] border p-4 transition", selected ? "border-[#ffb9a8] bg-[#fff1ec] text-stone-950 shadow-[0_18px_44px_rgba(232,93,63,0.18)]" : "border-white/10 bg-white/5 hover:border-white/25")} key={template.slug}>
-              <div className="flex items-start justify-between gap-3">
-                <span className={cx("grid h-10 w-10 shrink-0 place-items-center rounded-[1rem]", selected ? "bg-stone-950 text-[#fff1ec]" : "bg-white/10 text-amber-200")}><Icon>{template.icon}</Icon></span>
-                <span className={cx("rounded-full px-3 py-1 text-xs font-extrabold", selected ? "bg-stone-950 text-white" : "bg-white/10 text-amber-100")}>{selected ? "Selected" : template.badge}</span>
-              </div>
-              <h3 className="mt-4 font-display text-xl font-bold">{template.name}</h3>
-              <p className={cx("mt-2 text-sm", selected ? "text-stone-800" : "text-stone-300")}>{template.shortDescription}</p>
-              <div className="mt-4 flex flex-wrap gap-2 text-xs font-extrabold">
-                <span className={cx("rounded-full px-3 py-1", selected ? "bg-white/70 text-stone-800" : "bg-white/10 text-white")}>{mode.name}</span>
-                <span className={cx("rounded-full px-3 py-1", selected ? "bg-white/70 text-stone-800" : "bg-white/10 text-white")}>{pack.name}</span>
-              </div>
-              <p className={cx("mt-3 text-xs font-semibold", selected ? "text-stone-800" : "text-stone-300")}>Best for: {template.bestFor}</p>
+            <article className={cx("rounded-[1.25rem] border p-4 transition", selected ? "border-[#e85d3f] bg-[#fff3ee] shadow-[0_18px_44px_rgba(232,93,63,0.14)]" : "border-[#eadfce] bg-[#fffaf6] hover:border-[#ffd4c7]")} key={template.slug}>
+              <h3 className="font-display text-xl font-bold text-stone-950">{templateDisplayName(template)}</h3>
+              <p className="mt-2 text-sm leading-6 text-stone-600">{template.shortDescription}</p>
+              <p className="mt-4 rounded-[1rem] bg-white px-3 py-2 text-xs font-extrabold text-[#653e00]">Best mode: {plainModeLabel(mode.mode)}</p>
               <button type="button" className={cx("mt-4 min-h-10 w-full rounded-[1rem] px-4 py-2 text-sm font-extrabold", selected ? "bg-stone-950 text-white" : "bg-[#e85d3f] text-white hover:bg-[#d94f33]")} onClick={() => onSelect(template.slug)}>
                 {selected ? "Selected" : "Start with this"}
               </button>
@@ -650,14 +661,21 @@ function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; o
           );
         })}
       </div>
+      {!showMoreTemplates ? (
+        <div className="mt-4 text-center">
+          <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setShowMoreTemplates(true)}>More templates</SecondaryButton>
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
+function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void; promptLibraryInitiallyOpen?: boolean }) {
+  const [isPromptLibraryOpen, setIsPromptLibraryOpen] = useState(promptLibraryInitiallyOpen);
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [isAwardEditorOpen, setIsAwardEditorOpen] = useState(false);
   const selectedPack = getChallengePack(draft.type);
+  const selectedPromptPack = getPromptPack(draft.promptPackSlug);
   const showDuplicateColorWarning = draft.type === CHALLENGE_TYPES.COLOR_HUNT && hasDuplicateParticipantColors(draft.participants);
   const showDuplicatePromptWarning = draft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && hasDuplicatePrompts(draft.prompts);
   const showDuplicateCategoryWarning = draft.type === CHALLENGE_TYPES.EVENT_AWARDS && hasDuplicateCategories(draft.categories);
@@ -798,8 +816,7 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
     <div className="rounded-3xl bg-stone-50 p-5">
       <div className="grid gap-3">
         <div>
-          <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Choose an event mode</p>
-          <h2 className="mt-1 font-display text-xl font-bold text-[#653e00]">{selectedPack.name}</h2>
+          <h2 className="font-display text-xl font-bold text-[#653e00]">Choose the event mode</h2>
           <p className="mt-1 text-sm text-stone-600">{selectedPack.shortDescription}</p>
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
@@ -810,10 +827,8 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
               onClick={() => updateType(pack.mode)}
               key={pack.slug}
             >
-              <span className="block text-xs font-bold uppercase tracking-wide text-amber-800">{pack.badge}</span>
-              <span className="mt-2 block font-bold text-stone-950">{pack.name}</span>
+              <span className="block font-bold text-stone-950">{plainModeLabel(pack.mode)}</span>
               <span className="mt-1 block text-stone-600">{pack.shortDescription}</span>
-              <span className="mt-3 inline-flex rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-600">{pack.setupComplexity} setup</span>
             </button>
           ))}
         </div>
@@ -822,27 +837,29 @@ function ChallengeSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
       <div className="mt-5 rounded-3xl bg-white p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Prompt pack library</p>
-            <h3 className="mt-1 font-display text-lg font-bold">Swap in a polished prompt set</h3>
-            <p className="mt-1 text-sm text-stone-600">Prompt packs work with Scavenger Hunt or Event Awards and can be edited immediately.</p>
+            <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Photo prompts</p>
+            <h3 className="mt-1 font-display text-lg font-bold">Prompt set selected: {selectedPromptPack.name}</h3>
+            <p className="mt-1 text-sm text-stone-600">Includes {selectedPromptPack.items.length} prompts. You can edit them after creating the event.</p>
           </div>
-          {draft.promptPackSlug && <StatusPill tone="amber">{getPromptPack(draft.promptPackSlug).name}</StatusPill>}
+          <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setIsPromptLibraryOpen((current) => !current)}>{isPromptLibraryOpen ? "Hide prompts" : "Edit prompts"}</SecondaryButton>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {PROMPT_PACKS.filter((pack) => pack.kind !== "custom").map((pack) => (
-            <button
-              type="button"
-              className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.promptPackSlug === pack.slug ? "border-amber-500 bg-amber-50" : "border-stone-200 bg-white hover:border-amber-300")}
-              onClick={() => selectPromptPack(pack.slug)}
-              key={pack.slug}
-            >
-              <span className="block text-xs font-bold uppercase tracking-wide text-amber-800">{pack.kind === "award" ? "Event Awards" : "Scavenger Hunt"}</span>
-              <span className="mt-2 block font-bold text-stone-950">{pack.name}</span>
-              <span className="mt-1 block text-stone-600">{pack.description}</span>
-              <span className="mt-3 block text-xs font-semibold text-stone-500">{pack.items.slice(0, 4).join(" / ")}</span>
-            </button>
-          ))}
-        </div>
+        {isPromptLibraryOpen ? (
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {PROMPT_PACKS.filter((pack) => pack.kind !== "custom").map((pack) => (
+              <button
+                type="button"
+                className={cx("rounded-2xl border p-4 text-left text-sm transition", draft.promptPackSlug === pack.slug ? "border-amber-500 bg-amber-50" : "border-stone-200 bg-white hover:border-amber-300")}
+                onClick={() => selectPromptPack(pack.slug)}
+                key={pack.slug}
+              >
+                <span className="block text-xs font-bold uppercase tracking-wide text-amber-800">{pack.kind === "award" ? "Awards" : "Photo Prompts"}</span>
+                <span className="mt-2 block font-bold text-stone-950">{pack.name}</span>
+                <span className="mt-1 block text-stone-600">{pack.description}</span>
+                <span className="mt-3 block text-xs font-semibold text-stone-500">{pack.items.slice(0, 4).join(" / ")}</span>
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       {draft.type === "NONE" && (
@@ -1871,24 +1888,19 @@ function Landing() {
       <section className="grid items-center gap-8 py-8 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16 lg:py-14">
         <div className="text-center lg:text-left">
           <h1 className="font-display text-4xl font-bold leading-[1.05] tracking-tight text-stone-950 sm:text-6xl">
-            Collect every moment. <span className="text-[#d94f33]">Relive what matters.</span>
+            Stop chasing photos after the event.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg lg:mx-0">
-            Create an event, share one QR code, collect guest uploads, show a Live Wall, and send a polished recap when the reveal is ready.
+            Create a QR upload link, let guests add photos, show a Live Wall, and share a recap when it is over.
           </p>
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
             <Link className="inline-flex min-h-13 items-center justify-center gap-2 rounded-[1.15rem] bg-[#e85d3f] px-7 py-4 text-sm font-extrabold text-white shadow-[0_16px_34px_rgba(232,93,63,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d94f33]" to="/signup" onClick={() => trackCta("Create your first event")}>
               Create your first event
               <Icon>arrow_forward</Icon>
             </Link>
-            <a className="inline-flex min-h-13 items-center justify-center rounded-[1.15rem] border border-[#d5c4b2] bg-white px-7 py-4 text-sm font-extrabold text-[#653e00] shadow-[0_10px_24px_rgba(101,62,0,0.06)] transition hover:-translate-y-0.5 hover:border-[#e85d3f] hover:bg-[#fff7f1]" href="#demo" onClick={() => trackCta("View demo")}>
-              View demo
+            <a className="inline-flex min-h-13 items-center justify-center rounded-[1.15rem] border border-[#d5c4b2] bg-white px-7 py-4 text-sm font-extrabold text-[#653e00] shadow-[0_10px_24px_rgba(101,62,0,0.06)] transition hover:-translate-y-0.5 hover:border-[#e85d3f] hover:bg-[#fff7f1]" href="#demo" onClick={() => trackCta("Try the demo")}>
+              Try the demo
             </a>
-          </div>
-          <div className="mt-7 grid gap-3 text-sm font-bold text-stone-700 sm:grid-cols-3">
-            <p className="rounded-[1.15rem] border border-[#eadfce] bg-white/80 p-3">Guest Upload</p>
-            <p className="rounded-[1.15rem] border border-[#eadfce] bg-white/80 p-3">Live Wall</p>
-            <p className="rounded-[1.15rem] border border-[#eadfce] bg-white/80 p-3">Recap</p>
           </div>
         </div>
         <div className="relative mx-auto w-full max-w-[390px]">
@@ -1899,7 +1911,7 @@ function Landing() {
             </video>
             <div className="absolute bottom-8 left-1/2 flex -translate-x-1/2 items-center gap-2 whitespace-nowrap rounded-full border border-white/50 bg-white/85 px-5 py-3 text-sm font-bold text-stone-900 shadow-lg backdrop-blur">
               <Icon className="text-[#653e00]">qr_code_2</Icon>
-              Scan to join
+              Guests upload without an account.
             </div>
           </div>
         </div>
@@ -1910,13 +1922,11 @@ function Landing() {
           <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">How it works</h2>
           <p className="mt-3 text-stone-600">One clean host flow from setup to final memory page.</p>
         </div>
-        <div className="grid gap-4 md:grid-cols-5">
+        <div className="grid gap-4 md:grid-cols-3">
           {[
-            ["Create an event", "Name it, set timing, and choose how guests should participate."],
-            ["Share the QR code", "Put one code where guests already are: invite, table, screen, or group chat."],
-            ["Guests upload photos", "Guests open the link in a browser and upload without making an account."],
-            ["Show the Live Wall", "Open it on a laptop, TV, projector, or iPad during the event."],
-            ["Share the recap", "Send the polished album story after the reveal time."],
+            ["Create an event", "Name it, choose a mode, get your links."],
+            ["Guests upload photos", "Share the QR code or link. No account needed."],
+            ["Share the recap", "After the event, send everyone the finished album."],
           ].map(([title, body], index) => (
             <div className="rounded-[1.5rem] border border-[#eadfce] bg-white p-5 shadow-[0_12px_34px_rgba(101,62,0,0.055)]" key={title}>
               <div className="grid h-11 w-11 place-items-center rounded-full bg-[#fff0d8] font-display text-lg font-bold text-[#653e00]">{index + 1}</div>
@@ -1943,10 +1953,18 @@ function Landing() {
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {CHALLENGE_PACKS.map((pack) => (
             <div className="rounded-[1.5rem] border border-[#eadfce] bg-white p-5 shadow-[0_12px_34px_rgba(101,62,0,0.055)]" key={pack.slug}>
-              <StatusPill>{pack.badge}</StatusPill>
-              <h3 className="mt-4 font-display text-xl font-bold text-stone-950">{pack.name}</h3>
-              <p className="mt-2 text-sm leading-6 text-stone-600">{pack.shortDescription}</p>
-              <p className="mt-4 text-xs font-bold uppercase tracking-wide text-stone-500">{pack.bestFor}</p>
+              <h3 className="font-display text-xl font-bold text-stone-950">{plainModeLabel(pack.mode)}</h3>
+              <p className="mt-2 text-sm leading-6 text-stone-600">{
+                pack.mode === "NONE"
+                  ? "Simple shared album."
+                  : pack.mode === CHALLENGE_TYPES.COLOR_HUNT
+                    ? "Give each guest or team a color."
+                    : pack.mode === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT
+                      ? "Guests complete photo prompts."
+                      : pack.mode === CHALLENGE_TYPES.EVENT_AWARDS
+                        ? "Turn photos into fun categories."
+                        : "Reveal photos after the event."
+              }</p>
             </div>
           ))}
         </div>
@@ -2024,7 +2042,7 @@ function Landing() {
             ["Do guests need an account?", "No. Guests can upload from the event link in a browser without creating an account."],
             ["Can I show photos during the event?", "Yes. Use the Live Wall link on a laptop, TV, projector, or iPad."],
             ["What happens after the event?", "Share the Recap link so everyone can view the final album and highlights."],
-            ["Is this a legal privacy policy?", "No. The trust pages use simple beta copy and placeholders Fernando should finalize before a broad public launch."],
+            ["How does privacy work?", "EventFilm is built for private event sharing. Guests upload through your event link, and you control when the album is shared."],
           ].map(([question, answer]) => (
             <div className="rounded-3xl bg-white p-5 shadow-sm" key={question}>
               <h3 className="font-display text-lg font-bold text-stone-950">{question}</h3>
@@ -2040,7 +2058,7 @@ function Landing() {
           <p className="mt-4 max-w-2xl text-stone-600">Create one event, share one QR code, and stop asking everyone to text you photos afterward.</p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-          <Link className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-[#653e00] px-7 py-4 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#855300]" to="/signup" onClick={() => trackCta("Create your first event bottom")}>Create your first event</Link>
+          <Link className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-[#e85d3f] px-7 py-4 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#d94f33]" to="/signup" onClick={() => trackCta("Create your first event bottom")}>Create your first event</Link>
           <p className="rounded-2xl bg-white/60 p-4 text-sm text-stone-600">Guests can upload without an account. Hosts get the QR, Live Wall, and Recap from one event hub.</p>
         </div>
       </section>
@@ -2171,28 +2189,16 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: string }) {
   if (!photos.length) {
-    return <div className="h-36 bg-gradient-to-br from-amber-200 via-white to-[#ffdbd1]" />;
+    return null;
   }
 
-  const stripPhotos = photos.length > 1 ? Array.from({ length: 4 }, () => photos).flat() : photos;
+  const visible = photos.slice(0, 3);
+  const remaining = Math.max(photos.length - visible.length, 0);
 
   return (
-    <div className="relative h-36 overflow-hidden bg-[#f8f3ea]">
-      <div className="absolute inset-y-0 left-0 z-10 w-14 bg-gradient-to-r from-[#f8f3ea] to-transparent" />
-      <div className="absolute inset-y-0 right-0 z-10 w-14 bg-gradient-to-l from-[#f8f3ea] to-transparent" />
-      <div
-        className={cx("event-photo-strip-track flex h-full items-center gap-3 px-5", photos.length === 1 && "justify-center")}
-        style={
-          photos.length > 1
-            ? {
-                animationDuration: `${Math.max(photos.length * 4, 18)}s`,
-                "--strip-shift": `${100 / 4}%`,
-              } as React.CSSProperties
-            : { animation: "none", width: "100%" }
-        }
-      >
-        {stripPhotos.map((photo, index) => (
-          <div className="event-photo-strip-frame h-28 w-22 shrink-0 overflow-hidden rounded-xl bg-white p-1.5 shadow-sm" key={`${photo.id}-${index}`}>
+    <div className="grid grid-cols-3 gap-2 bg-[#fffaf6] p-3">
+        {visible.map((photo, index) => (
+          <div className="relative event-photo-strip-frame h-28 overflow-hidden rounded-xl bg-white p-1.5 shadow-sm" key={`${photo.id}-${index}`}>
             <img
               className="h-full w-full rounded-lg object-cover"
               src={photo.previewUrl || photo.url}
@@ -2201,9 +2207,9 @@ function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: s
                 event.currentTarget.style.visibility = "hidden";
               }}
             />
+            {index === visible.length - 1 && remaining > 0 ? <span className="absolute inset-1.5 grid place-items-center rounded-lg bg-stone-950/55 text-sm font-extrabold text-white">+{remaining} more</span> : null}
           </div>
         ))}
-      </div>
     </div>
   );
 }
@@ -2211,7 +2217,9 @@ function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: s
 function Dashboard() {
   const auth = useAuth();
   const [events, setEvents] = useState<EventSummary[]>([]);
-  const [analyticsSummary, setAnalyticsSummary] = useState<AnalyticsSummary | null>(null);
+  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [canViewFounder, setCanViewFounder] = useState(false);
+  const [copyStatus, setCopyStatus] = useState("");
   const [error, setError] = useState("");
   const previewLoadIds = useRef(new Set<string>());
 
@@ -2221,8 +2229,8 @@ function Dashboard() {
       .then((data) => setEvents(data.events))
       .catch((err) => setError((err as Error).message));
     eventFilmApi
-      .getAnalyticsSummary(auth.token)
-      .then((data) => setAnalyticsSummary(data.summary))
+      .getFounderOverview(auth.token)
+      .then(() => setCanViewFounder(true))
       .catch(() => {});
   }, [auth.token]);
 
@@ -2247,86 +2255,128 @@ function Dashboard() {
     });
   }, [auth.token, events]);
 
-  const liveEvents = events.filter((event) => deriveEventLifecycleStatus(event).phase !== "after").length;
+  const eventRows = events.map((event) => ({ event, lifecycle: deriveEventLifecycleStatus(event) }));
+  const upcomingEvents = eventRows.filter((row) => row.lifecycle.status === "draft_or_upcoming").length;
+  const liveEvents = eventRows.filter((row) => row.lifecycle.phase === "during").length;
+  const recapReady = eventRows.filter((row) => row.lifecycle.phase === "after").length;
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
+  const defaultTab = liveEvents ? "live" : recapReady ? "recap" : upcomingEvents ? "upcoming" : "past";
+  const selectedTab = activeTab || defaultTab;
+  const filteredRows = eventRows.filter(({ lifecycle }) => {
+    if (selectedTab === "upcoming") return lifecycle.status === "draft_or_upcoming";
+    if (selectedTab === "live") return lifecycle.phase === "during";
+    if (selectedTab === "recap") return lifecycle.phase === "after";
+    return lifecycle.status === "archived_or_past";
+  });
+
+  async function copyEventLink(event: EventSummary) {
+    try {
+      await copyText(event.eventLink);
+      setCopyStatus(`${event.name} guest link copied`);
+    } catch (err) {
+      setCopyStatus((err as Error).message);
+    }
+  }
+
+  function primaryAction(event: EventSummary, lifecycle: EventLifecycle) {
+    if (lifecycle.phase === "after" && event.recapLink) {
+      return <a className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Share recap</a>;
+    }
+    if (lifecycle.phase === "during" && event.liveWallLink) {
+      return <a className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a>;
+    }
+    return <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" onClick={() => copyEventLink(event)}>Copy guest link</button>;
+  }
 
   return (
     <Shell wide>
-      <div className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
+      <div className="rounded-[1.65rem] border border-[#eadfce] bg-white p-6 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-8">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <StatusPill>Host command center</StatusPill>
-            <h1 className="mt-4 font-display text-3xl font-bold sm:text-5xl">Plan it. Share it. Keep the album moving.</h1>
-            <p className="mt-3 max-w-2xl text-stone-200">{auth.user?.email}</p>
+            <h1 className="font-display text-3xl font-bold text-stone-950">Welcome back</h1>
+            <p className="mt-3 max-w-2xl text-stone-600">You have {upcomingEvents} {upcomingEvents === 1 ? "event" : "events"} coming up and {recapReady} {recapReady === 1 ? "recap" : "recaps"} ready to share.</p>
+            <p className="mt-2 text-sm font-semibold text-stone-500">{auth.user?.email}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20 transition hover:bg-white/15" to="/dashboard/founder">Founder ops</Link>
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-white/10 px-5 py-3 text-sm font-bold text-white ring-1 ring-white/20 transition hover:bg-white/15" to="/dashboard/beta-readiness">Beta readiness</Link>
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400" to="/dashboard/events/new">Create event</Link>
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#d94f33]" to="/dashboard/events/new">Create event</Link>
+            <button type="button" className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-sm" onClick={() => setActiveTab("recap")}>View recaps</button>
           </div>
         </div>
+        {canViewFounder ? (
+          <div className="mt-5 flex flex-wrap gap-3 text-sm font-bold">
+            <Link className="text-stone-500 underline decoration-[#e85d3f]/40 underline-offset-4 hover:text-stone-950" to="/dashboard/founder">Internal analytics</Link>
+            <Link className="text-stone-500 underline decoration-[#e85d3f]/40 underline-offset-4 hover:text-stone-950" to="/dashboard/beta-readiness">Beta readiness</Link>
+          </div>
+        ) : null}
       </div>
       {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <div className="mt-8 grid gap-5 sm:grid-cols-3">
-        <MetricCard label="Live events" value={liveEvents} tone="green" />
-        <MetricCard label="Total events" value={events.length} />
-        <MetricCard label="Total photos" value={totalPhotos} tone="accent" />
+        <MetricCard label="Upcoming events" value={upcomingEvents} tone="accent" />
+        <MetricCard label="Photos collected" value={totalPhotos} tone="green" />
+        <MetricCard label="Recaps ready" value={recapReady} tone="plum" />
       </div>
-      {analyticsSummary && (
-        <section className="mt-8">
-          <div className="mb-4">
-            <h2 className="font-display text-2xl font-bold">Launch signals</h2>
-            <p className="text-sm text-stone-600">Privacy-conscious usage signals from your events and recent product activity.</p>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[
-              ["Guest joins", analyticsSummary.guestJoins],
-              ["Uploads", analyticsSummary.uploads],
-              ["Live Wall opens", analyticsSummary.liveWallOpens],
-              ["Recap opens", analyticsSummary.recapOpens],
-              ["Active hosts", analyticsSummary.activeHosts],
-              ["Active guests", analyticsSummary.activeGuests],
-            ].map(([label, value], index) => (
-              <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 2 ? "green" : index === 3 ? "plum" : "default"} />
-            ))}
-          </div>
-        </section>
-      )}
       <section className="mt-8">
-        <div className="mb-4">
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <h2 className="font-display text-2xl font-bold">Your events</h2>
+          <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
+            <div className="flex min-w-max gap-2">
+              {[
+                ["upcoming", "Upcoming"],
+                ["live", "Live now"],
+                ["recap", "Recap ready"],
+                ["past", "Past"],
+              ].map(([key, label]) => (
+                <button type="button" className={cx("rounded-full px-4 py-2 text-sm font-extrabold", selectedTab === key ? "bg-stone-950 text-white" : "bg-white text-stone-700 ring-1 ring-[#eadfce]")} onClick={() => setActiveTab(key)} key={key}>{label}</button>
+              ))}
+            </div>
+          </div>
         </div>
+        {copyStatus ? <p className="mb-4 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{copyStatus}</p> : null}
         <div className="grid gap-5 lg:grid-cols-2">
-          {events.map((event) => (
+          {filteredRows.map(({ event, lifecycle }) => (
             <div className="overflow-hidden rounded-[1.65rem] border border-[#eadfce] bg-white shadow-[0_18px_54px_rgba(101,62,0,0.075)] transition hover:-translate-y-1 hover:shadow-[0_30px_80px_rgba(232,93,63,0.12)]" key={event.id}>
-              <Link className="group block" to={`/dashboard/events/${event.id}`}>
-                <EventPhotoBanner photos={event.previewPhotos || []} eventName={event.name} />
-              </Link>
+              {event.photoCount > 0 ? <Link className="group block" to={`/dashboard/events/${event.id}`}><EventPhotoBanner photos={event.previewPhotos || []} eventName={event.name} /></Link> : null}
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <LifecycleBadge lifecycle={deriveEventLifecycleStatus(event)} />
+                    <LifecycleBadge lifecycle={lifecycle} />
                     <Link to={`/dashboard/events/${event.id}`}><h3 className="mt-3 font-display text-xl font-bold text-stone-950">{event.name}</h3></Link>
                     <p className="mt-1 text-sm text-stone-600">Event: {formatDateTime(event.eventDate)}</p>
-                    <p className="text-sm text-stone-600">Reveal: {formatDateTime(event.revealAt)}</p>
                   </div>
                   <div className="rounded-[1.15rem] bg-[#fff3ee] px-4 py-3 text-center">
                     <p className="font-display text-2xl font-bold text-[#d94f33]">{event.photoCount}</p>
                     <p className="text-xs font-bold uppercase text-stone-500">Photos</p>
                   </div>
                 </div>
-                <p className="mt-3 text-sm font-semibold text-stone-600">{deriveEventLifecycleStatus(event).description}</p>
-                <RepeatEventActions event={event} lifecycle={deriveEventLifecycleStatus(event)} compact onDuplicated={(created) => setEvents((current) => [created, ...current])} />
+                <p className="mt-3 text-sm font-semibold text-stone-600">{buildHostNextStep(event)}</p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {primaryAction(event, lifecycle)}
+                  <Link className="inline-flex min-h-10 items-center justify-center rounded-[1rem] border border-[#eadfce] bg-white px-4 py-2 text-sm font-extrabold text-stone-900" to={`/dashboard/events/${event.id}`}>View event</Link>
+                  <details className="relative">
+                    <summary className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-2 text-sm font-extrabold text-stone-700">More</summary>
+                    <div className="absolute right-0 z-20 mt-2 grid w-44 gap-1 rounded-[1rem] border border-[#eadfce] bg-white p-2 text-sm font-bold shadow-xl">
+                      <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to="/dashboard/events/new">Create similar</Link>
+                      <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to={`/dashboard/events/${event.id}?tab=recap`}>Download photos</Link>
+                      <Link className="rounded-lg px-3 py-2 text-red-700 hover:bg-red-50" to={`/dashboard/events/${event.id}?tab=settings`}>Delete event</Link>
+                    </div>
+                  </details>
+                </div>
               </div>
             </div>
           ))}
         </div>
+        {!filteredRows.length && events.length ? (
+          <Card className="mt-5 bg-[#fffaf3] text-center">
+            <h3 className="font-display text-2xl font-bold text-stone-950">No events in this view</h3>
+            <p className="mx-auto mt-2 max-w-xl text-stone-600">Switch tabs to find the next event that needs attention.</p>
+          </Card>
+        ) : null}
         {!events.length && (
           <Card className="bg-[#fffaf3] text-center">
             <StatusPill>First event</StatusPill>
             <h3 className="mt-4 font-display text-2xl font-bold">Create your first EventFilm album</h3>
             <p className="mx-auto mt-2 max-w-xl text-stone-600">Start with the event name and reveal time. EventFilm will give you a guest link and QR code right after setup.</p>
-            <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950" to="/dashboard/events/new">Create event</Link>
+            <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" to="/dashboard/events/new">Create event</Link>
           </Card>
         )}
       </section>
@@ -2855,6 +2905,7 @@ function CreateEvent() {
   const [created, setCreated] = useState<EventSummary | null>(null);
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = useState("");
+  const [createStep, setCreateStep] = useState(0);
 
   useEffect(() => {
     trackAnalytics("event_template_viewed", { path: "/dashboard/events/new", metadata: { surface: "create_event" } });
@@ -2876,6 +2927,24 @@ function CreateEvent() {
   function skipTemplate() {
     setChallengeDraft((current) => ({ ...current, eventTemplateSlug: "open-custom-event", promptPackSlug: "custom" }));
     trackAnalytics("template_skipped", { path: "/dashboard/events/new", metadata: { templateSlug: "open-custom-event" } });
+  }
+
+  const selectedTemplate = getEventTemplate(challengeDraft.eventTemplateSlug);
+  const createSteps = ["What are you hosting?", "Choose the event mode", "Confirm details"];
+  const stepCanContinue = createStep === 0 ? Boolean(challengeDraft.eventTemplateSlug) : true;
+
+  function goNextCreateStep() {
+    if (!stepCanContinue) {
+      setError("Choose a template or start with Custom.");
+      return;
+    }
+    setError("");
+    setCreateStep((current) => Math.min(current + 1, createSteps.length - 1));
+  }
+
+  function goBackCreateStep() {
+    setError("");
+    setCreateStep((current) => Math.max(current - 1, 0));
   }
 
   async function submit(event: React.FormEvent) {
@@ -2929,55 +2998,82 @@ function CreateEvent() {
   return (
     <Shell>
       <div className="mx-auto max-w-3xl text-center">
-        <h1 className="font-display text-4xl font-bold text-stone-950">Create your event.</h1>
-        <p className="mt-3 text-lg text-stone-600">Choose a template, set the reveal, and get the QR, Live Wall, and Recap links in one place.</p>
+        <h1 className="font-display text-4xl font-bold text-stone-950">Create your first event</h1>
+        <p className="mt-3 text-lg text-stone-600">Choose a starting point, confirm the mode, then get one guest link to share.</p>
       </div>
-      <form className="mx-auto mt-8 grid max-w-3xl gap-5 rounded-[1.75rem] border border-[#eadfce] bg-white p-6 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-8" onSubmit={submit}>
-        <TemplateLibrary draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} />
-        <section className="grid gap-5 rounded-[1.45rem] bg-[#fffaf6] p-5">
-          <div>
-            <h2 className="font-display text-xl font-bold text-stone-950">Event details</h2>
-            <p className="mt-1 text-sm text-stone-600">Use names and copy guests will recognize at a glance.</p>
-          </div>
-          <label className="grid gap-2 text-sm font-bold text-stone-700">
-            Event name
-            <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
-          </label>
-          <label className="grid gap-2 text-sm font-bold text-stone-700">
-            Description
-            <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
-          </label>
-        </section>
-        <section className="grid gap-5 rounded-[1.45rem] bg-[#fffaf6] p-5">
-          <div>
-            <h2 className="font-display text-xl font-bold text-stone-950">Timing and limits</h2>
-            <p className="mt-1 text-sm text-stone-600">The reveal controls when guests can browse the album.</p>
-          </div>
-          <div className="grid gap-5 sm:grid-cols-2">
-          <label className="grid gap-2 text-sm font-bold text-stone-700">
-            Event date
-            <TextInput type="datetime-local" value={form.eventDate} onChange={(event) => update("eventDate", event.target.value)} required />
-          </label>
-          <label className="grid gap-2 text-sm font-bold text-stone-700">
-            Reveal date/time
-            <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
-          </label>
-          </div>
-          <label className="grid gap-2 text-sm font-bold text-stone-700">
-            Photo limit per guest
-            <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
-          </label>
-        </section>
-        <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} />
-        <div className="rounded-[1.45rem] bg-[#fff3ee] p-5">
-          <h2 className="font-display text-xl font-bold text-[#653e00]">After create</h2>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <p className="rounded-2xl bg-white p-4 text-sm text-stone-600"><strong className="block text-stone-950">QR upload</strong> Guests scan a QR code to upload photos.</p>
-            <p className="rounded-2xl bg-white p-4 text-sm text-stone-600"><strong className="block text-stone-950">Reveal lock</strong> Photos stay private until the reveal time.</p>
-          </div>
+      <form className="mx-auto mt-8 grid max-w-4xl gap-5" onSubmit={submit}>
+        <div className="grid gap-3 rounded-[1.35rem] border border-[#eadfce] bg-white p-3 shadow-sm sm:grid-cols-3">
+          {createSteps.map((label, index) => (
+            <button
+              type="button"
+              className={cx("rounded-[1rem] px-4 py-3 text-left text-sm font-extrabold transition", createStep === index ? "bg-[#fff3ee] text-[#653e00]" : "bg-[#fffaf6] text-stone-600 hover:bg-white")}
+              onClick={() => setCreateStep(index)}
+              key={label}
+            >
+              <span className="block text-xs uppercase text-stone-500">Step {index + 1}</span>
+              {label}
+            </button>
+          ))}
         </div>
+
+        {createStep === 0 ? <TemplateLibrary draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} /> : null}
+
+        {createStep === 1 ? (
+          <Card className="lg:p-8">
+            {selectedTemplate ? (
+              <p className="mb-4 rounded-[1rem] bg-[#fff3ee] px-4 py-3 text-sm font-extrabold text-[#653e00]">Recommended for {templateDisplayName(selectedTemplate)}: {plainModeLabel(selectedTemplate.recommendedMode)}</p>
+            ) : null}
+            <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} />
+          </Card>
+        ) : null}
+
+        {createStep === 2 ? (
+          <Card className="lg:p-8">
+            <div>
+              <h2 className="font-display text-2xl font-bold text-stone-950">Confirm details</h2>
+              <p className="mt-1 text-sm text-stone-600">These are the only details needed before EventFilm creates your links.</p>
+            </div>
+            <div className="mt-5 grid gap-5">
+              <label className="grid gap-2 text-sm font-bold text-stone-700">
+                Event name
+                <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
+              </label>
+              <div className="grid gap-5 sm:grid-cols-2">
+                <label className="grid gap-2 text-sm font-bold text-stone-700">
+                  Event date
+                  <TextInput type="datetime-local" value={form.eventDate} onChange={(event) => update("eventDate", event.target.value)} required />
+                </label>
+                <label className="grid gap-2 text-sm font-bold text-stone-700">
+                  Reveal time
+                  <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
+                </label>
+              </div>
+              <label className="grid gap-2 text-sm font-bold text-stone-700">
+                Photo limit
+                <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
+              </label>
+              <label className="grid gap-2 text-sm font-bold text-stone-700">
+                Description
+                <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
+              </label>
+              <div className="rounded-[1.25rem] bg-[#fffaf6] p-4 text-sm text-stone-700">
+                <p><strong className="text-stone-950">Template:</strong> {selectedTemplate ? templateDisplayName(selectedTemplate) : "Custom"}</p>
+                <p className="mt-1"><strong className="text-stone-950">Mode:</strong> {plainModeLabel(challengeDraft.type)}</p>
+                <p className="mt-1"><strong className="text-stone-950">Photo prompts:</strong> {getPromptPack(challengeDraft.promptPackSlug).name}</p>
+              </div>
+            </div>
+          </Card>
+        ) : null}
+
         {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        <Button className="w-full sm:justify-self-end sm:px-12">Create event</Button>
+        <div className="flex flex-col gap-3 rounded-[1.35rem] border border-[#eadfce] bg-white p-4 shadow-sm sm:flex-row sm:justify-between">
+          <SecondaryButton type="button" disabled={createStep === 0} onClick={goBackCreateStep}>Back</SecondaryButton>
+          {createStep < createSteps.length - 1 ? (
+            <Button type="button" onClick={goNextCreateStep}>Continue</Button>
+          ) : (
+            <Button className="sm:px-12">Create event</Button>
+          )}
+        </div>
       </form>
     </Shell>
   );
@@ -2985,6 +3081,7 @@ function CreateEvent() {
 
 function ManageEvent() {
   const { eventId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const auth = useAuth();
   const [event, setEvent] = useState<(EventSummary & { photos: Photo[] }) | null>(null);
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
@@ -2992,6 +3089,7 @@ function ManageEvent() {
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [eventAnalytics, setEventAnalytics] = useState<EventAnalyticsSummary | null>(null);
   const [downloadStatus, setDownloadStatus] = useState("");
+  const [linkCopyStatus, setLinkCopyStatus] = useState("");
   const [error, setError] = useState("");
   const [challengeStatus, setChallengeStatus] = useState("");
 
@@ -3105,6 +3203,14 @@ function ManageEvent() {
   const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
   const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
   const lifecycle = event ? deriveEventLifecycleStatus(event, eventAnalytics || undefined) : null;
+  const activeTab = searchParams.get("tab") || "share";
+  const tabItems = [
+    ["share", "Share"],
+    ["live-wall", "Live Wall"],
+    ["recap", "Recap"],
+    ["uploads", "Uploads"],
+    ["settings", "Settings"],
+  ];
 
   useEffect(() => {
     if (!event || !lifecycle) return;
@@ -3123,6 +3229,16 @@ function ManageEvent() {
     return deletePhoto(photo.id);
   }
 
+  async function copyDetailLink(label: string, url?: string | null) {
+    if (!url) return;
+    try {
+      await copyText(url);
+      setLinkCopyStatus(`${label} copied`);
+    } catch (err) {
+      setLinkCopyStatus((err as Error).message);
+    }
+  }
+
   return (
     <Shell wide>
       {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -3130,41 +3246,106 @@ function ManageEvent() {
         <>
           <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <StatusPill>Live event dashboard</StatusPill>
+              <StatusPill>Event details</StatusPill>
               {lifecycle ? <span className="ml-2"><LifecycleBadge lifecycle={lifecycle} /></span> : null}
               <h1 className="mt-3 font-display text-4xl font-bold text-stone-950">{event.name}</h1>
-              {lifecycle ? <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">{lifecycle.description}</p> : null}
+              <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">Next step: {buildHostNextStep(event, eventAnalytics || undefined)}</p>
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-stone-600">
                 <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">calendar_today</Icon>{formatDateTime(event.eventDate)}</span>
                 <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">photo_library</Icon>{event.photoCount} photos</span>
-                <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">lock</Icon>Reveal: {formatDateTime(event.revealAt)}</span>
+                <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">lock</Icon>Reveal time: {formatDateTime(event.revealAt)}</span>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm" to="/dashboard/events/new">Create event</Link>
-              <Link className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" to={`/dashboard/events/${event.id}/poster`}>View poster</Link>
-              <Link className="inline-flex min-h-12 items-center justify-center rounded-full border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster?print=1`}>Print poster</Link>
+              {event.recapLink && lifecycle?.phase === "after" ? <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.recapLink} target="_blank" rel="noreferrer">Share recap</a> : null}
+              {event.liveWallLink && lifecycle?.phase === "during" ? <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a> : null}
+              {lifecycle?.phase === "before" ? <Button type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy guest link</Button> : null}
             </div>
           </section>
 
+          <nav className="mt-8 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
+            <div className="flex min-w-max gap-2 rounded-[1.35rem] border border-[#eadfce] bg-white p-2 shadow-sm">
+              {tabItems.map(([key, label]) => (
+                <button
+                  type="button"
+                  className={cx("rounded-[1rem] px-4 py-3 text-sm font-extrabold transition", activeTab === key ? "bg-stone-950 text-white" : "text-stone-700 hover:bg-[#fffaf6]")}
+                  onClick={() => setSearchParams(key === "share" ? {} : { tab: key })}
+                  key={key}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </nav>
+          {linkCopyStatus ? <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{linkCopyStatus}</p> : null}
+
+          {activeTab === "share" ? (
           <section className="mt-8">
-            <HostLaunchKitPanel event={event} qrCodeDataUrl={event.qrCodeDataUrl} />
+            <Card className="lg:p-8">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0 flex-1">
+                  <h2 className="font-display text-3xl font-bold text-stone-950">Share the guest upload link</h2>
+                  <p className="mt-2 text-stone-600">This is the only link guests need before and during the event.</p>
+                  <input className="mt-5 w-full rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={event.eventLink} />
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <Button type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy link</Button>
+                    <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
+                  </div>
+                </div>
+                {event.qrCodeDataUrl ? (
+                  <div className="rounded-3xl bg-stone-50 p-4">
+                    <img className="mx-auto h-56 w-56 rounded-2xl bg-white" src={event.qrCodeDataUrl} alt="Guest upload QR code" />
+                    <SecondaryButton type="button" className="mt-4 w-full" onClick={() => downloadDataUrl(event.qrCodeDataUrl || "", `${safeFilename(event.name)}-qr.png`)}>Download QR</SecondaryButton>
+                  </div>
+                ) : null}
+              </div>
+            </Card>
             <BetaHandoffPanel event={event} lifecycle={lifecycle} />
-            <HostBetaIssuePanel event={event} />
-            {lifecycle ? <div className="mt-5"><RepeatEventActions event={event} lifecycle={lifecycle} /></div> : null}
+          </section>
+          ) : null}
+
+          {activeTab === "live-wall" ? (
+          <section className="mt-8">
+            <Card className="lg:p-8">
+              <h2 className="font-display text-3xl font-bold text-stone-950">Live Wall</h2>
+              <p className="mt-2 text-stone-600">Open this on a room display while guests upload.</p>
+              <input className="mt-5 w-full rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={event.liveWallLink || ""} />
+              <div className="mt-4 flex flex-wrap gap-2">
+                {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a> : null}
+                <SecondaryButton type="button" onClick={() => copyDetailLink("Live Wall link", event.liveWallLink)}>Copy Live Wall link</SecondaryButton>
+              </div>
+              <div className="mt-6 grid gap-3 lg:grid-cols-2">
+                {buildHostShareAssets(event).liveWallDisplayLinks.map((link) => <LiveWallDisplayLinkCard key={link.key} link={link} event={event} />)}
+              </div>
+            </Card>
+          </section>
+          ) : null}
+
+          {activeTab === "recap" ? (
+          <section className="mt-8">
+            <Card className="lg:p-8">
+              <h2 className="font-display text-3xl font-bold text-stone-950">Recap</h2>
+              <p className="mt-2 text-stone-600">{event.photoCount ? "Your recap is ready to preview, polish, and share." : "No photos yet. Share the QR code to start collecting uploads."}</p>
+              <div className="mt-5 flex flex-wrap gap-2">
+                {event.recapLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Preview recap</a> : null}
+                {event.recapLink ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Share recap</SecondaryButton> : null}
+                <SecondaryButton onClick={() => downloadZip("visible")}>Download photos</SecondaryButton>
+              </div>
+              {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
+            </Card>
             <div className="mt-4 grid gap-3 rounded-3xl bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
               <p className="text-sm font-semibold text-stone-600">Visible export excludes hidden and reported photos by default.</p>
               <SecondaryButton onClick={() => downloadZip("visible")}>Download visible ZIP</SecondaryButton>
               <SecondaryButton onClick={() => downloadZip("all")}>Download all ZIP</SecondaryButton>
             </div>
-            {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
           </section>
+          ) : null}
 
-          {eventAnalytics && (
+          {activeTab === "recap" && eventAnalytics && (
             <section className="mt-8">
               <div className="mb-4">
-                <h2 className="font-display text-2xl font-bold">Event signal</h2>
-                <p className="text-sm text-stone-600">Compact host-owned activity across guest, wall, recap, and moderation.</p>
+                <h2 className="font-display text-2xl font-bold">Event activity</h2>
+                <p className="text-sm text-stone-600">Secondary recap and upload details for host review.</p>
               </div>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
@@ -3200,16 +3381,27 @@ function ManageEvent() {
             </section>
           )}
 
-          {lifecycle?.phase === "after" ? (
+          {activeTab === "recap" && lifecycle?.phase === "after" ? (
             <>
               <PostEventSummaryPanel event={event} analytics={eventAnalytics} />
               <HostFeedbackPanel event={event} analytics={eventAnalytics} onSubmitted={load} />
             </>
           ) : null}
 
+          {activeTab === "settings" ? (
           <section className="mt-8">
+            <Card className="mb-5 lg:p-8">
+              <h2 className="font-display text-3xl font-bold text-stone-950">Settings</h2>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Event mode</strong>{plainModeLabel(challengeDraft.type)}</p>
+                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Prompt pack</strong>{getPromptPack(challengeDraft.promptPackSlug).name}</p>
+                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Reveal time</strong>{formatDateTime(event.revealAt)}</p>
+                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Photo limit</strong>{event.photoLimitPerGuest} per guest</p>
+              </div>
+              <p className="mt-4 rounded-[1rem] bg-red-50 p-4 text-sm font-semibold text-red-800">Delete event stays available from this settings area. Permanent deletion is not changed in this pass.</p>
+            </Card>
             <Card className="lg:p-8">
-              <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} />
+              <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} promptLibraryInitiallyOpen />
               <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <p className="text-sm font-bold text-stone-800">{event.challenge ? `${challengeLabel(event.challenge)} is active for this event.` : "Normal EventFilm albums still work without a challenge."}</p>
@@ -3218,13 +3410,17 @@ function ManageEvent() {
                 <Button onClick={saveChallenge}>Save challenge</Button>
               </div>
             </Card>
+            <HostBetaIssuePanel event={event} />
+            {lifecycle ? <div className="mt-5"><RepeatEventActions event={event} lifecycle={lifecycle} /></div> : null}
           </section>
+          ) : null}
 
+          {activeTab === "uploads" ? (
           <section className="mt-10">
             <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="font-display text-3xl font-bold">Recent uploads</h2>
-                <p className="text-stone-600">Feature favorites, hide anything off-tone, and keep public views clean.</p>
+                <h2 className="font-display text-3xl font-bold">Uploads</h2>
+                <p className="text-stone-600">{event.photos.length ? "Review photos and keep public views clean." : "No photos yet. Share the QR code to start collecting uploads."}</p>
               </div>
             </div>
             <div className="mb-5 grid gap-3 rounded-[1.45rem] border border-[#eadfce] bg-white p-4 shadow-[0_12px_34px_rgba(101,62,0,0.055)]">
@@ -3293,23 +3489,24 @@ function ManageEvent() {
                       <p className="mt-2 text-sm font-semibold text-[#653e00]">{photo.challengeItemKind === "award" ? "Award" : "Mode"}: {photo.challengeItemLabel}</p>
                     )}
                     <p className="mt-1 text-stone-600">{formatDateTime(photo.createdAt)}</p>
-                    <div className="mt-3 grid gap-2">
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <button className={cx("min-h-10 rounded-[0.95rem] px-4 py-2 text-sm font-extrabold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-[#fff0d8] text-[#653e00]")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)} disabled={photo.visibilityStatus === "HIDDEN"}>
+                        {photo.isFeatured ? "Unfavorite" : "Favorite"}
+                      </button>
                       {photo.visibilityStatus === "HIDDEN" ? (
                         <SecondaryButton className="min-h-10 rounded-[0.95rem] px-4 py-2" onClick={() => updatePhotoVisibility(photo, "VISIBLE")}>Restore</SecondaryButton>
                       ) : (
                         <SecondaryButton className="min-h-10 rounded-[0.95rem] px-4 py-2" onClick={() => updatePhotoVisibility(photo, "HIDDEN")}>Hide</SecondaryButton>
                       )}
-                      <button className={cx("min-h-10 rounded-[0.95rem] px-4 py-2 text-sm font-extrabold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-[#fff0d8] text-[#653e00]")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)} disabled={photo.visibilityStatus === "HIDDEN"}>
-                        {photo.isFeatured ? "Unfeature" : "Feature"}
-                      </button>
-                      <button className="min-h-10 rounded-[0.95rem] bg-red-50 px-4 py-2 text-sm font-extrabold text-red-800 ring-1 ring-red-100" onClick={() => deletePhoto(photo.id)}>Delete</button>
+                      <button className="min-h-10 rounded-[0.95rem] bg-stone-100 px-4 py-2 text-sm font-extrabold text-stone-700 ring-1 ring-stone-200" onClick={() => setSelectedPhoto(photo)}>More</button>
                     </div>
                   </div>
                 </div>
               ))}
             </div>
-            {!filteredPhotos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos match this view yet.</p></Card>}
+            {!filteredPhotos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet</h3><p className="mt-2 font-semibold text-stone-600">Share the QR code to start collecting uploads.</p></Card>}
           </section>
+          ) : null}
           <PhotoDetailModal photo={selectedPhoto} mode="host" onClose={() => setSelectedPhoto(null)} onHostAction={handleHostPhotoAction} />
         </>
       )}

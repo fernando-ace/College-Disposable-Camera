@@ -31,9 +31,9 @@ test.describe("EventFilm browser smoke", () => {
     page.on("pageerror", (error) => consoleProblems.push(error.message));
 
     await page.goto("/");
-    await expect(page.getByRole("heading", { name: /Collect every moment/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Stop chasing photos after the event/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Create your first event/i }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: /View demo/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Try the demo/i })).toBeVisible();
 
     for (const path of ["/privacy", "/terms", "/support"]) {
       await page.goto(path);
@@ -104,6 +104,7 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto(`/dashboard/events/${eventId}`);
     await expect(page.getByText(/First beta host handoff/i)).toBeVisible();
     await expect(page.getByRole("heading", { name: /Run this first event without guessing/i })).toBeVisible();
+    await page.getByRole("button", { name: "Settings" }).click();
     await expect(page.getByRole("heading", { name: /Something off during the event/i })).toBeVisible();
     await page.getByRole("button", { name: /Report issue/i }).click();
     await expect(page.getByPlaceholder(/What happened/i)).toBeVisible();

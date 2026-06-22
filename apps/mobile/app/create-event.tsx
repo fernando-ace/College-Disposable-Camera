@@ -329,10 +329,16 @@ function MemoryCapsuleSetup({ draft, onChange }: { draft: ChallengeDraft; onChan
 }
 
 function TemplateSetup({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
+  const [showMoreTemplates, setShowMoreTemplates] = React.useState(false);
+  const visibleTemplateSlugs: EventTemplateSlug[] = ["birthday-party", "wedding-engagement", "greek-life-event", "graduation-party", "student-org-event", "open-custom-event"];
+  const visibleTemplates = visibleTemplateSlugs.map((slug) => EVENT_TEMPLATES.find((template) => template.slug === slug)).filter((template): template is (typeof EVENT_TEMPLATES)[number] => Boolean(template));
+  const hiddenTemplates = EVENT_TEMPLATES.filter((template) => !visibleTemplateSlugs.includes(template.slug));
+  const templates = showMoreTemplates ? [...visibleTemplates, ...hiddenTemplates] : visibleTemplates;
+
   return (
     <View style={{ gap: 12 }}>
-      <SectionHeader title="Choose a template" subtitle="Start with the shape of the event. You can adjust the mode, timing, and prompts before launch." />
-      {EVENT_TEMPLATES.map((template) => {
+      <SectionHeader title="What are you hosting?" subtitle="Start with the shape of the event. You can adjust the mode, timing, and prompts before launch." />
+      {templates.map((template) => {
         const promptPack = getPromptPack(template.promptPackSlug);
         const mode = getChallengePack(template.recommendedMode);
         const selected = draft.eventTemplateSlug === template.slug;
@@ -357,7 +363,7 @@ function TemplateSetup({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onS
                 <Text selectable style={{ color: colors.ink, fontSize: 19, lineHeight: 24, fontWeight: "900" }}>{template.name}</Text>
                 <Body tone="muted">{template.shortDescription}</Body>
               </View>
-              <Badge tone={selected ? "dark" : "amber"}>{selected ? "Selected" : template.badge}</Badge>
+              <Badge tone={selected ? "dark" : "amber"}>{selected ? "Selected" : mode.name}</Badge>
             </View>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               <Chip>{mode.name}</Chip>
@@ -367,6 +373,7 @@ function TemplateSetup({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onS
           </Pressable>
         );
       })}
+      {!showMoreTemplates ? <Button tone="secondary" onPress={() => setShowMoreTemplates(true)}>More templates</Button> : null}
       <Button tone="secondary" onPress={onSkip}>Open custom event</Button>
     </View>
   );
@@ -374,6 +381,8 @@ function TemplateSetup({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onS
 
 function PromptPackPicker({ draft, onChange }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void }) {
   const { api } = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const selectedPack = getPromptPack(draft.promptPackSlug);
 
   function selectPromptPack(promptPackSlug: PromptPackSlug) {
     const pack = getPromptPack(promptPackSlug);
@@ -392,17 +401,18 @@ function PromptPackPicker({ draft, onChange }: { draft: ChallengeDraft; onChange
 
   return (
     <Card>
-      <SectionHeader title="Prompt pack" subtitle="Choose a polished set, then edit only what needs your voice." />
-      {PROMPT_PACKS.filter((pack) => pack.kind !== "custom").map((pack) => (
+      <SectionHeader title={`Prompt set selected: ${selectedPack.name}`} subtitle={`Includes ${selectedPack.items.length} prompts. You can edit them after creating the event.`} />
+      <Button tone="secondary" onPress={() => setOpen((current) => !current)}>{open ? "Hide prompts" : "Edit prompts"}</Button>
+      {open ? PROMPT_PACKS.filter((pack) => pack.kind !== "custom").map((pack) => (
         <ModeOptionCard
           key={pack.slug}
           title={pack.name}
           description={pack.description}
-          meta={`${pack.kind === "award" ? "Event Awards" : "Scavenger Hunt"} - ${pack.items.length} ready-to-use ideas`}
+          meta={`${pack.kind === "award" ? "Awards" : "Photo Prompts"} - ${pack.items.length} ready-to-use ideas`}
           selected={draft.promptPackSlug === pack.slug}
           onPress={() => selectPromptPack(pack.slug)}
         />
-      ))}
+      )) : null}
     </Card>
   );
 }

@@ -705,7 +705,7 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
 
   return (
     <Card>
-      <SectionHeader title="Event signal" subtitle="Guest, wall, recap, and moderation activity." />
+      <SectionHeader title="Event activity" subtitle="Guest, wall, recap, and moderation activity." />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         {rows.map(([label, value]) => (
           <StatTile key={label} label={String(label)} value={Number(value)} />
