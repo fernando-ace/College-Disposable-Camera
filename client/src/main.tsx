@@ -51,9 +51,10 @@ import {
   sanitizeGuestDisplayName,
   validateUploadFile,
   validateChallengeDraft,
+  validateEventSettingsInput,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSummary, EventTemplateSlug, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostLaunchKit, HostShareAssets, HostShareLinkCard, LiveWallDisplayLink, LiveWallMode, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, EventTemplateSlug, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostLaunchKit, HostShareAssets, HostShareLinkCard, LiveWallDisplayLink, LiveWallMode, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -217,6 +218,40 @@ const REPORT_REASONS: Array<{ value: PhotoReportReason; label: string }> = [
 function toDateTimeLocal(date = new Date()) {
   const offset = date.getTimezoneOffset();
   return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
+}
+
+type EventSettingsForm = {
+  name: string;
+  description: string;
+  eventDate: string;
+  revealAt: string;
+  photoLimitPerGuest: string;
+};
+
+function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "description" | "eventDate" | "revealAt" | "photoLimitPerGuest">): EventSettingsForm {
+  return {
+    name: event.name,
+    description: event.description || "",
+    eventDate: toDateTimeLocal(new Date(event.eventDate)),
+    revealAt: toDateTimeLocal(new Date(event.revealAt)),
+    photoLimitPerGuest: String(event.photoLimitPerGuest),
+  };
+}
+
+function safeDateInputToIso(value: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toISOString();
+}
+
+function eventSettingsInputFromForm(form: EventSettingsForm): UpdateEventSettingsInput {
+  return {
+    name: form.name,
+    description: form.description,
+    eventDate: safeDateInputToIso(form.eventDate),
+    revealAt: safeDateInputToIso(form.revealAt),
+    photoLimitPerGuest: Number(form.photoLimitPerGuest),
+  };
 }
 
 function downloadDataUrl(dataUrl: string, filename: string) {
@@ -3092,6 +3127,10 @@ function ManageEvent() {
   const [linkCopyStatus, setLinkCopyStatus] = useState("");
   const [error, setError] = useState("");
   const [challengeStatus, setChallengeStatus] = useState("");
+  const [settingsForm, setSettingsForm] = useState<EventSettingsForm | null>(null);
+  const [settingsFieldErrors, setSettingsFieldErrors] = useState<EventSettingsFieldErrors>({});
+  const [settingsStatus, setSettingsStatus] = useState("");
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   async function load() {
     const [data, analytics] = await Promise.all([
@@ -3106,6 +3145,13 @@ function ManageEvent() {
   useEffect(() => {
     load().catch((err) => setError((err as Error).message));
   }, [eventId]);
+
+  useEffect(() => {
+    if (!event) return;
+    setSettingsForm(eventSettingsFormFromEvent(event));
+    setSettingsFieldErrors({});
+    setSettingsStatus("");
+  }, [event?.id]);
 
   useEffect(() => {
     if (galleryFilter === "all") return;
@@ -3181,6 +3227,48 @@ function ManageEvent() {
     }
   }
 
+  function updateSettingsField(field: keyof EventSettingsForm, value: string) {
+    setSettingsForm((current) => (current ? { ...current, [field]: value } : current));
+    setSettingsFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setSettingsStatus("");
+  }
+
+  function resetSettingsForm() {
+    if (!event) return;
+    setSettingsForm(eventSettingsFormFromEvent(event));
+    setSettingsFieldErrors({});
+    setSettingsStatus("Changes canceled.");
+  }
+
+  async function saveEventSettings(saveEvent: React.FormEvent) {
+    saveEvent.preventDefault();
+    if (!event || !eventId || !settingsForm) return;
+
+    const input = eventSettingsInputFromForm(settingsForm);
+    const validation = validateEventSettingsInput(input);
+    if (!validation.ok) {
+      setSettingsFieldErrors(validation.fieldErrors);
+      setSettingsStatus(validation.error);
+      return;
+    }
+
+    setSettingsSaving(true);
+    setSettingsStatus("");
+    setSettingsFieldErrors({});
+    try {
+      const data = await eventFilmApi.updateHostEventSettings(eventId, validation.value, auth.token);
+      setEvent(data.event);
+      setSettingsForm(eventSettingsFormFromEvent(data.event));
+      setSettingsStatus("Event settings saved.");
+    } catch (err) {
+      const apiFieldErrors = (err as { data?: { fieldErrors?: EventSettingsFieldErrors } }).data?.fieldErrors;
+      if (apiFieldErrors) setSettingsFieldErrors(apiFieldErrors);
+      setSettingsStatus((err as Error).message || "Could not save event settings. Try again.");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
   const challengeParticipants = event?.challenge?.participants || [];
   const challengeColors = Array.from(new Map(challengeParticipants.map((participant) => [participant.colorSlug, participant])).values());
   const challengePrompts = promptsFromChallenge(event?.challenge);
@@ -3203,6 +3291,14 @@ function ManageEvent() {
   const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
   const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
   const lifecycle = event ? deriveEventLifecycleStatus(event, eventAnalytics || undefined) : null;
+  const savedSettingsForm = event ? eventSettingsFormFromEvent(event) : null;
+  const settingsDirty = Boolean(settingsForm && savedSettingsForm && JSON.stringify(settingsForm) !== JSON.stringify(savedSettingsForm));
+  const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm)) : null;
+  const visibleSettingsFieldErrors = {
+    ...(settingsDirty && liveSettingsValidation && !liveSettingsValidation.ok ? liveSettingsValidation.fieldErrors : {}),
+    ...settingsFieldErrors,
+  };
+  const canSaveSettings = Boolean(settingsDirty && !settingsSaving && liveSettingsValidation?.ok);
   const activeTab = searchParams.get("tab") || "share";
   const tabItems = [
     ["share", "Share"],
@@ -3391,14 +3487,60 @@ function ManageEvent() {
           {activeTab === "settings" ? (
           <section className="mt-8">
             <Card className="mb-5 lg:p-8">
-              <h2 className="font-display text-3xl font-bold text-stone-950">Settings</h2>
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Event mode</strong>{plainModeLabel(challengeDraft.type)}</p>
-                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Prompt pack</strong>{getPromptPack(challengeDraft.promptPackSlug).name}</p>
-                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Reveal time</strong>{formatDateTime(event.revealAt)}</p>
-                <p className="rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700"><strong className="block text-stone-950">Photo limit</strong>{event.photoLimitPerGuest} per guest</p>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="font-display text-3xl font-bold text-stone-950">Settings</h2>
+                  <p className="mt-2 text-sm font-semibold text-stone-600">Edit the basics hosts most often need to adjust before sharing.</p>
+                </div>
+                {settingsDirty ? <StatusPill tone="amber">Unsaved changes</StatusPill> : <StatusPill tone="stone">Saved</StatusPill>}
               </div>
-              <p className="mt-4 rounded-[1rem] bg-red-50 p-4 text-sm font-semibold text-red-800">Delete event stays available from this settings area. Permanent deletion is not changed in this pass.</p>
+              {settingsForm ? (
+                <form className="mt-6 grid gap-5" onSubmit={saveEventSettings}>
+                  <label className="grid gap-2 text-sm font-bold text-stone-700">
+                    Event name
+                    <TextInput value={settingsForm.name} onChange={(formEvent) => updateSettingsField("name", formEvent.target.value)} required maxLength={120} />
+                    {visibleSettingsFieldErrors.name ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.name}</span> : null}
+                  </label>
+                  <label className="grid gap-2 text-sm font-bold text-stone-700">
+                    Description
+                    <TextArea rows={3} value={settingsForm.description} onChange={(formEvent) => updateSettingsField("description", formEvent.target.value)} maxLength={1000} placeholder="Tell guests what this album is for." />
+                    {visibleSettingsFieldErrors.description ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.description}</span> : null}
+                  </label>
+                  <div className="grid gap-5 sm:grid-cols-2">
+                    <label className="grid gap-2 text-sm font-bold text-stone-700">
+                      Event date
+                      <TextInput type="datetime-local" value={settingsForm.eventDate} onChange={(formEvent) => updateSettingsField("eventDate", formEvent.target.value)} required />
+                      {visibleSettingsFieldErrors.eventDate ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.eventDate}</span> : null}
+                    </label>
+                    <label className="grid gap-2 text-sm font-bold text-stone-700">
+                      Reveal time
+                      <TextInput type="datetime-local" value={settingsForm.revealAt} onChange={(formEvent) => updateSettingsField("revealAt", formEvent.target.value)} required />
+                      <span className="text-xs font-semibold text-stone-500">Guests can upload before this, but the full album stays hidden until the reveal time.</span>
+                      {visibleSettingsFieldErrors.revealAt ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.revealAt}</span> : null}
+                    </label>
+                  </div>
+                  <label className="grid gap-2 text-sm font-bold text-stone-700">
+                    Photo limit per guest
+                    <TextInput type="number" min="1" max="100" value={settingsForm.photoLimitPerGuest} onChange={(formEvent) => updateSettingsField("photoLimitPerGuest", formEvent.target.value)} required />
+                    <span className="text-xs font-semibold text-stone-500">Keep this high for casual events and lower for games or prompts.</span>
+                    {visibleSettingsFieldErrors.photoLimitPerGuest ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.photoLimitPerGuest}</span> : null}
+                  </label>
+                  <div className="grid gap-3 rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700 sm:grid-cols-2">
+                    <p><strong className="block text-stone-950">Event mode</strong>{plainModeLabel(challengeDraft.type)}</p>
+                    <p><strong className="block text-stone-950">Prompt pack</strong>{getPromptPack(challengeDraft.promptPackSlug).name}</p>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      {settingsStatus ? <p className={cx("text-sm font-bold", /saved|canceled/i.test(settingsStatus) ? "text-green-700" : "text-red-700")}>{settingsStatus}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <SecondaryButton type="button" onClick={resetSettingsForm} disabled={!settingsDirty || settingsSaving}>Cancel</SecondaryButton>
+                      <Button type="submit" disabled={!canSaveSettings}>{settingsSaving ? "Saving..." : "Save changes"}</Button>
+                    </div>
+                  </div>
+                </form>
+              ) : null}
+              <p className="mt-5 rounded-[1rem] bg-red-50 p-4 text-sm font-semibold text-red-800">Delete event stays available from this settings area. Permanent deletion is not changed in this pass.</p>
             </Card>
             <Card className="lg:p-8">
               <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} promptLibraryInitiallyOpen />

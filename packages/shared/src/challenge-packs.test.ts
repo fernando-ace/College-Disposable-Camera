@@ -40,6 +40,7 @@ import {
   validateUploadFile,
   visiblePhotos,
   validateChallengeDraft,
+  validateEventSettingsInput,
   validateHostFeedback,
 } from "./index.ts";
 import type { EventChallenge, EventSummary, GuestUploadLocalMetadata, Photo, PublicEvent } from "./index.ts";
@@ -518,6 +519,38 @@ test("host feedback validation supports submit and skip states with bounded text
     assert.equal(issue.value.issueArea, "guest_upload");
   }
   assert.equal(invalidIssue.ok, false);
+});
+
+test("event settings validation trims safe fields and rejects unsafe basics", () => {
+  const valid = validateEventSettingsInput({
+    name: "  Chapter Formal  ",
+    description: "  Bring the good candids.  ",
+    eventDate: "2026-06-22T12:00:00.000Z",
+    revealAt: "2026-06-22T16:00:00.000Z",
+    photoLimitPerGuest: 12,
+  });
+  assert.equal(valid.ok, true);
+  if (valid.ok) {
+    assert.equal(valid.value.name, "Chapter Formal");
+    assert.equal(valid.value.description, "Bring the good candids.");
+    assert.equal(valid.value.photoLimitPerGuest, 12);
+  }
+
+  const invalid = validateEventSettingsInput({
+    name: " ",
+    description: "x".repeat(1001),
+    eventDate: "not a date",
+    revealAt: "",
+    photoLimitPerGuest: 101,
+  });
+  assert.equal(invalid.ok, false);
+  if (!invalid.ok) {
+    assert.match(invalid.fieldErrors.name || "", /required/);
+    assert.match(invalid.fieldErrors.description || "", /1000/);
+    assert.match(invalid.fieldErrors.eventDate || "", /valid event date/);
+    assert.match(invalid.fieldErrors.revealAt || "", /valid reveal time/);
+    assert.match(invalid.fieldErrors.photoLimitPerGuest || "", /between 1 and 100/);
+  }
 });
 
 test("report reasons and upload validation stay beta-safe", () => {

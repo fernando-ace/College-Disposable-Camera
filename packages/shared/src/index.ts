@@ -853,6 +853,85 @@ export type CreateEventInput = {
   challenge?: EventChallengeInput;
 };
 
+export const EVENT_SETTINGS_LIMITS = {
+  nameMaxLength: 120,
+  descriptionMaxLength: 1000,
+  photoLimitMin: 1,
+  photoLimitMax: 100,
+} as const;
+
+export type UpdateEventSettingsInput = {
+  name: string;
+  description?: string | null;
+  eventDate: ISODateString;
+  revealAt: ISODateString;
+  photoLimitPerGuest: number;
+};
+
+export type EventSettingsFieldErrors = Partial<Record<keyof UpdateEventSettingsInput, string>>;
+
+export type EventSettingsValidationResult =
+  | { ok: true; value: UpdateEventSettingsInput }
+  | { ok: false; error: string; fieldErrors: EventSettingsFieldErrors };
+
+function parseEventSettingsDate(value: unknown) {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (value === undefined || value === null || value === "") return null;
+  const parsed = new Date(String(value));
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInput> = {}): EventSettingsValidationResult {
+  const fieldErrors: EventSettingsFieldErrors = {};
+  const name = String(input.name ?? "").trim();
+  const description = input.description == null ? "" : String(input.description).trim();
+  const eventDate = parseEventSettingsDate(input.eventDate);
+  const revealAt = parseEventSettingsDate(input.revealAt);
+  const photoLimitPerGuest = Number(input.photoLimitPerGuest);
+
+  if (!name) {
+    fieldErrors.name = "Event name is required.";
+  } else if (name.length > EVENT_SETTINGS_LIMITS.nameMaxLength) {
+    fieldErrors.name = `Event name must be ${EVENT_SETTINGS_LIMITS.nameMaxLength} characters or fewer.`;
+  }
+
+  if (description.length > EVENT_SETTINGS_LIMITS.descriptionMaxLength) {
+    fieldErrors.description = `Description must be ${EVENT_SETTINGS_LIMITS.descriptionMaxLength} characters or fewer.`;
+  }
+
+  if (!eventDate) {
+    fieldErrors.eventDate = "Enter a valid event date.";
+  }
+
+  if (!revealAt) {
+    fieldErrors.revealAt = "Enter a valid reveal time.";
+  }
+
+  if (!Number.isInteger(photoLimitPerGuest)) {
+    fieldErrors.photoLimitPerGuest = "Photo limit must be a whole number.";
+  } else if (photoLimitPerGuest < EVENT_SETTINGS_LIMITS.photoLimitMin || photoLimitPerGuest > EVENT_SETTINGS_LIMITS.photoLimitMax) {
+    fieldErrors.photoLimitPerGuest = `Photo limit must be between ${EVENT_SETTINGS_LIMITS.photoLimitMin} and ${EVENT_SETTINGS_LIMITS.photoLimitMax}.`;
+  }
+
+  if (Object.keys(fieldErrors).length) {
+    return { ok: false, error: "Check the highlighted event settings.", fieldErrors };
+  }
+
+  const validEventDate = eventDate as Date;
+  const validRevealAt = revealAt as Date;
+
+  return {
+    ok: true,
+    value: {
+      name,
+      description: description || null,
+      eventDate: validEventDate.toISOString(),
+      revealAt: validRevealAt.toISOString(),
+      photoLimitPerGuest,
+    },
+  };
+}
+
 export type UploadPhotoMetadata = {
   nickname: string;
   clientId: string;

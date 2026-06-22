@@ -12,6 +12,7 @@ const rateLimit = require("express-rate-limit");
 const prisma = require("./prisma");
 const { signToken, requireAuth, requireFounderAuth } = require("./auth");
 const { port, clientUrl, clientOrigins, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction } = require("./config");
+const { EventSettingsError, updateHostEventSettings, validateEventSettingsInput } = require("./event-settings");
 const { buildFounderOverview } = require("./founder");
 const {
   createPhotoObjectKey,
@@ -555,11 +556,6 @@ function photoPayload(photo, { includeModeration = false } = {}) {
   };
 }
 
-function requireFields(body, fields) {
-  const missing = fields.filter((field) => !body[field]);
-  return missing.length ? `Missing required fields: ${missing.join(", ")}` : null;
-}
-
 function normalizeChallengeSetup(input) {
   if (!input || input.isActive === false) return null;
   if (input.type && !SUPPORTED_CHALLENGE_TYPES.includes(input.type)) {
@@ -775,6 +771,27 @@ function eventPayload(event, { includePhotos = false, includeModeration = false 
     photos: includePhotos && event.photos ? event.photos.map((photo) => photoPayload(photo, { includeModeration })) : undefined,
     challenges: undefined,
     _count: undefined,
+  };
+}
+
+function hostEventDetailInclude() {
+  return {
+    photos: {
+      where: activePhotoWhere(),
+      orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
+      include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
+    },
+    challenges: activeChallengeInclude(),
+    _count: { select: { photos: { where: visiblePhotoWhere() } } },
+  };
+}
+
+async function hostEventDetailResponse(event) {
+  const eventLink = publicEventUrl(event.slug);
+  const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 320 });
+  return {
+    ...eventPayload(event, { includePhotos: true, includeModeration: true }),
+    qrCodeDataUrl,
   };
 }
 
@@ -1097,13 +1114,8 @@ app.get("/api/host/events", requireAuth, async (req, res) => {
 });
 
 app.post("/api/host/events", requireAuth, async (req, res) => {
-  const missing = requireFields(req.body, ["name", "eventDate", "revealAt", "photoLimitPerGuest"]);
-  if (missing) return res.status(400).json({ error: missing });
-
-  const photoLimitPerGuest = Number(req.body.photoLimitPerGuest);
-  if (!Number.isInteger(photoLimitPerGuest) || photoLimitPerGuest < 1) {
-    return res.status(400).json({ error: "Photo limit must be at least 1" });
-  }
+  const validation = validateEventSettingsInput(req.body);
+  if (!validation.ok) return res.status(400).json({ error: validation.error, fieldErrors: validation.fieldErrors });
 
   let challengeSetup;
   try {
@@ -1113,15 +1125,16 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
   }
 
   const slug = crypto.randomBytes(12).toString("base64url");
+  const settings = validation.value;
   const event = await prisma.event.create({
     data: {
       hostId: req.user.userId,
-      name: req.body.name.trim(),
-      description: req.body.description?.trim() || null,
+      name: settings.name,
+      description: settings.description,
       slug,
-      eventDate: new Date(req.body.eventDate),
-      revealAt: new Date(req.body.revealAt),
-      photoLimitPerGuest,
+      eventDate: settings.eventDate,
+      revealAt: settings.revealAt,
+      photoLimitPerGuest: settings.photoLimitPerGuest,
       eventTemplateSlug: normalizeOptionalSlug(req.body.eventTemplateSlug, EVENT_TEMPLATE_SLUGS),
       promptPackSlug: normalizeOptionalSlug(req.body.promptPackSlug, PROMPT_PACK_SLUGS),
       ...(challengeSetup
@@ -1143,26 +1156,33 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
 app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
   const event = await prisma.event.findFirst({
     where: { id: req.params.eventId, hostId: req.user.userId },
-    include: {
-      photos: {
-        where: activePhotoWhere(),
-        orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-        include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
-      },
-      challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: visiblePhotoWhere() } } },
-    },
+    include: hostEventDetailInclude(),
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
-  const eventLink = publicEventUrl(event.slug);
-  const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 320 });
   res.json({
-    event: {
-      ...eventPayload(event, { includePhotos: true, includeModeration: true }),
-      qrCodeDataUrl,
-    },
+    event: await hostEventDetailResponse(event),
   });
+});
+
+app.patch("/api/host/events/:eventId", requireAuth, async (req, res) => {
+  try {
+    const event = await updateHostEventSettings(prisma, {
+      eventId: req.params.eventId,
+      userId: req.user.userId,
+      input: req.body || {},
+      include: hostEventDetailInclude(),
+    });
+    res.json({ event: await hostEventDetailResponse(event) });
+  } catch (error) {
+    if (error instanceof EventSettingsError) {
+      return res.status(error.status).json({
+        error: error.message,
+        ...(error.fieldErrors ? { fieldErrors: error.fieldErrors } : {}),
+      });
+    }
+    throw error;
+  }
 });
 
 app.post("/api/host/events/:eventId/duplicate", requireAuth, async (req, res) => {
@@ -1173,13 +1193,9 @@ app.post("/api/host/events/:eventId/duplicate", requireAuth, async (req, res) =>
   if (!source) return res.status(404).json({ error: "Event not found" });
 
   const defaults = duplicateEventDefaults(source, req.body || {});
-  if (!defaults.name) return res.status(400).json({ error: "Event name is required" });
-  if (!Number.isInteger(defaults.photoLimitPerGuest) || defaults.photoLimitPerGuest < 1) {
-    return res.status(400).json({ error: "Photo limit must be at least 1" });
-  }
-  if (Number.isNaN(defaults.eventDate.getTime()) || Number.isNaN(defaults.revealAt.getTime())) {
-    return res.status(400).json({ error: "Valid event and reveal dates are required" });
-  }
+  const validation = validateEventSettingsInput(defaults);
+  if (!validation.ok) return res.status(400).json({ error: validation.error, fieldErrors: validation.fieldErrors });
+  const settings = validation.value;
 
   const sourceChallenge = source.challenges?.[0] || null;
   let challengeSetup = null;
@@ -1195,12 +1211,12 @@ app.post("/api/host/events/:eventId/duplicate", requireAuth, async (req, res) =>
   const event = await prisma.event.create({
     data: {
       hostId: req.user.userId,
-      name: defaults.name,
-      description: defaults.description,
+      name: settings.name,
+      description: settings.description,
       slug,
-      eventDate: defaults.eventDate,
-      revealAt: defaults.revealAt,
-      photoLimitPerGuest: defaults.photoLimitPerGuest,
+      eventDate: settings.eventDate,
+      revealAt: settings.revealAt,
+      photoLimitPerGuest: settings.photoLimitPerGuest,
       eventTemplateSlug: source.eventTemplateSlug,
       promptPackSlug: source.promptPackSlug,
       ...(challengeSetup

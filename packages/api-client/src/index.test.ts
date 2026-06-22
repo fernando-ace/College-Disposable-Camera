@@ -240,6 +240,40 @@ test("duplicate host event posts overrides to duplicate endpoint", async () => {
   assert.equal(body, JSON.stringify({ name: "Next Formal" }));
 });
 
+test("update host event settings patches the encoded host event endpoint", async () => {
+  const calls: string[] = [];
+  let method = "";
+  let auth = "";
+  let body = "";
+  const input = {
+    name: "Updated Formal",
+    description: "New host note",
+    eventDate: "2026-06-22T12:00:00.000Z",
+    revealAt: "2026-06-22T16:00:00.000Z",
+    photoLimitPerGuest: 8,
+  };
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      method = init?.method || "";
+      auth = new Headers(init?.headers).get("Authorization") || "";
+      body = String(init?.body || "");
+      return new Response(JSON.stringify({ event: { id: "event-1", photos: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.updateHostEventSettings("event 1", input, "token");
+
+  assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201");
+  assert.equal(method, "PATCH");
+  assert.equal(auth, "Bearer token");
+  assert.equal(body, JSON.stringify(input));
+});
+
 test("host feedback helper posts submit and skip payloads", async () => {
   const bodies: string[] = [];
   const client = createEventFilmApiClient({

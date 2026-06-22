@@ -1,14 +1,72 @@
 import * as React from "react";
+import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import { Link, router, useLocalSearchParams } from "expo-router";
-import { Linking, View } from "react-native";
+import { Linking, Pressable, Text, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
-import type { EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
-import { buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateHostFeedback } from "@eventfilm/shared";
-import { Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
+import type { EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus, UpdateEventSettingsInput } from "@eventfilm/shared";
+import { buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
+import { ActionButton, Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader, colors } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatDateObject(value: Date) {
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(value);
+}
+
+type PickerMode = "date" | "time";
+
+function DateTimeField({ label, helper, value, onChange, error }: { label: string; helper?: string; value: Date; onChange: (value: Date) => void; error?: string }) {
+  const [pickerMode, setPickerMode] = React.useState<PickerMode | null>(null);
+  const isIos = process.env.EXPO_OS === "ios";
+
+  function handleChange(event: DateTimePickerEvent, selected?: Date) {
+    setPickerMode(null);
+    if (event.type === "dismissed" || !selected) return;
+    onChange(selected);
+  }
+
+  return (
+    <View style={{ gap: 8 }}>
+      <FieldGroup label={label} helper={helper} error={error}>
+        <Pressable
+          onPress={() => setPickerMode((mode) => (mode ? null : "date"))}
+          style={({ pressed }) => ({
+            minHeight: 54,
+            justifyContent: "center",
+            borderRadius: 16,
+            borderCurve: "continuous",
+            borderWidth: 1,
+            borderColor: error ? colors.danger : colors.border,
+            backgroundColor: "#fff",
+            opacity: pressed ? 0.72 : 1,
+            paddingHorizontal: 15,
+          })}
+        >
+          <Text selectable style={{ color: colors.ink, fontSize: 16, fontWeight: "800" }}>{formatDateObject(value)}</Text>
+        </Pressable>
+      </FieldGroup>
+      {isIos ? (
+        <DateTimePicker
+          mode="datetime"
+          value={value}
+          display="compact"
+          onChange={(_event, selected) => {
+            if (selected) onChange(selected);
+          }}
+          style={{ alignSelf: "flex-start" }}
+        />
+      ) : (
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <ActionButton onPress={() => setPickerMode("date")}>Change date</ActionButton>
+          <ActionButton onPress={() => setPickerMode("time")}>Change time</ActionButton>
+        </View>
+      )}
+      {pickerMode && !isIos ? <DateTimePicker mode={pickerMode} value={value} display="default" onChange={handleChange} /> : null}
+    </View>
+  );
 }
 
 function buildWebUrl(event: EventSummary, path: string) {
@@ -29,6 +87,34 @@ const BETA_ISSUE_AREAS = [
   ["other", "Other"],
 ] as const;
 
+type EventSettingsForm = {
+  name: string;
+  description: string;
+  eventDate: Date;
+  revealAt: Date;
+  photoLimitPerGuest: string;
+};
+
+function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "description" | "eventDate" | "revealAt" | "photoLimitPerGuest">): EventSettingsForm {
+  return {
+    name: event.name,
+    description: event.description || "",
+    eventDate: new Date(event.eventDate),
+    revealAt: new Date(event.revealAt),
+    photoLimitPerGuest: String(event.photoLimitPerGuest),
+  };
+}
+
+function eventSettingsInputFromForm(form: EventSettingsForm): UpdateEventSettingsInput {
+  return {
+    name: form.name,
+    description: form.description,
+    eventDate: form.eventDate.toISOString(),
+    revealAt: form.revealAt.toISOString(),
+    photoLimitPerGuest: Number(form.photoLimitPerGuest),
+  };
+}
+
 export default function EventDetailScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { api } = useAuth();
@@ -37,6 +123,10 @@ export default function EventDetailScreen() {
   const [linkChecks, setLinkChecks] = React.useState<LaunchLinkVerification[]>([]);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
+  const [settingsForm, setSettingsForm] = React.useState<EventSettingsForm | null>(null);
+  const [settingsFieldErrors, setSettingsFieldErrors] = React.useState<EventSettingsFieldErrors>({});
+  const [settingsStatus, setSettingsStatus] = React.useState("");
+  const [settingsSaving, setSettingsSaving] = React.useState(false);
 
   async function loadEvent() {
     if (!eventId) return;
@@ -48,6 +138,7 @@ export default function EventDetailScreen() {
         api.verifyHostEventLinks(eventId).catch(() => null),
       ]);
       setEvent(data.event);
+      setSettingsForm(eventSettingsFormFromEvent(data.event));
       if (links) setLinkChecks(links.links);
       const analytics = await api.getEventAnalyticsSummary(eventId).catch(() => null);
       if (analytics) setAnalyticsSummary(analytics.summary);
@@ -78,6 +169,46 @@ export default function EventDetailScreen() {
     }
   }
 
+  function updateSettingsField(field: keyof EventSettingsForm, value: string | Date) {
+    setSettingsForm((current) => (current ? { ...current, [field]: value } : current));
+    setSettingsFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setSettingsStatus("");
+  }
+
+  function cancelSettingsEdit() {
+    if (!event) return;
+    setSettingsForm(eventSettingsFormFromEvent(event));
+    setSettingsFieldErrors({});
+    setSettingsStatus("Changes canceled.");
+  }
+
+  async function saveSettingsEdit() {
+    if (!eventId || !settingsForm) return;
+    const input = eventSettingsInputFromForm(settingsForm);
+    const validation = validateEventSettingsInput(input);
+    if (!validation.ok) {
+      setSettingsFieldErrors(validation.fieldErrors);
+      setSettingsStatus(validation.error);
+      return;
+    }
+
+    setSettingsSaving(true);
+    setSettingsStatus("");
+    setSettingsFieldErrors({});
+    try {
+      const data = await api.updateHostEventSettings(eventId, validation.value);
+      setEvent(data.event);
+      setSettingsForm(eventSettingsFormFromEvent(data.event));
+      setSettingsStatus("Event settings saved.");
+    } catch (err) {
+      const apiFieldErrors = (err as { data?: { fieldErrors?: EventSettingsFieldErrors } }).data?.fieldErrors;
+      if (apiFieldErrors) setSettingsFieldErrors(apiFieldErrors);
+      setSettingsStatus((err as Error).message || "Could not save event settings.");
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
   React.useEffect(() => {
     let isMounted = true;
 
@@ -90,6 +221,7 @@ export default function EventDetailScreen() {
         .then(([data, links, analytics]) => {
           if (!isMounted) return;
           setEvent(data.event);
+          setSettingsForm(eventSettingsFormFromEvent(data.event));
           if (links) setLinkChecks(links.links);
           if (analytics) setAnalyticsSummary(analytics.summary);
         })
@@ -129,6 +261,14 @@ export default function EventDetailScreen() {
   const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
   const lifecycle = event ? deriveEventLifecycleStatus(event, analyticsSummary || undefined) : null;
   const lifecycleStatus = lifecycle?.status;
+  const savedSettingsForm = event ? eventSettingsFormFromEvent(event) : null;
+  const settingsDirty = Boolean(settingsForm && savedSettingsForm && JSON.stringify({ ...settingsForm, eventDate: settingsForm.eventDate.toISOString(), revealAt: settingsForm.revealAt.toISOString() }) !== JSON.stringify({ ...savedSettingsForm, eventDate: savedSettingsForm.eventDate.toISOString(), revealAt: savedSettingsForm.revealAt.toISOString() }));
+  const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm)) : null;
+  const visibleSettingsFieldErrors = {
+    ...(settingsDirty && liveSettingsValidation && !liveSettingsValidation.ok ? liveSettingsValidation.fieldErrors : {}),
+    ...settingsFieldErrors,
+  };
+  const canSaveSettings = Boolean(settingsDirty && !settingsSaving && liveSettingsValidation?.ok);
 
   React.useEffect(() => {
     if (!event || !lifecycleStatus) return;
@@ -213,6 +353,31 @@ export default function EventDetailScreen() {
               <SectionHeader title="Run of show" subtitle="Guest Upload before arrival. Live Wall during the event. Recap after reveal." />
               <Body tone="muted">The share kit has copy, QR, and captions when you need to send everything cleanly.</Body>
             </Card>
+            {settingsForm ? (
+              <Card>
+                <SectionHeader title="Event settings" subtitle="Edit the basics guests and hosts see across this event." action={settingsDirty ? <Badge tone="amber">Unsaved</Badge> : <Badge tone="stone">Saved</Badge>} />
+                <FieldGroup label="Event name" error={visibleSettingsFieldErrors.name}>
+                  <Field value={settingsForm.name} onChangeText={(value) => updateSettingsField("name", value)} autoCapitalize="words" />
+                </FieldGroup>
+                <FieldGroup label="Description" error={visibleSettingsFieldErrors.description}>
+                  <Field value={settingsForm.description} onChangeText={(value) => updateSettingsField("description", value)} multiline />
+                </FieldGroup>
+                <DateTimeField label="Event date" value={settingsForm.eventDate} onChange={(value) => updateSettingsField("eventDate", value)} error={visibleSettingsFieldErrors.eventDate} />
+                <DateTimeField label="Reveal time" helper="Guests can upload before this, but the full album stays hidden until the reveal time." value={settingsForm.revealAt} onChange={(value) => updateSettingsField("revealAt", value)} error={visibleSettingsFieldErrors.revealAt} />
+                <FieldGroup label="Photo limit per guest" helper="Keep this high for casual events and lower for games or prompts." error={visibleSettingsFieldErrors.photoLimitPerGuest}>
+                  <Field keyboardType="number-pad" value={settingsForm.photoLimitPerGuest} onChangeText={(value) => updateSettingsField("photoLimitPerGuest", value)} />
+                </FieldGroup>
+                {settingsStatus ? <Body tone={settingsStatus.includes("saved") || settingsStatus.includes("canceled") ? "success" : "danger"}>{settingsStatus}</Body> : null}
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                  <View style={{ flex: 1, minWidth: 132 }}>
+                    <Button tone="secondary" disabled={!settingsDirty || settingsSaving} onPress={cancelSettingsEdit}>Cancel</Button>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 132 }}>
+                    <Button loading={settingsSaving} disabled={!canSaveSettings} onPress={saveSettingsEdit}>Save changes</Button>
+                  </View>
+                </View>
+              </Card>
+            ) : null}
             {launchKit ? (
               <Card>
                 <SectionHeader title="Host checklist" subtitle="A quick run-of-show for the first event." />

@@ -89,6 +89,13 @@ test.describe("EventFilm browser smoke", () => {
     const eventPayload = await eventResponse.json();
     const eventId = eventPayload.event?.id;
     test.skip(!eventId, `Seeded event ${seededSlug} did not include an id.`);
+    const originalSettings = {
+      name: eventPayload.event.name,
+      description: eventPayload.event.description || null,
+      eventDate: eventPayload.event.eventDate,
+      revealAt: eventPayload.event.revealAt,
+      photoLimitPerGuest: eventPayload.event.photoLimitPerGuest,
+    };
 
     const login = await request.post(`${apiUrl}/api/auth/login`, {
       data: { email: demoHostEmail, password: demoHostPassword },
@@ -105,6 +112,28 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByText(/First beta host handoff/i)).toBeVisible();
     await expect(page.getByRole("heading", { name: /Run this first event without guessing/i })).toBeVisible();
     await page.getByRole("button", { name: "Settings" }).click();
+    try {
+      const updatedName = `${originalSettings.name} Smoke`;
+      await page.getByLabel("Event name").fill(updatedName);
+      await expect(page.getByText(/Unsaved changes/i)).toBeVisible();
+      await page.getByRole("button", { name: /Save changes/i }).click();
+      await expect(page.getByText(/Event settings saved/i)).toBeVisible();
+      await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
+
+      await page.getByRole("button", { name: "Share", exact: true }).click();
+      await expect(page.getByRole("heading", { name: /Share the guest upload link/i })).toBeVisible();
+      await expect(page.locator("input[readonly]").first()).toHaveValue(new RegExp(`/e/${seededSlug}`));
+
+      await page.goto(`/e/${seededSlug}`);
+      await expect(page.getByRole("button", { name: /Upload photo/i })).toBeVisible();
+    } finally {
+      await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
+        data: originalSettings,
+      });
+    }
+
+    await page.goto(`/dashboard/events/${eventId}?tab=settings`);
     await expect(page.getByRole("heading", { name: /Something off during the event/i })).toBeVisible();
     await page.getByRole("button", { name: /Report issue/i }).click();
     await expect(page.getByPlaceholder(/What happened/i)).toBeVisible();

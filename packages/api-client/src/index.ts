@@ -13,6 +13,7 @@ import type {
   PhotoReportReason,
   PhotoVisibilityStatus,
   PublicEvent,
+  UpdateEventSettingsInput,
   UploadPhotoMetadata,
   User,
 } from "@eventfilm/shared";
@@ -335,6 +336,14 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
       return request<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${encodeURIComponent(eventId)}`, {
         auth: !token,
         token,
+      });
+    },
+    updateHostEventSettings(eventId: string, input: UpdateEventSettingsInput, token?: string | null) {
+      return request<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${encodeURIComponent(eventId)}`, {
+        method: "PATCH",
+        auth: !token,
+        token,
+        body: JSON.stringify(input),
       });
     },
     duplicateHostEvent(eventId: string, overrides: DuplicateEventOverrides = {}, token?: string | null) {
