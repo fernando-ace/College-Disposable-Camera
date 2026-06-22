@@ -7,6 +7,7 @@ import type {
   FounderOverview,
   HostFeedbackInput,
   GuestStatus,
+  LiveWallMode,
   AwardVotingSummary,
   Photo,
   PhotoReportReason,
@@ -402,8 +403,9 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     getHostEventDownloadUrl(eventId: string) {
       return `${baseUrl}/api/host/events/${encodeURIComponent(eventId)}/download`;
     },
-    getLiveWallUrl(slug: string) {
-      return `/wall/${encodeURIComponent(slug)}`;
+    getLiveWallUrl(slug: string, mode?: LiveWallMode) {
+      const query = mode && mode !== "grid" ? `?mode=${encodeURIComponent(mode)}` : "";
+      return `/wall/${encodeURIComponent(slug)}${query}`;
     },
     getRecapUrl(slug: string) {
       return `/recap/${encodeURIComponent(slug)}`;

@@ -9,6 +9,7 @@ export const CHALLENGE_TYPES = {
 
 export type ChallengeType = (typeof CHALLENGE_TYPES)[keyof typeof CHALLENGE_TYPES];
 export type ChallengeMode = "NONE" | ChallengeType;
+export type LiveWallMode = "grid" | "slideshow" | "join" | "challenge" | "awards";
 export type ChallengeItemKind = "color" | "prompt" | "award" | "capsule";
 export type UploadMetadataRequirement = "none" | "participant" | "prompt" | "award";
 export type SetupComplexity = "None" | "Easy" | "Medium";
@@ -193,6 +194,28 @@ export type ChallengeProgressSummary = {
   rows: ChallengeProgressRow[];
 };
 
+export type LiveWallDisplayLink = {
+  key: LiveWallMode;
+  label: string;
+  url: string;
+  purpose: string;
+  instruction: string;
+  analyticsName: AnalyticsEventName;
+};
+
+export type LiveWallChallengeDisplaySummary = ChallengeProgressSummary & {
+  headline: string;
+  note: string;
+  leaders: {
+    categoryId: string;
+    categoryLabel: string;
+    leaderPhotoId?: string;
+    voteCount: number;
+    isTie: boolean;
+    status: string;
+  }[];
+};
+
 export type GuestChallengeProgress = ChallengeProgressSummary & {
   headline: string;
   note: string;
@@ -267,7 +290,7 @@ export type PostEventHostSummary = {
 };
 
 export type HostLaunchKitLink = {
-  key: "guest" | "live-wall" | "recap";
+  key: "guest" | "live-wall" | "recap" | `live-wall-${LiveWallMode}`;
   label: string;
   url: string;
   purpose: string;
@@ -306,6 +329,7 @@ export type HostShareAssets = {
   templateName?: string;
   poster: HostInvitePoster;
   links: HostShareLinkCard[];
+  liveWallDisplayLinks: LiveWallDisplayLink[];
   inviteText: string;
   socialPostCopy: string;
   liveWallDisplayPrompt: string;
@@ -329,6 +353,7 @@ export type HostLaunchKit = {
   hostInstructions: string;
   socialCaption: string;
   modeInstructions: string;
+  liveWallDisplayLinks: LiveWallDisplayLink[];
   checklist: HostLaunchKitChecklistItem[];
 };
 
@@ -355,6 +380,14 @@ export const ANALYTICS_EVENT_NAMES = [
   "recap_share_clicked",
   "native_share_opened",
   "live_wall_opened",
+  "live_wall_mode_viewed",
+  "live_wall_mode_switched",
+  "live_wall_fullscreen_clicked",
+  "live_wall_slideshow_paused",
+  "live_wall_slideshow_resumed",
+  "live_wall_qr_display_opened",
+  "live_wall_challenge_display_opened",
+  "live_wall_awards_leaders_viewed",
   "recap_opened",
   "guest_joined_event",
   "photo_upload_started",
@@ -1205,6 +1238,77 @@ function eventLinkOrFallback(value: string | undefined | null) {
   return value || "";
 }
 
+export const LIVE_WALL_MODES = ["grid", "slideshow", "join", "challenge", "awards"] as const satisfies readonly LiveWallMode[];
+
+export function parseLiveWallMode(value: unknown): LiveWallMode {
+  const normalized = String(value || "").trim().toLowerCase();
+  return (LIVE_WALL_MODES as readonly string[]).includes(normalized) ? (normalized as LiveWallMode) : "grid";
+}
+
+export function buildLiveWallUrl(baseUrl: string | undefined | null, mode?: LiveWallMode | string | null) {
+  const url = eventLinkOrFallback(baseUrl);
+  const parsedMode = parseLiveWallMode(mode);
+  if (!url || parsedMode === "grid") return url;
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}mode=${encodeURIComponent(parsedMode)}`;
+}
+
+export function buildLiveWallDisplayLinks(
+  event: Pick<EventSummary, "liveWallLink" | "challenge">,
+): LiveWallDisplayLink[] {
+  const liveWallLink = eventLinkOrFallback(event.liveWallLink);
+  const links: LiveWallDisplayLink[] = [
+    {
+      key: "grid",
+      label: "Live Wall",
+      url: buildLiveWallUrl(liveWallLink, "grid"),
+      purpose: "Use this as the default room display with photos, QR, challenge progress, and live count.",
+      instruction: "Open this on a TV, projector, laptop, or iPad while guests upload.",
+      analyticsName: "live_wall_mode_viewed",
+    },
+    {
+      key: "join",
+      label: "QR Join Display",
+      url: buildLiveWallUrl(liveWallLink, "join"),
+      purpose: "Use this at the start of the event so guests know exactly how to upload.",
+      instruction: "Put this on screen while guests arrive or whenever uploads slow down.",
+      analyticsName: "live_wall_qr_display_opened",
+    },
+    {
+      key: "slideshow",
+      label: "Slideshow",
+      url: buildLiveWallUrl(liveWallLink, "slideshow"),
+      purpose: "Use this once photos are flowing and the room wants a showpiece moment.",
+      instruction: "Rotate through visible photos with event branding and safe metadata.",
+      analyticsName: "live_wall_mode_viewed",
+    },
+  ];
+
+  if (event.challenge) {
+    links.push({
+      key: "challenge",
+      label: "Challenge Display",
+      url: buildLiveWallUrl(liveWallLink, "challenge"),
+      purpose: "Use this to show challenge progress, prompt completion, or reveal messaging.",
+      instruction: "Switch here when you want guests to know what to capture next.",
+      analyticsName: "live_wall_challenge_display_opened",
+    });
+  }
+
+  if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
+    links.push({
+      key: "awards",
+      label: "Awards Display",
+      url: buildLiveWallUrl(liveWallLink, "awards"),
+      purpose: "Use this to celebrate Event Awards leaders and winners.",
+      instruction: "Open this after guests have submitted and voted on award categories.",
+      analyticsName: "live_wall_awards_leaders_viewed",
+    });
+  }
+
+  return links;
+}
+
 export function buildHostShareAssets(
   event: Pick<EventSummary, "id" | "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge" | "eventTemplateSlug">,
 ): HostShareAssets {
@@ -1213,6 +1317,7 @@ export function buildHostShareAssets(
   const guestLink = eventLinkOrFallback(event.eventLink);
   const liveWallLink = eventLinkOrFallback(event.liveWallLink);
   const recapLink = eventLinkOrFallback(event.recapLink);
+  const liveWallDisplayLinks = buildLiveWallDisplayLinks(event);
   const challengeInstruction = event.challenge?.instructions || pack.guestInstructions;
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : `Upload your photos from ${event.name} here: ${guestLink}. No app download needed.`;
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
@@ -1285,6 +1390,7 @@ export function buildHostShareAssets(
       inviteText,
     },
     links,
+    liveWallDisplayLinks,
     inviteText,
     socialPostCopy,
     liveWallDisplayPrompt: template ? template.liveWallCopy : "Open the Live Wall while guests upload photos.",
@@ -1301,6 +1407,7 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
   const guestLink = event.eventLink;
   const liveWallLink = event.liveWallLink || "";
   const recapLink = event.recapLink || "";
+  const liveWallDisplayLinks = buildLiveWallDisplayLinks(event);
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : "Upload your photos from tonight here: " + guestLink + ". No app download needed.";
   const socialCaption = template ? `${template.recapFraming} Add yours: ${guestLink}` : "Drop your favorite photos from " + event.name + " here: " + guestLink;
 
@@ -1336,6 +1443,7 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
       : "Create the event, confirm the photo mode, copy the guest link or QR code, open the Live Wall during the event, then share the Recap afterward.",
     socialCaption,
     modeInstructions: pack.guestInstructions,
+    liveWallDisplayLinks,
     checklist: [
       { key: "create-event", label: "Create event", complete: true },
       { key: "choose-mode", label: "Choose event mode", complete: true },
@@ -1984,6 +2092,59 @@ export function buildChallengeProgressSummary(challenge: EventChallenge | null |
     totalPhotos,
     rows: [],
   };
+}
+
+export function buildLiveWallChallengeDisplaySummary(
+  challenge: EventChallenge | null | undefined,
+  photos: Photo[],
+  awardVoting?: AwardVotingSummary | null,
+): LiveWallChallengeDisplaySummary {
+  const summary = buildChallengeProgressSummary(challenge, visiblePhotos(photos));
+  const pack = getChallengePack(summary.mode);
+  const completedRows = summary.rows.filter((row) => row.complete).length;
+  const leaders = (awardVoting?.categories || []).map((category) => {
+    const leaderPhotoId = category.leaderPhotoIds[0];
+    const voteCount = leaderPhotoId ? category.voteTotals.find((vote) => vote.photoId === leaderPhotoId)?.voteCount || 0 : 0;
+    const status = leaderPhotoId
+      ? `${voteCount} ${voteCount === 1 ? "vote" : "votes"}${category.isTie ? " - tie" : ""}`
+      : category.noSubmissions
+        ? "No submissions yet"
+        : category.noVotes
+          ? "No votes yet"
+          : "Leader pending";
+    return {
+      categoryId: category.categoryId,
+      categoryLabel: category.categoryLabel,
+      leaderPhotoId,
+      voteCount,
+      isTie: category.isTie,
+      status,
+    };
+  });
+
+  let headline = pack.name;
+  let note = summary.instructions;
+
+  if (!challenge) {
+    headline = "Open photo wall";
+    note = summary.totalPhotos ? "Recent uploads are ready for the room." : "Share the QR code so the first photos can land here.";
+  } else if (challenge.type === CHALLENGE_TYPES.COLOR_HUNT) {
+    headline = `${completedRows}/${summary.rows.length} color teams on the board`;
+    note = "Show guests which colors need more photos.";
+  } else if (challenge.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
+    headline = `${completedRows}/${summary.rows.length} prompts captured`;
+    note = "Point the room toward the prompts still waiting for a photo.";
+  } else if (challenge.type === CHALLENGE_TYPES.EVENT_AWARDS) {
+    const activeLeaders = leaders.filter((leader) => leader.leaderPhotoId).length;
+    headline = activeLeaders ? `${activeLeaders} award ${activeLeaders === 1 ? "leader" : "leaders"} live` : "Awards are ready for submissions";
+    note = activeLeaders ? "Celebrate the categories getting votes right now." : "Invite guests to submit and vote from the recap after reveal.";
+  } else if (challenge.type === CHALLENGE_TYPES.MEMORY_CAPSULE) {
+    const capsule = memoryCapsuleFromChallenge(challenge);
+    headline = capsule.revealTitle;
+    note = capsule.revealNote;
+  }
+
+  return { ...summary, headline, note, leaders };
 }
 
 export function buildGuestChallengeProgress(

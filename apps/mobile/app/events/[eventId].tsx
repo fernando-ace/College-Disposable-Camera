@@ -3,7 +3,7 @@ import { Link, router, useLocalSearchParams } from "expo-router";
 import { Linking, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
-import { buildDuplicateEventInput, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateHostFeedback } from "@eventfilm/shared";
+import { buildDuplicateEventInput, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateHostFeedback } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -107,6 +107,7 @@ export default function EventDetailScreen() {
 
   const launchKit = event ? buildHostLaunchKit(event) : null;
   const shareAssets = event ? buildHostShareAssets(event) : null;
+  const liveWallDisplayLinks = event ? buildLiveWallDisplayLinks(event) : [];
   const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
   const lifecycle = event ? deriveEventLifecycleStatus(event, analyticsSummary || undefined) : null;
   const lifecycleStatus = lifecycle?.status;
@@ -178,6 +179,18 @@ export default function EventDetailScreen() {
                 </LinkBlock>
               </View>
             </View>
+            {liveWallDisplayLinks.length ? (
+              <Card tone="warm">
+                <SectionHeader title="Presenter displays" subtitle="Open the right Live Wall mode for the room." />
+                <View style={{ gap: 10 }}>
+                  {liveWallDisplayLinks.map((link) => (
+                    <LinkBlock key={link.key} label={link.label} description={link.purpose} url={link.url}>
+                      <Button tone="secondary" onPress={() => Linking.openURL(link.url)}>Open</Button>
+                    </LinkBlock>
+                  ))}
+                </View>
+              </Card>
+            ) : null}
             <Card tone="warm">
               <SectionHeader title="Run of show" subtitle="Guest Upload before arrival. Live Wall during the event. Recap after reveal." />
               <Body tone="muted">The share kit has copy, QR, and captions when you need to send everything cleanly.</Body>

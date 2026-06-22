@@ -13,6 +13,9 @@ import {
   buildGuestUploadSuccessSummary,
   buildHostLaunchKit,
   buildHostShareAssets,
+  buildLiveWallChallengeDisplaySummary,
+  buildLiveWallDisplayLinks,
+  buildLiveWallUrl,
   buildPostEventHostSummary,
   buildChallengeProgressSummary,
   buildAwardVotingSummary,
@@ -27,6 +30,7 @@ import {
   getPromptPack,
   isAnonymousGuestDisplayName,
   normalizeReportReason,
+  parseLiveWallMode,
   sanitizeGuestDisplayName,
   deriveEventLifecycleStatus,
   validateUploadFile,
@@ -107,6 +111,14 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_link_shared"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_copied"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_shared"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_switched"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_fullscreen_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_slideshow_paused"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_slideshow_resumed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_qr_display_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_challenge_display_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_awards_leaders_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_copied"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_shared"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_share_clicked"), true);
@@ -135,6 +147,89 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_event_opened_from_dashboard"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_metrics_exported"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
+});
+
+test("live wall mode helpers parse and build stable display links", () => {
+  assert.equal(parseLiveWallMode("slideshow"), "slideshow");
+  assert.equal(parseLiveWallMode("JOIN"), "join");
+  assert.equal(parseLiveWallMode("missing"), "grid");
+  assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "grid"), "https://eventfilm.test/wall/spring");
+  assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "join"), "https://eventfilm.test/wall/spring?mode=join");
+  assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring?presenter=1", "challenge"), "https://eventfilm.test/wall/spring?presenter=1&mode=challenge");
+
+  const event = {
+    liveWallLink: "https://eventfilm.test/wall/spring",
+    challenge: {
+      id: "challenge",
+      type: CHALLENGE_TYPES.EVENT_AWARDS,
+      title: "Awards",
+      instructions: "Vote on favorite moments.",
+      participants: [],
+      config: { categories: createDefaultAwardCategories() },
+    },
+  } satisfies Pick<EventSummary, "liveWallLink" | "challenge">;
+
+  assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.key), ["grid", "join", "slideshow", "challenge", "awards"]);
+  assert.equal(buildHostShareAssets({ ...event, id: "event", name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
+  assert.equal(buildHostLaunchKit({ ...event, name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
+});
+
+test("live wall challenge display summary handles awards and visible-only progress", () => {
+  const challenge: EventChallenge = {
+    id: "challenge",
+    type: CHALLENGE_TYPES.EVENT_AWARDS,
+    title: "Awards",
+    instructions: "Submit award photos.",
+    participants: [],
+    config: { categories: createDefaultAwardCategories().slice(0, 2) },
+  };
+  const photos = [
+    {
+      id: "visible-photo",
+      url: "https://example.com/visible.jpg",
+      originalFilename: "visible.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 100,
+      createdAt: "2026-06-22T00:00:00.000Z",
+      visibilityStatus: "VISIBLE",
+      challengeItemId: "award-1",
+      challengeItemKind: "award",
+    },
+    {
+      id: "hidden-photo",
+      url: "https://example.com/hidden.jpg",
+      originalFilename: "hidden.jpg",
+      mimeType: "image/jpeg",
+      sizeBytes: 100,
+      createdAt: "2026-06-22T00:00:00.000Z",
+      visibilityStatus: "HIDDEN",
+      challengeItemId: "award-2",
+      challengeItemKind: "award",
+    },
+  ] satisfies Photo[];
+
+  const summary = buildLiveWallChallengeDisplaySummary(challenge, photos, {
+    votingEnabled: true,
+    categories: [
+      {
+        categoryId: "award-1",
+        categoryLabel: "Funniest Photo",
+        submissionCount: 1,
+        totalVotes: 3,
+        voteTotals: [{ photoId: "visible-photo", voteCount: 3 }],
+        leaderPhotoIds: ["visible-photo"],
+        isTie: false,
+        noSubmissions: false,
+        noVotes: false,
+      },
+    ],
+  });
+
+  assert.equal(summary.totalPhotos, 1);
+  assert.equal(summary.rows.find((row) => row.id === "award-1")?.count, 1);
+  assert.equal(summary.rows.find((row) => row.id === "award-2")?.count, 0);
+  assert.equal(summary.leaders[0]?.leaderPhotoId, "visible-photo");
+  assert.match(summary.leaders[0]?.status || "", /3 votes/);
 });
 
 test("template and prompt pack registries expose requested presets", () => {

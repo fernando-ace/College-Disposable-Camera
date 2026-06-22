@@ -69,6 +69,11 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto(`/wall/${seededSlug}`);
     await expect(page.locator("body")).toContainText(/Live Wall|EventFilm Beta Demo/i);
 
+    for (const mode of ["grid", "slideshow", "join", "challenge"]) {
+      await page.goto(`/wall/${seededSlug}?mode=${mode}`);
+      await expect(page.locator("body")).toContainText(/Live Wall|EventFilm Beta Demo|Scan to upload|Challenge/i);
+    }
+
     await page.goto(`/recap/${seededSlug}`);
     await expect(page.locator("body")).toContainText(/Recap|EventFilm Beta Demo|locked/i);
   });

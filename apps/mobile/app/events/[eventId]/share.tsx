@@ -4,7 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Image, Linking, Share, View } from "react-native";
 import type { LaunchLinkVerification } from "@eventfilm/api-client";
 import type { AnalyticsEventName, EventSummary, Photo } from "@eventfilm/shared";
-import { buildHostLaunchKit, buildHostShareAssets, getEventTemplate } from "@eventfilm/shared";
+import { buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, getEventTemplate } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, ErrorState, LinkBlock, LoadingState, Screen, SectionHeader, SuccessState, TaskHeader, colors } from "../../../src/components/ui";
 import { useAuth } from "../../../src/auth";
 
@@ -82,6 +82,7 @@ export default function ShareEventScreen() {
 
   const launchKit = event ? buildHostLaunchKit(event) : null;
   const shareAssets = event ? buildHostShareAssets(event) : null;
+  const liveWallDisplayLinks = event ? buildLiveWallDisplayLinks(event) : [];
   const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
 
   return (
@@ -114,6 +115,22 @@ export default function ShareEventScreen() {
                 <SectionHeader title="Invite poster" subtitle="Web-only poster page for printing or saving as PDF." />
                 <Body>{shareAssets.poster.instruction}. {shareAssets.poster.noDownloadCopy}.</Body>
                 <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open poster page</Button>
+              </Card>
+
+              <Card>
+                <SectionHeader title="Presenter displays" subtitle="Use these on a TV, projector, laptop, or iPad." />
+                <View style={{ gap: 10 }}>
+                  {liveWallDisplayLinks.map((link) => (
+                    <ShareLinkCard
+                      key={link.key}
+                      title={link.label}
+                      subtitle={link.purpose}
+                      url={link.url}
+                      onShare={() => shareLink(link.label, link.url, link.instruction, link.analyticsName)}
+                      onCopy={() => copyLink(link.label, link.url, link.analyticsName)}
+                    />
+                  ))}
+                </View>
               </Card>
             </>
           ) : null}

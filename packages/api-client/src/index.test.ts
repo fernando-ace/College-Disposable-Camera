@@ -17,6 +17,13 @@ test("client exposes normalized base URL", () => {
   assert.equal(client.baseUrl, "https://api.eventfilm.test");
 });
 
+test("live wall URL helper preserves default and mode query links", () => {
+  const client = createEventFilmApiClient({ baseUrl: "https://api.eventfilm.test/" });
+  assert.equal(client.getLiveWallUrl("spring formal"), "/wall/spring%20formal");
+  assert.equal(client.getLiveWallUrl("spring formal", "grid"), "/wall/spring%20formal");
+  assert.equal(client.getLiveWallUrl("spring formal", "slideshow"), "/wall/spring%20formal?mode=slideshow");
+});
+
 test("health check uses the API health endpoint", async () => {
   const calls: string[] = [];
   const client = createEventFilmApiClient({
