@@ -3,7 +3,7 @@ import { Link, router, useLocalSearchParams } from "expo-router";
 import { Linking, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus } from "@eventfilm/shared";
-import { buildDuplicateEventInput, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateHostFeedback } from "@eventfilm/shared";
+import { buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateHostFeedback } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -174,7 +174,7 @@ export default function EventDetailScreen() {
                 </LinkBlock>
               </View>
               <View style={{ flex: 1, minWidth: 150 }}>
-                <LinkBlock label="Recap" description="Share after reveal as the finished memory page." url={event.recapLink}>
+                <LinkBlock label="Recap" description="Open the finished memory page with highlights, contributors, challenge moments, and the full album." url={event.recapLink}>
                   <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
                 </LinkBlock>
               </View>
@@ -211,6 +211,7 @@ export default function EventDetailScreen() {
             {lifecycle ? <RepeatEventPanel event={event} lifecycle={lifecycle} /> : null}
             <LinkHealthPanel linkChecks={linkChecks} />
             <EventMetricsPanel summary={analyticsSummary} />
+            <RecapStatusPanel event={event} summary={analyticsSummary} />
             <EventAwardsVotingPanel summary={analyticsSummary} photos={event.photos} recapLink={event.recapLink} />
             {lifecycle?.phase === "after" ? (
               <>
@@ -409,6 +410,27 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
   );
 }
 
+function RecapStatusPanel({ event, summary }: { event: EventSummary & { photos: Photo[] }; summary: EventAnalyticsSummary | null }) {
+  const story = buildEventRecapStory(event, event.photos, { awardVoting: summary?.eventAwardsVoting });
+  const lifecycle = deriveEventLifecycleStatus(event, summary || undefined);
+  const featuredCount = event.photos.filter((photo) => photo.isFeatured).length;
+  return (
+    <Card tone="warm">
+      <SectionHeader
+        title={lifecycle.phase === "after" ? "Recap is ready to share" : "Recap is building"}
+        subtitle="Feature favorites now so the public Recap feels like a finished memory page after reveal."
+      />
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        <StatTile label="Visible" value={story.totalPhotos} tone="accent" />
+        <StatTile label="Featured" value={featuredCount} />
+        <StatTile label="Contributors" value={story.contributorCount} />
+      </View>
+      <Body tone="muted">{story.challengeHeadline}: {story.challengeCopy}</Body>
+      <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open finished Recap</Button>
+    </Card>
+  );
+}
+
 function HostFeedbackPanel({ event, summary, onSubmitted }: { event: EventSummary; summary: EventAnalyticsSummary | null; onSubmitted: () => Promise<void> }) {
   const { api } = useAuth();
   const [open, setOpen] = React.useState(false);
@@ -524,7 +546,7 @@ function EventAwardsVotingPanel({ summary, photos, recapLink }: { summary: Event
 
   return (
     <Card tone="warm">
-      <SectionHeader title="Event Awards voting" subtitle="Guests vote from the public web Recap link." />
+      <SectionHeader title="Event Awards voting" subtitle="Guests vote from the public Recap, then winners appear inside the finished memory page." />
       <View style={{ gap: 10 }}>
         {awardVoting.categories.map((category) => {
           const leader = category.leaderPhotoIds[0] ? photosById.get(category.leaderPhotoIds[0]) : null;
@@ -543,7 +565,7 @@ function EventAwardsVotingPanel({ summary, photos, recapLink }: { summary: Event
           );
         })}
       </View>
-      <Button tone="secondary" disabled={!recapLink} onPress={() => recapLink && Linking.openURL(recapLink)}>Open Recap voting</Button>
+      <Button tone="secondary" disabled={!recapLink} onPress={() => recapLink && Linking.openURL(recapLink)}>Open Recap awards</Button>
       <Body tone="muted">Voting is browser/session based and intentionally lightweight.</Body>
     </Card>
   );

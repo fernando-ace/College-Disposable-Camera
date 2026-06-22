@@ -22,6 +22,7 @@ import {
   isAwardVotingEnabled,
   buildChallengePayload,
   buildEventRecapMetadata,
+  buildEventRecapStory,
   createDefaultAwardCategories,
   createEmptyChallengeDraft,
   createStarterPrompts,
@@ -122,6 +123,13 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_copied"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_shared"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_share_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_hero_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_highlights_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_challenge_moments_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_contributors_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_album_filter_used"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_photo_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_create_event_cta_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("native_share_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_name_entered"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_continued_anonymous"), true);
@@ -796,6 +804,125 @@ test("recap metadata excludes hidden photos and leads with featured photos", () 
   assert.deepEqual(visiblePhotos([hidden, featured, recent]).map((item) => item.id), ["featured", "recent"]);
   assert.equal(metadata.totalPhotos, 2);
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["featured", "recent"]);
+});
+
+test("recap story prioritizes featured, winners, voted, challenge, and recent photos without duplicate highlight sections", () => {
+  const event = {
+    id: "event",
+    name: "Awards Night",
+    slug: "awards-night",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/awards-night",
+    photoCount: 6,
+    challenge: {
+      id: "challenge",
+      type: CHALLENGE_TYPES.EVENT_AWARDS,
+      title: "Awards",
+      instructions: "Vote.",
+      participants: [],
+      categories: [{ id: "best-fit", label: "Best fit", order: 0 }],
+    },
+  } satisfies EventSummary;
+  const awardVoting = buildAwardVotingSummary({
+    challenge: event.challenge,
+    photos: [photo({ id: "winner", challengeItemId: "best-fit" }), photo({ id: "voted", challengeItemId: "best-fit" })],
+    votes: [
+      { photoId: "winner", challengeItemId: "best-fit" },
+      { photoId: "winner", challengeItemId: "best-fit" },
+      { photoId: "voted", challengeItemId: "best-fit" },
+    ],
+  });
+  const story = buildEventRecapStory(
+    event,
+    [
+      photo({ id: "featured", isFeatured: true, createdAt: "2026-01-01T00:01:00.000Z" }),
+      photo({ id: "winner", challengeItemId: "best-fit", challengeItemKind: "award", createdAt: "2026-01-01T00:02:00.000Z" }),
+      photo({ id: "voted", challengeItemId: "best-fit", challengeItemKind: "award", createdAt: "2026-01-01T00:03:00.000Z" }),
+      photo({ id: "challenge", challengeItemId: "best-fit", challengeItemKind: "award", createdAt: "2026-01-01T00:04:00.000Z" }),
+      photo({ id: "recent", createdAt: "2026-01-01T00:05:00.000Z" }),
+    ],
+    { awardVoting },
+  );
+
+  assert.deepEqual(story.highlightReel.map((section) => section.key), ["featured", "award-winners", "most-voted", "challenge-moments", "recent"]);
+  assert.deepEqual(story.highlightReel.map((section) => section.photos.map((item) => item.id)), [["featured"], ["winner"], ["voted"], ["challenge"], ["recent"]]);
+  assert.equal(new Set(story.highlightReel.flatMap((section) => section.photos.map((item) => item.id))).size, 5);
+  assert.equal(story.challengeMoments[0]?.voteCount, 3);
+});
+
+test("recap story excludes hidden photos and builds mode-specific moments and filters", () => {
+  const event = {
+    id: "event",
+    name: "Color Night",
+    slug: "color-night",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/color-night",
+    photoCount: 3,
+    challenge: {
+      id: "challenge",
+      type: CHALLENGE_TYPES.COLOR_HUNT,
+      title: "Color Hunt",
+      instructions: "Pick colors.",
+      participants: [
+        { id: "red-team", displayName: "Red Team", colorName: "Red", colorHex: "#ef4444", colorSlug: "red" },
+        { id: "blue-team", displayName: "Blue Team", colorName: "Blue", colorHex: "#3b82f6", colorSlug: "blue" },
+      ],
+    },
+  } satisfies EventSummary;
+  const hidden = photo({ id: "hidden", visibilityStatus: "HIDDEN", challengeParticipantId: "blue-team" });
+  const story = buildEventRecapStory(event, [
+    photo({ id: "red", challengeParticipantId: "red-team", challengeColorSlug: "red", isFeatured: true }),
+    hidden,
+  ]);
+
+  assert.equal(story.totalPhotos, 1);
+  assert.equal(story.challengeHeadline, "Color team recap");
+  assert.deepEqual(story.challengeMoments.map((moment) => [moment.title, moment.count]), [["Red Team", 1], ["Blue Team", 0]]);
+  assert.equal(story.albumFilters.some((filter) => filter.photoIds.includes("hidden")), false);
+  assert.equal(story.albumFilters.some((filter) => filter.key === "challenge-red-team"), true);
+});
+
+test("recap story handles old events, templates, and memory capsule locked copy", () => {
+  const oldStory = buildEventRecapStory(
+    {
+      id: "event",
+      name: "Legacy Night",
+      slug: "legacy-night",
+      eventDate: "2026-01-01T00:00:00.000Z",
+      revealAt: "2026-01-02T00:00:00.000Z",
+      photoLimitPerGuest: 5,
+      eventLink: "https://example.com/e/legacy-night",
+      photoCount: 0,
+      challenge: null,
+      eventTemplateSlug: "birthday-party",
+    },
+    [],
+  );
+  const lockedStory = buildEventRecapStory(
+    {
+      challenge: {
+        id: "challenge",
+        type: CHALLENGE_TYPES.MEMORY_CAPSULE,
+        title: "Capsule",
+        instructions: "Upload.",
+        participants: [],
+        config: { revealTitle: "Opens tonight", revealNote: "Come back after dinner." },
+      },
+      eventTemplateSlug: null,
+      revealAt: "2026-01-02T00:00:00.000Z",
+      isRevealed: false,
+    },
+    [photo({ id: "locked" })],
+  );
+
+  assert.match(oldStory.heroCopy, /birthday/i);
+  assert.equal(oldStory.challengeMoments[0]?.key, "shared-album");
+  assert.equal(lockedStory.lockedTitle, "Opens tonight");
+  assert.equal(lockedStory.heroCopy, "Come back after dinner.");
 });
 
 test("host launch kit separates guest, live wall, and recap jobs", () => {

@@ -18,7 +18,7 @@ import {
   buildHostLaunchKit,
   buildHostShareAssets,
   buildChallengeProgressSummary,
-  buildEventRecapMetadata,
+  buildEventRecapStory,
   buildChallengePayload,
   buildDuplicateEventInput,
   buildPostEventHostSummary,
@@ -50,7 +50,7 @@ import {
   validateChallengeDraft,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventSummary, EventTemplateSlug, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostLaunchKit, HostShareAssets, HostShareLinkCard, LiveWallDisplayLink, LiveWallMode, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSummary, EventTemplateSlug, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostLaunchKit, HostShareAssets, HostShareLinkCard, LiveWallDisplayLink, LiveWallMode, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -1392,6 +1392,46 @@ function RepeatEventActions({ event, lifecycle, compact = false, onDuplicated }:
       </div>
       {status ? <p className="text-sm font-bold text-amber-800">{status}</p> : null}
     </div>
+  );
+}
+
+function RecapReadinessPreview({ event, analytics }: { event: EventSummary & { photos: Photo[] }; analytics: EventAnalyticsSummary | null }) {
+  const story = buildEventRecapStory(event, event.photos, { awardVoting: analytics?.eventAwardsVoting });
+  const lifecycle = deriveEventLifecycleStatus(event, analytics || undefined);
+  const featuredCount = event.photos.filter((photo) => photo.isFeatured && isPhotoVisible(photo)).length;
+  const ready = lifecycle.status === "recap_ready" || lifecycle.status === "archived_or_past";
+  return (
+    <section className="mt-8 rounded-[1.45rem] border border-[#ffd4c7] bg-[#fff3ee] p-5 shadow-[0_18px_54px_rgba(101,62,0,0.055)]">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <StatusPill tone={ready ? "green" : "plum"}>{ready ? "Recap ready" : "Recap preview"}</StatusPill>
+          <h2 className="mt-3 font-display text-3xl font-bold text-[#653e00]">The share page is becoming the event story.</h2>
+          <p className="mt-2 max-w-2xl text-sm font-semibold text-amber-950">
+            {ready
+              ? "Open the public Recap, feature favorites, then send it as the finished memory page."
+              : "Keep collecting and featuring favorites now so the Recap feels polished after reveal."}
+          </p>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-center">
+          <div className="rounded-[1rem] bg-white p-3">
+            <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Visible</p>
+            <p className="font-display text-3xl font-bold text-stone-950">{story.totalPhotos}</p>
+          </div>
+          <div className="rounded-[1rem] bg-white p-3">
+            <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Featured</p>
+            <p className="font-display text-3xl font-bold text-stone-950">{featuredCount}</p>
+          </div>
+          <div className="rounded-[1rem] bg-white p-3">
+            <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Contributors</p>
+            <p className="font-display text-3xl font-bold text-stone-950">{story.contributorCount}</p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+        {event.recapLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Open Recap</a> : null}
+        <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900" href="#post-event-summary">Review post-event signal</a>
+      </div>
+    </section>
   );
 }
 
@@ -2935,6 +2975,7 @@ function ManageEvent() {
                 </div>
               </div>
               <HostAwardVotingSummary awardVoting={eventAnalytics.eventAwardsVoting} photos={event.photos} onFeatureWinner={(photo) => updatePhotoFeatured(photo, true)} />
+              <RecapReadinessPreview event={event} analytics={eventAnalytics} />
             </section>
           )}
 
@@ -3052,39 +3093,6 @@ function ManageEvent() {
         </>
       )}
     </Shell>
-  );
-}
-
-function ProgressSummaryPanel({ summary, dark = false }: { summary: ReturnType<typeof buildChallengeProgressSummary>; dark?: boolean }) {
-  const hasRows = summary.rows.length > 0;
-  return (
-    <section className={cx("rounded-[2rem] p-5", dark ? "bg-white/10 text-white" : "border border-[#eadfce] bg-white shadow-[0_24px_70px_rgba(101,62,0,0.08)]")}>
-      <p className={cx("text-sm font-bold uppercase tracking-wide", dark ? "text-amber-200" : "text-[#653e00]")}>{summary.modeLabel}</p>
-      <h2 className={cx("mt-2 font-display text-2xl font-bold", dark ? "text-white" : "text-stone-950")}>Challenge progress</h2>
-      <p className={cx("mt-2 text-sm", dark ? "text-stone-200" : "text-stone-600")}>{summary.instructions}</p>
-      {!hasRows && <p className={cx("mt-5 rounded-2xl p-4 text-sm font-semibold", dark ? "bg-white/10 text-stone-100" : "bg-stone-50 text-stone-700")}>Photos are collected as one shared album for this mode.</p>}
-      {hasRows && (
-        <div className="mt-5 grid gap-3">
-          {summary.rows.map((row) => {
-            const percent = row.total ? Math.min(100, Math.round((row.count / row.total) * 100)) : Math.min(100, row.count * 20);
-            return (
-              <div className={cx("rounded-2xl p-4", dark ? "bg-white/10" : "bg-stone-50")} key={row.id}>
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    {row.colorHex && <span className="h-4 w-4 shrink-0 rounded-full border border-white/40" style={{ backgroundColor: row.colorHex }} />}
-                    <p className={cx("truncate text-sm font-bold", dark ? "text-white" : "text-stone-900")}>{row.label}</p>
-                  </div>
-                  <p className={cx("shrink-0 text-sm font-bold tabular-nums", dark ? "text-amber-200" : "text-[#653e00]")}>{row.count}{row.total ? `/${row.total}` : ""}</p>
-                </div>
-                <div className={cx("mt-3 h-2 overflow-hidden rounded-full", dark ? "bg-white/15" : "bg-stone-200")}>
-                  <div className="h-full rounded-full bg-amber-400" style={{ width: `${row.count > 0 ? Math.max(percent, 8) : 0}%` }} />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -3844,6 +3852,181 @@ function RecapSharePanel({ event, data, assets, hasWinners }: { event: PublicEve
   );
 }
 
+function RecapStat({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="rounded-[1.15rem] bg-white/10 p-4">
+      <p className="text-xs font-extrabold uppercase tracking-wide text-amber-200">{label}</p>
+      <p className="mt-1 font-display text-4xl font-bold text-white">{value}</p>
+    </div>
+  );
+}
+
+function RecapMiniStrip({ photos, onPhotoClick }: { photos: Photo[]; onPhotoClick: (photo: Photo) => void }) {
+  if (!photos.length) return null;
+  return (
+    <div className="mt-6 grid grid-cols-4 gap-2 sm:max-w-md">
+      {photos.slice(0, 4).map((photo, index) => (
+        <button
+          className={cx("overflow-hidden rounded-[1rem] border border-white/10 bg-white/10", index === 0 ? "col-span-2 row-span-2" : "")}
+          key={photo.id}
+          type="button"
+          onClick={() => onPhotoClick(photo)}
+        >
+          <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RecapHighlightReel({ story, onPhotoClick }: { story: EventRecapStory; onPhotoClick: (photo: Photo) => void }) {
+  return (
+    <section className="mt-8" id="recap-highlights">
+      <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <h2 className="font-display text-3xl font-bold text-stone-950 sm:text-4xl">{story.recapTitle}</h2>
+          <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">{story.recapSubtitle}</p>
+        </div>
+      </div>
+      {!story.totalPhotos ? (
+        <Card className="border-dashed text-center">
+          <h3 className="font-display text-2xl font-bold">{story.emptyTitle}</h3>
+          <p className="mx-auto mt-2 max-w-xl text-stone-600">{story.emptyCopy}</p>
+        </Card>
+      ) : (
+        <div className="grid gap-5">
+          {story.highlightReel.map((section, index) => (
+            <section className={cx("rounded-[1.65rem] border border-[#eadfce] bg-white p-4 shadow-[0_18px_54px_rgba(101,62,0,0.06)]", index === 0 ? "sm:p-5" : "")} key={section.key}>
+              <div className="mb-4">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">{section.title}</p>
+                <p className="mt-1 text-sm font-semibold text-stone-600">{section.description}</p>
+              </div>
+              <PhotoMosaic photos={section.photos} onPhotoClick={onPhotoClick} />
+            </section>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function RecapChallengeMoments({ story, awardVoting, event, photos, clientId, onVoteComplete, onPhotoClick }: { story: EventRecapStory; awardVoting?: AwardVotingSummary | null; event: PublicEvent; photos: Photo[]; clientId: string; onVoteComplete: () => Promise<void>; onPhotoClick: (photo: Photo) => void }) {
+  return (
+    <section className="mt-8" id="recap-challenge-moments">
+      <div className="mb-5">
+        <StatusPill tone="plum">{story.modeLabel}</StatusPill>
+        <h2 className="mt-3 font-display text-3xl font-bold text-stone-950 sm:text-4xl">{story.challengeHeadline}</h2>
+        <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">{story.challengeCopy}</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {story.challengeMoments.map((moment) => (
+          <article className="rounded-[1.35rem] border border-[#eadfce] bg-white p-4 shadow-[0_16px_44px_rgba(101,62,0,0.055)]" key={moment.key}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  {moment.colorHex ? <span className="h-4 w-4 shrink-0 rounded-full border border-stone-200" style={{ backgroundColor: moment.colorHex }} /> : null}
+                  <h3 className="truncate font-display text-xl font-bold text-stone-950">{moment.title}</h3>
+                </div>
+                <p className="mt-2 text-sm font-semibold text-stone-600">{moment.description}</p>
+              </div>
+              <span className={cx("shrink-0 rounded-full px-3 py-1 text-xs font-extrabold", moment.isComplete ? "bg-green-100 text-green-800" : "bg-stone-100 text-stone-600")}>
+                {moment.total ? `${moment.count}/${moment.total}` : moment.count}
+              </span>
+            </div>
+            {moment.isTie ? <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-extrabold text-[#653e00]">Tie at the top</p> : null}
+            {moment.photos.length ? (
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {moment.photos.slice(0, 3).map((photo) => (
+                  <button className="overflow-hidden rounded-[0.9rem] bg-stone-100" key={photo.id} type="button" onClick={() => onPhotoClick(photo)}>
+                    <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-4 rounded-[1rem] bg-[#fffaf6] p-3 text-sm font-semibold text-stone-600">No representative photo yet.</p>
+            )}
+          </article>
+        ))}
+      </div>
+      {awardVoting ? (
+        <div className="mt-6">
+          <AwardVotingPanel event={event} photos={photos} awardVoting={awardVoting} clientId={clientId} surface="recap" onVoteComplete={onVoteComplete} />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function RecapContributorCelebration({ story }: { story: EventRecapStory }) {
+  const contributors = story.contributorSummary;
+  return (
+    <section className="mt-8 rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.06)]" id="recap-contributors">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <StatusPill tone="green">Contributors</StatusPill>
+          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">The people who built the album</h2>
+          <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">
+            {contributors.contributorCount
+              ? `${contributors.contributorCount} named ${contributors.contributorCount === 1 ? "contributor" : "contributors"} added visible photos to this recap.`
+              : contributors.totalPhotos
+                ? "Guests added photos without display names, so the recap celebrates the group instead."
+                : "Contributors will appear here once guests add photos."}
+          </p>
+        </div>
+        <div className="rounded-[1.15rem] bg-[#fffaf6] px-5 py-4 text-center">
+          <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Visible photos</p>
+          <p className="font-display text-4xl font-bold text-stone-950">{contributors.totalPhotos}</p>
+        </div>
+      </div>
+      {contributors.topContributors.length ? (
+        <div className="mt-5 flex flex-wrap gap-2">
+          {contributors.topContributors.map((contributor) => (
+            <span className="rounded-full bg-[#fff0d8] px-4 py-2 text-sm font-extrabold text-[#653e00]" key={contributor.displayName}>{contributor.displayName}: {contributor.photoCount}</span>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function RecapAlbumFilterTabs({ filters, activeFilter, onChange }: { filters: EventRecapAlbumFilter[]; activeFilter: string; onChange: (filter: EventRecapAlbumFilter) => void }) {
+  if (filters.length <= 1) return null;
+  return (
+    <div className="mb-5 flex gap-2 overflow-x-auto pb-1">
+      {filters.map((filter) => (
+        <button
+          className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-extrabold transition", activeFilter === filter.key ? "bg-stone-950 text-white" : "border border-[#eadfce] bg-white text-stone-700 hover:bg-[#fffaf6]")}
+          key={filter.key}
+          type="button"
+          onClick={() => onChange(filter)}
+        >
+          {filter.label} <span className={cx("ml-1", activeFilter === filter.key ? "text-amber-200" : "text-[#653e00]")}>{filter.count}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function RecapCreateEventCta({ story, event }: { story: EventRecapStory; event: PublicEvent }) {
+  return (
+    <section className="mt-8 rounded-[1.65rem] bg-stone-950 p-5 text-white shadow-[0_24px_70px_rgba(101,62,0,0.15)] sm:p-7">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h2 className="font-display text-3xl font-bold">{story.createEventCtaTitle}</h2>
+          <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-200">{story.createEventCtaCopy}</p>
+        </div>
+        <Link
+          className="inline-flex min-h-12 shrink-0 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.28)]"
+          to="/dashboard/events/new"
+          onClick={() => trackAnalytics("recap_create_event_cta_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap" } })}
+        >
+          Create your own event
+        </Link>
+      </div>
+    </section>
+  );
+}
+
 function EventRecap() {
   const { slug = "" } = useParams();
   const [{ session }] = useState(() => getGuestSession(slug));
@@ -3851,6 +4034,8 @@ function EventRecap() {
   const [error, setError] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
+  const [activeAlbumFilter, setActiveAlbumFilter] = useState("all");
+  const trackedStoryRef = useRef("");
 
   async function loadRecap() {
     const nextData = await eventFilmApi.getRecapData(slug, session.clientId);
@@ -3866,10 +4051,8 @@ function EventRecap() {
   }, [slug]);
 
   const event = data?.event;
-  const summary = event ? buildChallengeProgressSummary(event.challenge, data.photos) : null;
-  const recap = event ? buildEventRecapMetadata(event, data.photos) : null;
+  const story = event ? buildEventRecapStory(event, data.photos, { awardVoting: data.awardVoting }) : null;
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
-  const contributors = data ? buildContributorSummary(data.photos) : null;
   const shareAssets = event
     ? buildHostShareAssets({
         ...event,
@@ -3879,6 +4062,22 @@ function EventRecap() {
       })
     : null;
   const hasAwardWinners = Boolean(data?.awardVoting?.categories.some((category) => category.leaderPhotoIds.length > 0));
+  const selectedFilter = story?.albumFilters.find((filter) => filter.key === activeAlbumFilter) || story?.albumFilters[0] || null;
+  const albumPhotoIds = new Set(selectedFilter?.photoIds || []);
+  const albumPhotos = data?.photos.filter((photo) => !selectedFilter || albumPhotoIds.has(photo.id)) || [];
+
+  useEffect(() => {
+    if (!event || !story) return;
+    const key = `${event.id}:${story.totalPhotos}:${Boolean(data?.isLocked)}`;
+    if (trackedStoryRef.current === key) return;
+    trackedStoryRef.current = key;
+    trackAnalytics("recap_hero_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { locked: Boolean(data?.isLocked), photoCount: story.totalPhotos } });
+    if (!data?.isLocked) {
+      trackAnalytics("recap_highlights_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { sectionCount: story.highlightReel.length } });
+      trackAnalytics("recap_challenge_moments_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { mode: story.modeLabel, momentCount: story.challengeMoments.length } });
+      trackAnalytics("recap_contributors_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { contributorCount: story.contributorCount } });
+    }
+  }, [data?.isLocked, event, story]);
 
   async function reportSelectedPhoto(reason: PhotoReportReason, note: string) {
     if (!selectedPhoto) return;
@@ -3890,102 +4089,85 @@ function EventRecap() {
   function openPublicPhoto(photo: Photo) {
     setSelectedPhoto(photo);
     setReportStatus("");
+    trackAnalytics("recap_photo_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "recap", photoId: photo.id } });
     trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "recap", photoId: photo.id } });
+  }
+
+  function chooseAlbumFilter(filter: EventRecapAlbumFilter) {
+    setActiveAlbumFilter(filter.key);
+    trackAnalytics("recap_album_filter_used", { eventId: event?.id, eventSlug: event?.slug, metadata: { filter: filter.key, count: filter.count } });
   }
 
   return (
     <main className="min-h-screen bg-[#fff8ed] text-stone-950">
-      <div className="mx-auto w-full max-w-7xl px-5 py-6 sm:py-10">
+      <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-5 sm:py-10">
         {!event && (
           <Card className="text-center">
             <h1 className="font-display text-3xl font-bold">Loading recap</h1>
             <p className="mt-2 text-stone-600">{error || "Gathering the event story..."}</p>
           </Card>
         )}
-        {event && (
+        {event && story && (
           <>
-            <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white shadow-[0_28px_90px_rgba(101,62,0,0.16)] sm:p-10">
-              <div className="grid gap-8 lg:grid-cols-[1fr_0.8fr] lg:items-end">
+            <section className="overflow-hidden rounded-[1.6rem] bg-stone-950 p-5 text-white shadow-[0_28px_90px_rgba(101,62,0,0.16)] sm:rounded-[2rem] sm:p-8 lg:p-10">
+              <div className="grid gap-8 lg:grid-cols-[1fr_0.78fr] lg:items-end">
                 <div>
-                  <StatusPill>{recap?.templateName || recap?.modeLabel || "EventFilm"}</StatusPill>
-                  <h1 className="mt-5 font-display text-5xl font-bold lg:text-7xl">{event.name}</h1>
-                  <p className="mt-4 max-w-2xl text-lg text-stone-200">{event.description || recap?.recapSubtitle || "A shared album from the people who were there."}</p>
+                  <StatusPill>{story.templateName || story.modeLabel || "EventFilm"}</StatusPill>
+                  <h1 className="mt-5 font-display text-4xl font-bold leading-none sm:text-6xl lg:text-7xl">{event.name}</h1>
+                  <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-stone-200 sm:text-lg">{event.description || story.heroCopy}</p>
                   <div className="mt-6 flex flex-wrap gap-3 text-sm font-bold text-stone-200">
                     <span className="rounded-full bg-white/10 px-4 py-2">Event: {formatDateTime(event.eventDate)}</span>
                     <span className="rounded-full bg-white/10 px-4 py-2">Reveal: {formatDateTime(event.revealAt)}</span>
                   </div>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" to={`/e/${slug}`} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>Upload photos</Link>
-                    {data.eventLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" href={data.eventLink} onClick={() => trackAnalytics("guest_share_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_guest_link" } })}>Share event</a> : null}
+                    <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" href="#recap-share">Share recap</a>
+                    <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" to={`/e/${slug}`} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>Upload photos</Link>
                   </div>
+                  <RecapMiniStrip photos={story.highlightPhotos} onPhotoClick={openPublicPhoto} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="rounded-[1.35rem] bg-white/10 p-5">
-                    <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Photos</p>
-                    <p className="mt-2 font-display text-5xl font-bold">{recap?.totalPhotos || 0}</p>
-                  </div>
-                  <div className="rounded-[1.35rem] bg-white/10 p-5">
-                    <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Contributors</p>
-                    <p className="mt-2 font-display text-5xl font-bold">{recap?.contributorCount || 0}</p>
-                  </div>
-                  {contributors?.topContributors.length ? (
+                  <RecapStat label="Photos" value={story.totalPhotos} />
+                  <RecapStat label="Contributors" value={story.contributorCount || "Guest"} />
+                  {story.contributorSummary.topContributors.length ? (
                     <div className="col-span-2 rounded-[1.35rem] bg-white/10 p-5">
                       <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Top contributors</p>
                       <div className="mt-3 flex flex-wrap gap-2">
-                        {contributors.topContributors.map((contributor) => (
+                        {story.contributorSummary.topContributors.map((contributor) => (
                           <span className="rounded-full bg-white/10 px-3 py-2 text-xs font-extrabold text-white" key={contributor.displayName}>{contributor.displayName}: {contributor.photoCount}</span>
                         ))}
                       </div>
                     </div>
                   ) : null}
-                  {shareAssets ? <div className="col-span-2"><RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} /></div> : null}
+                  {shareAssets ? <div className="col-span-2" id="recap-share"><RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} /></div> : null}
                 </div>
               </div>
             </section>
 
             {data.isLocked ? (
-              <section className="mt-8 rounded-[2rem] border border-amber-200 bg-amber-50 p-8 text-center">
+              <section className="mt-8 rounded-[1.65rem] border border-amber-200 bg-amber-50 p-6 text-center sm:p-8">
                 <Icon className="mx-auto h-12 w-12 text-[#653e00]">lock</Icon>
-                <h2 className="mt-4 font-display text-4xl font-bold text-[#653e00]">{capsuleCopy?.revealTitle || "The recap opens at reveal time"}</h2>
-                <p className="mx-auto mt-3 max-w-2xl text-amber-900">{capsuleCopy?.revealNote || "Photos are locked until the reveal time. Come back after the event story opens."}</p>
+                <h2 className="mt-4 font-display text-3xl font-bold text-[#653e00] sm:text-4xl">{story.lockedTitle}</h2>
+                <p className="mx-auto mt-3 max-w-2xl text-amber-900">{capsuleCopy?.revealNote || story.lockedCopy}</p>
+                <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-white px-5 py-3 text-sm font-extrabold text-stone-950 shadow-sm" to={`/e/${slug}`}>Add photos before reveal</Link>
               </section>
             ) : (
               <>
-                <section className="mt-8">
-                  <div className="mb-4">
-                    <h2 className="font-display text-3xl font-bold">{recap?.recapTitle || "Highlights"}</h2>
-                    <p className="text-stone-600">{recap?.recapSubtitle || "Favorite moments from the event, ready to revisit."}</p>
-                  </div>
-                  {data.photos.length === 0 && shareAssets ? (
-                    <Card className="mb-4 border-dashed text-center">
-                      <h3 className="font-display text-2xl font-bold">No photos yet</h3>
-                      <p className="mx-auto mt-2 max-w-xl text-stone-600">{shareAssets.emptyRecapCopy}</p>
-                    </Card>
-                  ) : null}
-                  <PhotoMosaic photos={recap?.highlightPhotos || []} onPhotoClick={openPublicPhoto} />
-                </section>
-
-                {summary && (
-                  <section className="mt-8">
-                    <ProgressSummaryPanel summary={summary} />
-                  </section>
-                )}
-
-                {data.awardVoting && (
-                  <section className="mt-8">
-                    <AwardVotingPanel event={event} photos={data.photos} awardVoting={data.awardVoting} clientId={session.clientId} surface="recap" onVoteComplete={loadRecap} />
-                  </section>
-                )}
+                <RecapHighlightReel story={story} onPhotoClick={openPublicPhoto} />
+                <RecapChallengeMoments story={story} awardVoting={data.awardVoting} event={event} photos={data.photos} clientId={session.clientId} onVoteComplete={loadRecap} onPhotoClick={openPublicPhoto} />
+                <RecapContributorCelebration story={story} />
 
                 <section className="mt-8">
                   <div className="mb-4">
                     <h2 className="font-display text-3xl font-bold">Full album</h2>
-                    <p className="text-stone-600">Every revealed photo from the event.</p>
+                    <p className="text-stone-600">Every revealed photo from the event, with quick filters for the moments that matter.</p>
                   </div>
-                  <PhotoMosaic photos={data.photos} onPhotoClick={openPublicPhoto} />
+                  <RecapAlbumFilterTabs filters={story.albumFilters} activeFilter={selectedFilter?.key || "all"} onChange={chooseAlbumFilter} />
+                  <PhotoMosaic photos={albumPhotos} onPhotoClick={openPublicPhoto} />
                 </section>
+                <RecapCreateEventCta story={story} event={event} />
               </>
             )}
+            <a className="fixed inset-x-4 bottom-4 z-30 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_18px_44px_rgba(232,93,63,0.32)] sm:hidden" href="#recap-share">Share recap</a>
             <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
           </>
         )}

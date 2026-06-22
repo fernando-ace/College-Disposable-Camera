@@ -260,6 +260,56 @@ export type EventRecapMetadata = {
   recentPhotos: Photo[];
 };
 
+export type EventRecapHighlightKind = "featured" | "award_winner" | "voted" | "challenge" | "recent";
+
+export type EventRecapHighlight = {
+  key: string;
+  title: string;
+  description: string;
+  kind: EventRecapHighlightKind;
+  photos: Photo[];
+};
+
+export type EventRecapChallengeMoment = {
+  key: string;
+  title: string;
+  description: string;
+  count: number;
+  total?: number;
+  colorHex?: string;
+  photos: Photo[];
+  isComplete?: boolean;
+  voteCount?: number;
+  isTie?: boolean;
+};
+
+export type EventRecapAlbumFilter = {
+  key: string;
+  label: string;
+  count: number;
+  photoIds: string[];
+};
+
+export type EventRecapStory = EventRecapMetadata & {
+  heroCopy: string;
+  lockedTitle: string;
+  lockedCopy: string;
+  emptyTitle: string;
+  emptyCopy: string;
+  highlightReel: EventRecapHighlight[];
+  challengeHeadline: string;
+  challengeCopy: string;
+  challengeMoments: EventRecapChallengeMoment[];
+  contributorSummary: ContributorSummary;
+  albumFilters: EventRecapAlbumFilter[];
+  createEventCtaTitle: string;
+  createEventCtaCopy: string;
+};
+
+type EventRecapSourceEvent = Pick<EventSummary | PublicEvent, "challenge" | "eventTemplateSlug" | "revealAt"> & {
+  isRevealed?: boolean;
+};
+
 export type UploadTrendBucket = {
   label: string;
   count: number;
@@ -378,6 +428,13 @@ export const ANALYTICS_EVENT_NAMES = [
   "recap_link_copied",
   "recap_link_shared",
   "recap_share_clicked",
+  "recap_hero_viewed",
+  "recap_highlights_viewed",
+  "recap_challenge_moments_viewed",
+  "recap_contributors_viewed",
+  "recap_album_filter_used",
+  "recap_photo_opened",
+  "recap_create_event_cta_clicked",
   "native_share_opened",
   "live_wall_opened",
   "live_wall_mode_viewed",
@@ -1321,10 +1378,10 @@ export function buildHostShareAssets(
   const challengeInstruction = event.challenge?.instructions || pack.guestInstructions;
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : `Upload your photos from ${event.name} here: ${guestLink}. No app download needed.`;
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
-  const recapShareText = template ? `${template.recapFraming} View the recap: ${recapLink}` : `See the EventFilm recap for ${event.name}: ${recapLink}`;
+  const recapShareText = template ? `${template.recapFraming} View the finished memory page: ${recapLink}` : `See the EventFilm recap for ${event.name}: ${recapLink}`;
   const winnerShareText =
     event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
-      ? `The Event Awards winners from ${event.name} are ready. View the recap: ${recapLink}`
+      ? `The Event Awards winners from ${event.name} are ready. View the finished memory page: ${recapLink}`
       : recapShareText;
   const memoryCapsuleRevealCopy =
     event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE
@@ -1363,7 +1420,7 @@ export function buildHostShareAssets(
       label: "Recap link",
       url: recapLink,
       purpose: "Share this after reveal so everyone can view the finished album story.",
-      instruction: template ? template.recapFraming : "Share this after the event so everyone can view the final album and highlights.",
+      instruction: template ? `${template.recapFraming} Send this as the finished memory page after reveal.` : "Share this after the event as the finished memory page with highlights, contributors, challenge moments, and the full album.",
       audience: "Everyone",
       timing: "After reveal",
       copyText: recapShareText,
@@ -1397,7 +1454,7 @@ export function buildHostShareAssets(
     recapShareText,
     winnerShareText,
     memoryCapsuleRevealCopy,
-    emptyRecapCopy: "No photos yet. Share the guest upload link so the recap has moments to show.",
+    emptyRecapCopy: "No photos yet. Share the guest upload link so the finished memory page has moments to show.",
   };
 }
 
@@ -1433,14 +1490,14 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
         key: "recap",
         label: "Recap link",
         url: recapLink,
-        purpose: "Share this after the reveal so everyone can view the final album and highlights.",
-        instruction: template ? template.recapFraming : "Share this after the event so everyone can view the final album and highlights.",
+        purpose: "Share this after the reveal so everyone can view the finished memory page.",
+        instruction: template ? `${template.recapFraming} Send this as the finished memory page after reveal.` : "Share this after the event as the finished memory page with highlights, contributors, challenge moments, and the full album.",
       },
     ],
     inviteText,
     hostInstructions: template
-      ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, open the Live Wall during the event, then share the Recap afterward.`
-      : "Create the event, confirm the photo mode, copy the guest link or QR code, open the Live Wall during the event, then share the Recap afterward.",
+      ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, open the Live Wall during the event, then share the finished Recap memory page afterward.`
+      : "Create the event, confirm the photo mode, copy the guest link or QR code, open the Live Wall during the event, then share the finished Recap memory page afterward.",
     socialCaption,
     modeInstructions: pack.guestInstructions,
     liveWallDisplayLinks,
@@ -1960,15 +2017,6 @@ export function photoChallengeLabel(photo: Pick<Photo, "challengeItemLabel" | "c
   return photo.challengeItemLabel || photo.challengePromptText || photo.challengeColorName || "";
 }
 
-function countUniqueContributors(photos: Photo[]) {
-  const contributors = new Set<string>();
-  photos.forEach((photo) => {
-    const value = photo.guestNickname || photo.challengeParticipantName;
-    if (value?.trim() && !isAnonymousGuestDisplayName(value)) contributors.add(value.trim().toLowerCase());
-  });
-  return contributors.size;
-}
-
 function contributorDisplayName(photo: Pick<Photo, "guestNickname" | "challengeParticipantName">) {
   return sanitizeGuestDisplayName(photo.challengeParticipantName || photo.guestNickname);
 }
@@ -2209,17 +2257,208 @@ export function buildGuestChallengeProgress(
   };
 }
 
-export function buildEventRecapMetadata(event: Pick<EventSummary | PublicEvent, "challenge" | "eventTemplateSlug">, photos: Photo[]): EventRecapMetadata {
+function firstPhotosWithoutUsed(photos: Photo[], used: Set<string>, limit: number) {
+  const selected: Photo[] = [];
+  for (const photo of photos) {
+    if (!photo.id || used.has(photo.id)) continue;
+    selected.push(photo);
+    used.add(photo.id);
+    if (selected.length >= limit) break;
+  }
+  return selected;
+}
+
+function photoIds(photos: Photo[]) {
+  return photos.map((photo) => photo.id).filter(Boolean);
+}
+
+function photosByIds(photos: Photo[], ids: string[]) {
+  const byId = new Map(photos.map((photo) => [photo.id, photo]));
+  return ids.map((id) => byId.get(id)).filter((photo): photo is Photo => Boolean(photo));
+}
+
+function photosForChallengeMoment(photos: Photo[], row: ChallengeProgressRow) {
+  return photos.filter((photo) => {
+    if (row.kind === "color") {
+      return photo.challengeParticipantId === row.id || photo.challengeColorSlug === row.colorSlug || photo.challengeColorName === row.colorName;
+    }
+    if (row.kind === "prompt") {
+      return photo.challengePromptId === row.id || photo.challengeItemId === row.id;
+    }
+    if (row.kind === "award") {
+      return photo.challengeItemId === row.id;
+    }
+    return false;
+  });
+}
+
+function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSummary | null): EventRecapHighlight[] {
+  const sortedPhotos = sortPhotosForRecap(photos);
+  const used = new Set<string>();
+  const sections: EventRecapHighlight[] = [];
+  const addSection = (key: string, title: string, description: string, kind: EventRecapHighlightKind, nextPhotos: Photo[]) => {
+    const selected = firstPhotosWithoutUsed(nextPhotos, used, 6);
+    if (!selected.length) return;
+    sections.push({ key, title, description, kind, photos: selected });
+  };
+
+  addSection("featured", "Host favorites", "Photos the host marked as the moments everyone should see first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
+
+  const winnerIds = (awardVoting?.categories || []).flatMap((category) => category.leaderPhotoIds);
+  addSection("award-winners", "Award winners", "Winning and tied Event Awards photos from the recap vote.", "award_winner", photosByIds(sortedPhotos, winnerIds));
+
+  const votedIds = (awardVoting?.categories || [])
+    .flatMap((category) => category.voteTotals)
+    .sort((a, b) => b.voteCount - a.voteCount)
+    .map((vote) => vote.photoId);
+  addSection("most-voted", "Guest picks", "Photos with votes from guests, ranked before the rest of the album.", "voted", photosByIds(sortedPhotos, votedIds));
+
+  addSection(
+    "challenge-moments",
+    "Challenge moments",
+    "Photos tied to teams, prompts, award categories, or event-specific moments.",
+    "challenge",
+    sortedPhotos.filter((photo) => Boolean(photo.challengeItemId || photo.challengePromptId || photo.challengeParticipantId || photo.challengeColorName)),
+  );
+
+  addSection("recent", "Fresh from the album", "Recent visible photos keep the event story moving when there are no curated picks yet.", "recent", sortedPhotos);
+
+  return sections;
+}
+
+function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined, photos: Photo[], awardVoting?: AwardVotingSummary | null): EventRecapChallengeMoment[] {
+  const progress = buildChallengeProgressSummary(challenge, photos);
+  if (!challenge || progress.mode === "NONE") {
+    return [
+      {
+        key: "shared-album",
+        title: "Shared album highlights",
+        description: photos.length ? "The recap is built from the photos guests added together." : "The album is ready for the first guest uploads.",
+        count: photos.length,
+        photos: photos.slice(0, 4),
+        isComplete: photos.length > 0,
+      },
+    ];
+  }
+
+  if (challenge.type === CHALLENGE_TYPES.MEMORY_CAPSULE) {
+    const capsule = memoryCapsuleFromChallenge(challenge);
+    return [
+      {
+        key: "opened-memories",
+        title: capsule.revealTitle || "Opened memories",
+        description: photos.length ? "The capsule is open, and these are the memories guests left for reveal time." : capsule.revealNote,
+        count: photos.length,
+        photos: photos.slice(0, 4),
+        isComplete: photos.length > 0,
+      },
+    ];
+  }
+
+  return progress.rows.map((row) => {
+    const rowPhotos = photosForChallengeMoment(photos, row);
+    const awardCategory = awardVoting?.categories.find((category) => category.categoryId === row.id);
+    const winnerPhotos = awardCategory?.leaderPhotoIds.length ? photosByIds(photos, awardCategory.leaderPhotoIds) : [];
+    const representative = winnerPhotos.length ? winnerPhotos : rowPhotos;
+    const status = row.kind === "award" && awardCategory
+      ? awardCategory.noSubmissions
+        ? "No submissions yet."
+        : awardCategory.noVotes
+          ? "Submissions are in; votes are still open."
+          : `${awardCategory.totalVotes} ${awardCategory.totalVotes === 1 ? "vote" : "votes"}${awardCategory.isTie ? " with a tie at the top." : "."}`
+      : row.complete
+        ? `${row.count} ${row.count === 1 ? "photo" : "photos"} captured.`
+        : "Waiting for a photo.";
+    return {
+      key: row.id,
+      title: row.label,
+      description: status,
+      count: row.count,
+      total: row.total,
+      colorHex: row.colorHex,
+      photos: representative.slice(0, 3),
+      isComplete: row.complete,
+      voteCount: awardCategory?.totalVotes,
+      isTie: awardCategory?.isTie,
+    };
+  });
+}
+
+function buildRecapAlbumFilters(challenge: EventChallenge | null | undefined, photos: Photo[]): EventRecapAlbumFilter[] {
+  const sortedPhotos = sortPhotosForRecap(photos);
+  const filters: EventRecapAlbumFilter[] = [
+    { key: "all", label: "All", count: sortedPhotos.length, photoIds: photoIds(sortedPhotos) },
+  ];
+  const featured = sortedPhotos.filter((photo) => Boolean(photo.isFeatured));
+  if (featured.length) filters.push({ key: "featured", label: "Featured", count: featured.length, photoIds: photoIds(featured) });
+  const recent = sortedPhotos.slice(0, Math.min(12, sortedPhotos.length));
+  if (recent.length && recent.length !== sortedPhotos.length) filters.push({ key: "recent", label: "Recent", count: recent.length, photoIds: photoIds(recent) });
+
+  for (const row of buildChallengeProgressSummary(challenge, sortedPhotos).rows) {
+    const rowPhotos = photosForChallengeMoment(sortedPhotos, row);
+    if (rowPhotos.length) filters.push({ key: `challenge-${row.id}`, label: row.label, count: rowPhotos.length, photoIds: photoIds(rowPhotos) });
+  }
+  return filters;
+}
+
+export function buildEventRecapStory(
+  event: EventRecapSourceEvent,
+  photos: Photo[],
+  options: { awardVoting?: AwardVotingSummary | null } = {},
+): EventRecapStory {
   const sortedPhotos = sortPhotosForRecap(visiblePhotos(photos));
   const template = getEventTemplate(event.eventTemplateSlug);
+  const modeLabel = challengeLabel(event.challenge);
+  const contributors = buildContributorSummary(sortedPhotos, 5);
+  const highlights = buildRecapHighlightReel(sortedPhotos, options.awardVoting);
+  const challengeMoments = buildRecapChallengeMoments(event.challenge, sortedPhotos, options.awardVoting);
+  const capsuleCopy = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+  const isLocked = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && event.isRevealed === false;
+  const highlightPhotos = highlights.flatMap((section) => section.photos).slice(0, 8);
+  const heroCopy = isLocked
+    ? capsuleCopy?.revealNote || "Photos are tucked away until reveal time."
+    : template?.recapFraming || (sortedPhotos.length ? "The event story is ready to revisit, share, and keep." : "A shared album from the people who were there.");
+  const completedMoments = challengeMoments.filter((moment) => moment.isComplete).length;
+  const challengeHeadline = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !isLocked
+    ? "Opened memories"
+    : event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
+      ? "Event Awards moments"
+      : event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT
+        ? "Color team recap"
+        : event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT
+          ? "Scavenger Hunt progress"
+          : "The shared album story";
+  const challengeCopy = event.challenge
+    ? `${completedMoments}/${challengeMoments.length || 1} ${challengeMoments.length === 1 ? "moment" : "moments"} have photos in the recap.`
+    : sortedPhotos.length
+      ? "Guests built this album together, one upload at a time."
+      : "Share the guest link so the recap has moments to show.";
+
   return {
-    modeLabel: challengeLabel(event.challenge),
+    modeLabel,
     templateName: template?.name,
     recapTitle: template ? `${template.name} recap` : "Event recap",
     recapSubtitle: template?.recapFraming || "A shared album from the people who were there.",
     totalPhotos: sortedPhotos.length,
-    contributorCount: countUniqueContributors(sortedPhotos),
-    highlightPhotos: sortedPhotos.slice(0, 5),
+    contributorCount: contributors.contributorCount,
+    highlightPhotos: highlightPhotos.length ? highlightPhotos : sortedPhotos.slice(0, 8),
     recentPhotos: sortedPhotos.slice(0, 8),
+    heroCopy,
+    lockedTitle: capsuleCopy?.revealTitle || "The recap opens at reveal time",
+    lockedCopy: capsuleCopy?.revealNote || "Photos are locked until the reveal time. Come back after the event story opens.",
+    emptyTitle: "No photos yet",
+    emptyCopy: "No photos yet. Share the guest upload link so the recap has moments to show.",
+    highlightReel: highlights,
+    challengeHeadline,
+    challengeCopy,
+    challengeMoments,
+    contributorSummary: contributors,
+    albumFilters: buildRecapAlbumFilters(event.challenge, sortedPhotos),
+    createEventCtaTitle: "Stop chasing event photos.",
+    createEventCtaCopy: "Create one EventFilm link, let guests add photos from their phones, then share a recap that feels finished.",
   };
+}
+
+export function buildEventRecapMetadata(event: EventRecapSourceEvent, photos: Photo[]): EventRecapMetadata {
+  return buildEventRecapStory(event, photos);
 }
