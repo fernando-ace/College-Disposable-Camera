@@ -166,6 +166,7 @@ export default function EventDetailScreen() {
             ) : null}
             <LinkHealthPanel linkChecks={linkChecks} />
             <EventMetricsPanel summary={analyticsSummary} />
+            <EventAwardsVotingPanel summary={analyticsSummary} photos={event.photos} recapLink={event.recapLink} />
             <RunOfShow />
             <Button tone="secondary" loading={loading} onPress={loadEvent}>Refresh photos</Button>
           </View>
@@ -237,6 +238,38 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
           <StatTile key={label} label={String(label)} value={Number(value)} />
         ))}
       </View>
+    </Card>
+  );
+}
+
+function EventAwardsVotingPanel({ summary, photos, recapLink }: { summary: EventAnalyticsSummary | null; photos: Photo[]; recapLink?: string | null }) {
+  const awardVoting = summary?.eventAwardsVoting;
+  if (!awardVoting?.categories.length) return null;
+  const photosById = new Map(photos.map((photo) => [photo.id, photo]));
+
+  return (
+    <Card tone="warm">
+      <SectionHeader title="Event Awards voting" subtitle="Guests vote from the public web Recap link." />
+      <View style={{ gap: 10 }}>
+        {awardVoting.categories.map((category) => {
+          const leader = category.leaderPhotoIds[0] ? photosById.get(category.leaderPhotoIds[0]) : null;
+          const voteCount = category.voteTotals[0]?.voteCount || 0;
+          return (
+            <Card key={category.categoryId} padding={13}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                <Body>{category.categoryLabel}</Body>
+                {category.isTie ? <Badge tone="amber">Tie</Badge> : null}
+              </View>
+              <Body tone="muted">{category.submissionCount} submissions - {category.totalVotes} votes</Body>
+              <Body tone={leader ? "success" : "muted"}>
+                {leader ? `Leader: ${leader.guestNickname || "Guest photo"} (${voteCount} ${voteCount === 1 ? "vote" : "votes"})` : category.noSubmissions ? "No submissions yet." : "No votes yet."}
+              </Body>
+            </Card>
+          );
+        })}
+      </View>
+      <Button tone="secondary" disabled={!recapLink} onPress={() => recapLink && Linking.openURL(recapLink)}>Open Recap voting</Button>
+      <Body tone="muted">Voting is browser/session based and intentionally lightweight.</Body>
     </Card>
   );
 }

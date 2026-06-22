@@ -38,7 +38,7 @@ import {
   validateUploadFile,
   validateChallengeDraft,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, HostLaunchKit, HostLaunchKitLink, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, HostLaunchKit, HostLaunchKitLink, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -2076,6 +2076,7 @@ function ManageEvent() {
                   <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 1 ? "accent" : index === 2 ? "green" : index === 3 ? "plum" : "default"} />
                 ))}
               </div>
+              <HostAwardVotingSummary awardVoting={eventAnalytics.eventAwardsVoting} photos={event.photos} onFeatureWinner={(photo) => updatePhotoFeatured(photo, true)} />
             </section>
           )}
 
@@ -2251,6 +2252,223 @@ function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; 
   );
 }
 
+function AwardLeadersPanel({ awardVoting, photos, dark = false }: { awardVoting?: AwardVotingSummary | null; photos: Photo[]; dark?: boolean }) {
+  if (!awardVoting?.categories.length) return null;
+  const photosById = new Map(photos.map((photo) => [photo.id, photo]));
+  const leaders = awardVoting.categories.filter((category) => category.leaderPhotoIds.length || category.noVotes || category.noSubmissions);
+
+  return (
+    <section className={cx("rounded-[2rem] p-5", dark ? "bg-white/10 text-white" : "border border-[#eadfce] bg-white shadow-[0_24px_70px_rgba(101,62,0,0.08)]")}>
+      <p className={cx("text-sm font-bold uppercase tracking-wide", dark ? "text-amber-200" : "text-[#653e00]")}>Event Awards</p>
+      <h2 className={cx("mt-2 font-display text-2xl font-bold", dark ? "text-white" : "text-stone-950")}>Current leaders</h2>
+      <p className={cx("mt-2 text-sm", dark ? "text-stone-200" : "text-stone-600")}>Voting is lightweight and based on each guest browser.</p>
+      <div className="mt-5 grid gap-3">
+        {leaders.map((category) => {
+          const leader = category.leaderPhotoIds[0] ? photosById.get(category.leaderPhotoIds[0]) : null;
+          const voteCount = category.voteTotals[0]?.voteCount || 0;
+          return (
+            <div className={cx("rounded-2xl p-4", dark ? "bg-white/10" : "bg-stone-50")} key={category.categoryId}>
+              <div className="flex items-center justify-between gap-3">
+                <p className={cx("min-w-0 truncate text-sm font-bold", dark ? "text-white" : "text-stone-900")}>{category.categoryLabel}</p>
+                {category.isTie && <StatusPill tone="amber">Tie</StatusPill>}
+              </div>
+              {leader ? (
+                <div className="mt-3 flex items-center gap-3">
+                  <img className="h-14 w-14 rounded-2xl object-cover" src={leader.previewUrl || leader.url} alt={leader.originalFilename} />
+                  <div className="min-w-0">
+                    <p className={cx("truncate text-sm font-bold", dark ? "text-white" : "text-stone-900")}>{leader.guestNickname || "Guest photo"}</p>
+                    <p className={cx("text-xs font-bold", dark ? "text-amber-200" : "text-[#653e00]")}>{voteCount} {voteCount === 1 ? "vote" : "votes"}</p>
+                  </div>
+                </div>
+              ) : (
+                <p className={cx("mt-3 text-sm font-semibold", dark ? "text-stone-200" : "text-stone-600")}>{category.noSubmissions ? "No submissions yet." : "No votes yet."}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function AwardVotingPanel({
+  event,
+  photos,
+  awardVoting,
+  clientId,
+  surface,
+  onVoteComplete,
+}: {
+  event: Pick<PublicEvent, "slug" | "id">;
+  photos: Photo[];
+  awardVoting?: AwardVotingSummary | null;
+  clientId: string;
+  surface: "recap" | "guest_album";
+  onVoteComplete: () => Promise<void>;
+}) {
+  const [busyVote, setBusyVote] = useState("");
+  const [status, setStatus] = useState("");
+  if (!awardVoting?.categories.length || !awardVoting.votingEnabled) return null;
+
+  const photosByCategory = new Map<string, Photo[]>();
+  for (const photo of photos) {
+    if (!photo.challengeItemId) continue;
+    const group = photosByCategory.get(photo.challengeItemId) || [];
+    group.push(photo);
+    photosByCategory.set(photo.challengeItemId, group);
+  }
+
+  async function castVote(photo: Photo, categoryId: string) {
+    setBusyVote(`${categoryId}:${photo.id}`);
+    setStatus("");
+    try {
+      const response = await eventFilmApi.castEventAwardVote(event.slug, { photoId: photo.id, clientId, challengeItemId: categoryId });
+      trackAnalytics(response.duplicate ? "award_vote_duplicate_blocked" : "award_vote_cast", {
+        eventId: event.id,
+        eventSlug: event.slug,
+        metadata: { surface, photoId: response.photoId, challengeItemId: response.challengeItemId, categoryId: response.challengeItemId },
+      });
+      setStatus(response.duplicate ? "You already voted in that category from this browser." : "Vote saved.");
+      await onVoteComplete();
+    } catch (err) {
+      setStatus(publicRouteErrorMessage(err, "Could not save that vote. Refresh and try again."));
+    } finally {
+      setBusyVote("");
+    }
+  }
+
+  return (
+    <section className="rounded-[2rem] border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)] sm:p-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <StatusPill>Event Awards</StatusPill>
+          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Vote for winners</h2>
+          <p className="mt-2 max-w-2xl text-sm text-stone-600">Pick one photo per category from this browser. It is lightweight voting, not a fraud-proof ballot.</p>
+        </div>
+        {status && <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-[#653e00]">{status}</p>}
+      </div>
+
+      <div className="mt-6 grid gap-5">
+        {awardVoting.categories.map((category) => {
+          const categoryPhotos = photosByCategory.get(category.categoryId) || [];
+          const voteCounts = new Map(category.voteTotals.map((item) => [item.photoId, item.voteCount]));
+          const winners = category.leaderPhotoIds.map((photoId) => categoryPhotos.find((photo) => photo.id === photoId)).filter(Boolean) as Photo[];
+          return (
+            <section className="rounded-[1.45rem] bg-[#fffaf6] p-4" key={category.categoryId}>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="font-display text-2xl font-bold text-stone-950">{category.categoryLabel}</h3>
+                  <p className="text-sm font-semibold text-stone-600">{category.submissionCount} submissions - {category.totalVotes} votes</p>
+                </div>
+                {category.isTie && <StatusPill tone="amber">Tie for first</StatusPill>}
+              </div>
+
+              {winners.length > 0 && (
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  {winners.map((photo) => (
+                    <div className="flex items-center gap-3 rounded-2xl bg-white p-3 ring-1 ring-amber-200" key={photo.id}>
+                      <img className="h-16 w-16 rounded-2xl object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                      <div className="min-w-0">
+                        <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">{category.isTie ? "Tied winner" : "Winner"}</p>
+                        <p className="truncate font-bold text-stone-950">{photo.guestNickname || "Guest photo"}</p>
+                        <p className="text-sm font-semibold text-stone-600">{voteCounts.get(photo.id) || 0} votes</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {!categoryPhotos.length ? (
+                <p className="mt-4 rounded-2xl bg-white p-4 text-sm font-bold text-stone-600">No submissions in this category yet.</p>
+              ) : (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {categoryPhotos.map((photo) => {
+                    const selected = category.myVotePhotoId === photo.id;
+                    const blockedByExistingVote = Boolean(category.myVotePhotoId && !selected);
+                    return (
+                      <div className={cx("overflow-hidden rounded-[1.15rem] bg-white p-2 ring-1", selected ? "ring-amber-400" : "ring-[#eadfce]")} key={photo.id}>
+                        <img className="aspect-square w-full rounded-[0.95rem] object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                        <div className="p-2">
+                          <p className="truncate text-sm font-bold text-stone-900">{photo.guestNickname || "Guest photo"}</p>
+                          <p className="mt-1 text-xs font-bold text-stone-500">{voteCounts.get(photo.id) || 0} votes</p>
+                          <button
+                            className={cx("mt-3 min-h-10 w-full rounded-[0.9rem] px-3 py-2 text-xs font-extrabold", selected ? "bg-stone-950 text-white" : "bg-amber-500 text-stone-950 disabled:bg-stone-200 disabled:text-stone-500")}
+                            disabled={Boolean(busyVote) || blockedByExistingVote}
+                            onClick={() => castVote(photo, category.categoryId)}
+                          >
+                            {selected ? "Your vote" : blockedByExistingVote ? "Voted" : busyVote === `${category.categoryId}:${photo.id}` ? "Voting..." : "Vote"}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {category.noVotes && categoryPhotos.length > 0 && <p className="mt-3 text-sm font-semibold text-stone-600">No votes yet in this category.</p>}
+            </section>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function HostAwardVotingSummary({
+  awardVoting,
+  photos,
+  onFeatureWinner,
+}: {
+  awardVoting?: AwardVotingSummary | null;
+  photos: Photo[];
+  onFeatureWinner: (photo: Photo) => Promise<void>;
+}) {
+  if (!awardVoting?.categories.length) return null;
+  const visiblePhotos = photos.filter(isPhotoVisible);
+  const photosById = new Map(visiblePhotos.map((photo) => [photo.id, photo]));
+
+  return (
+    <section className="mt-6 rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+        <div>
+          <StatusPill>Event Awards</StatusPill>
+          <h3 className="mt-3 font-display text-2xl font-bold text-stone-950">Voting summary</h3>
+          <p className="mt-2 max-w-2xl text-sm text-stone-600">Guests get one lightweight browser/session vote per category. Hide or delete a photo to remove it from public winners.</p>
+        </div>
+        <StatusPill tone={awardVoting.votingEnabled ? "green" : "stone"}>{awardVoting.votingEnabled ? "Voting on" : "Voting off"}</StatusPill>
+      </div>
+
+      <div className="mt-5 grid gap-3 md:grid-cols-2">
+        {awardVoting.categories.map((category) => {
+          const leader = category.leaderPhotoIds[0] ? photosById.get(category.leaderPhotoIds[0]) : null;
+          const voteCount = category.voteTotals[0]?.voteCount || 0;
+          return (
+            <div className="rounded-[1.25rem] bg-[#fffaf6] p-4" key={category.categoryId}>
+              <div className="flex items-center justify-between gap-3">
+                <p className="min-w-0 truncate font-bold text-stone-950">{category.categoryLabel}</p>
+                {category.isTie && <StatusPill tone="amber">Tie</StatusPill>}
+              </div>
+              <p className="mt-1 text-sm font-semibold text-stone-600">{category.submissionCount} submissions - {category.totalVotes} votes</p>
+              {leader ? (
+                <div className="mt-4 flex items-center gap-3">
+                  <img className="h-16 w-16 rounded-2xl object-cover" src={leader.previewUrl || leader.url} alt={leader.originalFilename} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Current leader</p>
+                    <p className="truncate font-bold text-stone-950">{leader.guestNickname || "Guest photo"}</p>
+                    <p className="text-sm font-semibold text-stone-600">{voteCount} {voteCount === 1 ? "vote" : "votes"}</p>
+                  </div>
+                  <SecondaryButton className="min-h-10 rounded-[0.95rem] px-3 py-2" disabled={leader.isFeatured} onClick={() => onFeatureWinner(leader)}>{leader.isFeatured ? "Featured" : "Feature"}</SecondaryButton>
+                </div>
+              ) : (
+                <p className="mt-4 rounded-2xl bg-white p-3 text-sm font-bold text-stone-600">{category.noSubmissions ? "No submissions yet." : "No votes yet."}</p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function LiveWall() {
   const { slug = "" } = useParams();
   const [data, setData] = useState<LiveWallResponse | null>(null);
@@ -2346,6 +2564,7 @@ function LiveWall() {
               <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-[1rem] bg-white px-4 py-2 text-sm font-bold text-[#d94f33]" onClick={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment.")))}>Refresh now</button>
             </section>
             {summary && <ProgressSummaryPanel summary={summary} dark />}
+            <AwardLeadersPanel awardVoting={data.awardVoting} photos={data.photos} dark />
           </aside>
         </div>
       )}
@@ -2355,19 +2574,22 @@ function LiveWall() {
 
 function EventRecap() {
   const { slug = "" } = useParams();
+  const [{ session }] = useState(() => getGuestSession(slug));
   const [data, setData] = useState<EventRecapResponse | null>(null);
   const [error, setError] = useState("");
   const [copyStatus, setCopyStatus] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
 
+  async function loadRecap() {
+    const nextData = await eventFilmApi.getRecapData(slug, session.clientId);
+    setData(nextData);
+    setError("");
+  }
+
   useEffect(() => {
     trackAnalytics("recap_opened", { eventSlug: slug, path: `/recap/${slug}` });
-    api<EventRecapResponse>(`/api/events/${slug}/recap`)
-      .then((nextData) => {
-        setData(nextData);
-        setError("");
-      })
+    loadRecap()
       .catch((err) => setError(publicRouteErrorMessage(err, "Recap is not available right now. Check the event link or try again after reveal.")));
   }, [slug]);
 
@@ -2460,6 +2682,12 @@ function EventRecap() {
                   </section>
                 )}
 
+                {data.awardVoting && (
+                  <section className="mt-8">
+                    <AwardVotingPanel event={event} photos={data.photos} awardVoting={data.awardVoting} clientId={session.clientId} surface="recap" onVoteComplete={loadRecap} />
+                  </section>
+                )}
+
                 <section className="mt-8">
                   <div className="mb-4">
                     <h2 className="font-display text-3xl font-bold">Full album</h2>
@@ -2497,6 +2725,7 @@ function GuestEvent() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showScavengerSuccessActions, setShowScavengerSuccessActions] = useState(false);
+  const [awardVoting, setAwardVoting] = useState<AwardVotingSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
 
@@ -2515,10 +2744,18 @@ function GuestEvent() {
     setRemaining(status.remainingUploads);
     if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && status.nickname && !nickname) setNickname(status.nickname);
     if (eventData.event.isRevealed) {
-      const photoData = await api<{ photos: Photo[] }>(`/api/events/${slug}/photos`);
-      setPhotos(photoData.photos);
+      if (eventData.event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
+        const recapData = await eventFilmApi.getRecapData(slug, session.clientId);
+        setPhotos(recapData.photos);
+        setAwardVoting(recapData.awardVoting || null);
+      } else {
+        const photoData = await api<{ photos: Photo[] }>(`/api/events/${slug}/photos`);
+        setPhotos(photoData.photos);
+        setAwardVoting(null);
+      }
     } else {
       setPhotos([]);
+      setAwardVoting(null);
     }
   }
 
@@ -2638,7 +2875,7 @@ function GuestEvent() {
         setMessage("Photo uploaded. Want to complete another prompt?");
         setShowScavengerSuccessActions(true);
       } else if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
-        setMessage("Photo submitted for the award category.");
+        setMessage(event.isRevealed ? "Photo submitted. You can vote for award winners below." : "Photo submitted for the award category. Voting opens on the Recap after reveal.");
       } else {
         setMessage("Photo uploaded");
       }
@@ -2827,6 +3064,9 @@ function GuestEvent() {
               </div>
             )}
             {message && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+            {message && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
+              <Link className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`}>Vote on awards</Link>
+            )}
             {showScavengerSuccessActions && (
               <div className="mt-3 grid gap-3 sm:grid-cols-2">
                 <SecondaryButton type="button" onClick={uploadAnotherForPrompt}>Upload another for this prompt</SecondaryButton>
@@ -2851,6 +3091,11 @@ function GuestEvent() {
           {event.isRevealed && (
             <section className="mt-8">
               <h2 className="font-display text-2xl font-bold">Album</h2>
+              {awardVoting && (
+                <div className="mt-4">
+                  <AwardVotingPanel event={event} photos={photos} awardVoting={awardVoting} clientId={session.clientId} surface="guest_album" onVoteComplete={load} />
+                </div>
+              )}
               <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
                 {photos.map((photo) => (
                   <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={photo.id}>

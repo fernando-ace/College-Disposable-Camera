@@ -5,6 +5,7 @@ import type {
   EventChallengeInput,
   EventSummary,
   GuestStatus,
+  AwardVotingSummary,
   Photo,
   PhotoReportReason,
   PhotoVisibilityStatus,
@@ -63,6 +64,7 @@ export type LiveWallResponse = {
   qrCodeDataUrl?: string;
   isLocked: boolean;
   photos: Photo[];
+  awardVoting?: AwardVotingSummary;
 };
 
 export type EventRecapResponse = {
@@ -76,6 +78,21 @@ export type EventRecapResponse = {
   recapLink: string;
   isLocked: boolean;
   photos: Photo[];
+  awardVoting?: AwardVotingSummary;
+};
+
+export type AwardVoteRequest = {
+  photoId: string;
+  clientId: string;
+  challengeItemId?: string;
+};
+
+export type AwardVoteResponse = {
+  ok: true;
+  photoId: string;
+  challengeItemId: string;
+  selected: boolean;
+  duplicate?: boolean;
 };
 
 export type AnalyticsSummary = {
@@ -101,6 +118,7 @@ export type EventAnalyticsSummary = {
   liveWallOpens: number;
   recapOpens: number;
   activeGuests: number;
+  eventAwardsVoting?: AwardVotingSummary;
 };
 
 export type LaunchLinkVerification = {
@@ -341,11 +359,19 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     getPublicEventBySlug(slug: string) {
       return request<{ event: PublicEvent }>(`/api/events/${encodeURIComponent(slug)}`);
     },
-    getLiveWallData(slug: string) {
-      return request<LiveWallResponse>(`/api/events/${encodeURIComponent(slug)}/live-wall`);
+    getLiveWallData(slug: string, clientId?: string) {
+      const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+      return request<LiveWallResponse>(`/api/events/${encodeURIComponent(slug)}/live-wall${query}`);
     },
-    getRecapData(slug: string) {
-      return request<EventRecapResponse>(`/api/events/${encodeURIComponent(slug)}/recap`);
+    getRecapData(slug: string, clientId?: string) {
+      const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+      return request<EventRecapResponse>(`/api/events/${encodeURIComponent(slug)}/recap${query}`);
+    },
+    castEventAwardVote(slug: string, input: AwardVoteRequest) {
+      return request<AwardVoteResponse>(`/api/events/${encodeURIComponent(slug)}/votes`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
     },
     getGuestStatus(slug: string, clientId: string) {
       return request<GuestStatus>(`/api/events/${encodeURIComponent(slug)}/guest-status?clientId=${encodeURIComponent(clientId)}`);

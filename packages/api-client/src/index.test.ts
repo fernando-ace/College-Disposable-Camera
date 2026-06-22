@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createEventFilmApiClient, EventFilmApiError, normalizeEventFilmBaseUrl } from "./index.ts";
+import type { AwardVoteRequest } from "./index.ts";
 
 test("normalizes EventFilm API base URLs", () => {
   assert.equal(normalizeEventFilmBaseUrl("http://localhost:4000/"), "http://localhost:4000");
@@ -102,6 +103,47 @@ test("event analytics summary uses the host event endpoint", async () => {
 
   await client.getEventAnalyticsSummary("event 1", "token");
   assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201/analytics/summary");
+});
+
+test("live wall and recap helpers accept optional clientId query", async () => {
+  const calls: string[] = [];
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ event: null, photos: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.getLiveWallData("abc", "client-1");
+  await client.getRecapData("abc", "client-1");
+  assert.equal(calls[0], "https://api.eventfilm.test/api/events/abc/live-wall?clientId=client-1");
+  assert.equal(calls[1], "https://api.eventfilm.test/api/events/abc/recap?clientId=client-1");
+});
+
+test("award vote endpoint helper sends requested payload", async () => {
+  const calls: string[] = [];
+  let seenBody = "";
+  const input: AwardVoteRequest = { photoId: "photo-1", clientId: "client-1", challengeItemId: "award-1" };
+
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      seenBody = String(init?.body || "");
+      return new Response(JSON.stringify({ ok: true, photoId: input.photoId, challengeItemId: input.challengeItemId, selected: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.castEventAwardVote("abc", input);
+  assert.equal(calls[0], "https://api.eventfilm.test/api/events/abc/votes");
+  assert.equal(seenBody, JSON.stringify(input));
 });
 
 test("create event sends template and prompt pack slugs", async () => {

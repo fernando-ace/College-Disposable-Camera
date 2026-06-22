@@ -235,10 +235,39 @@ export const ANALYTICS_EVENT_NAMES = [
   "photo_reported",
   "album_downloaded",
   "photo_lightbox_opened",
+  "award_votes_opened",
+  "award_vote_cast",
+  "award_vote_duplicate_blocked",
+  "award_winner_section_viewed",
+  "award_host_voting_summary_viewed",
+  "award_voting_toggled",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
 export type AnalyticsSource = "web" | "mobile" | "api";
+
+export type AwardVoteTotal = {
+  photoId: string;
+  voteCount: number;
+};
+
+export type AwardCategoryVotingSummary = {
+  categoryId: string;
+  categoryLabel: string;
+  submissionCount: number;
+  totalVotes: number;
+  voteTotals: AwardVoteTotal[];
+  leaderPhotoIds: string[];
+  isTie: boolean;
+  noSubmissions: boolean;
+  noVotes: boolean;
+  myVotePhotoId?: string;
+};
+
+export type AwardVotingSummary = {
+  votingEnabled: boolean;
+  categories: AwardCategoryVotingSummary[];
+};
 
 export type AnalyticsEventInput = {
   name: AnalyticsEventName;
@@ -294,6 +323,88 @@ export type PublicEvent = {
   photoCount: number | null;
   challenge?: EventChallenge | null;
 };
+
+function parseBooleanConfigFlag(value: unknown) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === "true") return true;
+    if (normalized === "false") return false;
+  }
+  return null;
+}
+
+export function isAwardVotingEnabled(challenge?: Pick<EventChallenge, "type" | "config"> | null) {
+  if (!challenge || challenge.type !== CHALLENGE_TYPES.EVENT_AWARDS) return false;
+  const config = challenge.config && typeof challenge.config === "object" ? challenge.config : {};
+  const override = parseBooleanConfigFlag(config.votingEnabled);
+  return override === null ? true : override;
+}
+
+export function buildAwardVotingSummary({
+  challenge,
+  photos,
+  votes,
+  myVotesByCategory,
+}: {
+  challenge?: Pick<EventChallenge, "type" | "config"> | null;
+  photos: Pick<Photo, "id" | "challengeItemId">[];
+  votes: Array<{ photoId: string; challengeItemId: string }>;
+  myVotesByCategory?: Record<string, string>;
+}) {
+  const challengeType = challenge?.type || "NONE";
+  const votingEnabled = isAwardVotingEnabled(challenge);
+  if (challengeType !== CHALLENGE_TYPES.EVENT_AWARDS) {
+    return { votingEnabled: false, categories: [] } as AwardVotingSummary;
+  }
+
+  const categories = categoriesFromChallenge(challenge);
+  const votesByCategory = new Map<string, Map<string, number>>();
+  for (const vote of votes) {
+    if (!vote.challengeItemId || !vote.photoId) continue;
+    const categoryVotes = votesByCategory.get(vote.challengeItemId) || new Map<string, number>();
+    categoryVotes.set(vote.photoId, (categoryVotes.get(vote.photoId) || 0) + 1);
+    votesByCategory.set(vote.challengeItemId, categoryVotes);
+  }
+
+  const photoIdsByCategory = new Map<string, Set<string>>();
+  for (const photo of photos) {
+    if (!photo.challengeItemId) continue;
+    const set = photoIdsByCategory.get(photo.challengeItemId) || new Set<string>();
+    set.add(photo.id);
+    photoIdsByCategory.set(photo.challengeItemId, set);
+  }
+
+  const summary: AwardVotingSummary = {
+    votingEnabled,
+    categories: categories.map((category) => {
+      const categoryId = category.id || `award-${category.order}`;
+      const categoryPhotoIds = photoIdsByCategory.get(categoryId) || new Set<string>();
+      const categoryTotals = votesByCategory.get(categoryId) || new Map<string, number>();
+      const voteTotals = Array.from(categoryTotals.entries())
+        .filter(([photoId]) => categoryPhotoIds.has(photoId))
+        .map(([photoId, voteCount]) => ({ photoId, voteCount }))
+        .sort((a, b) => b.voteCount - a.voteCount || a.photoId.localeCompare(b.photoId));
+      const totalVotes = voteTotals.reduce((sum, item) => sum + item.voteCount, 0);
+      const topVoteCount = voteTotals[0]?.voteCount || 0;
+      const leaderPhotoIds = voteTotals.filter((item) => item.voteCount === topVoteCount && topVoteCount > 0).map((item) => item.photoId);
+      return {
+        categoryId,
+        categoryLabel: category.label,
+        submissionCount: categoryPhotoIds.size,
+        totalVotes,
+        voteTotals,
+        leaderPhotoIds,
+        isTie: leaderPhotoIds.length > 1,
+        noSubmissions: categoryPhotoIds.size === 0,
+        noVotes: voteTotals.length === 0,
+        myVotePhotoId: myVotesByCategory?.[categoryId],
+      };
+    }),
+  };
+
+  return summary;
+}
 
 export type GuestStatus = {
   uploadedCount?: number;

@@ -52,7 +52,8 @@ model Event {
   guests Guest[]
   photos Photo[]
   challenges EventChallenge[]
-  photoReports PhotoReport[]
+  photoReports       PhotoReport[]
+  photoVotes         PhotoVote[]
 
   @@index([hostId])
 }
@@ -136,6 +137,7 @@ model Photo {
   challenge            EventChallenge?       @relation("PhotoChallenge", fields: [challengeId], references: [id], onDelete: SetNull)
   challengeParticipant ChallengeParticipant? @relation(fields: [challengeParticipantId], references: [id], onDelete: SetNull)
   reports              PhotoReport[]
+  votes                PhotoVote[]
 
   @@index([eventId])
   @@index([eventId, visibilityStatus])
@@ -164,6 +166,22 @@ model PhotoReport {
   @@index([photoId])
   @@index([eventId])
   @@index([eventId, createdAt])
+}
+
+model PhotoVote {
+  id              String   @id @default(cuid())
+  eventId         String
+  photoId         String
+  challengeItemId String
+  guestClientId   String
+  createdAt       DateTime @default(now())
+
+  event           Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  photo           Photo    @relation(fields: [photoId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, challengeItemId, guestClientId])
+  @@index([eventId, photoId])
+  @@index([eventId, challengeItemId])
 }
 
 model AnalyticsEvent {

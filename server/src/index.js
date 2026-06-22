@@ -88,6 +88,12 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "photo_reported",
   "album_downloaded",
   "photo_lightbox_opened",
+  "award_votes_opened",
+  "award_vote_cast",
+  "award_vote_duplicate_blocked",
+  "award_winner_section_viewed",
+  "award_host_voting_summary_viewed",
+  "award_voting_toggled",
 ]);
 const PHOTO_VISIBILITY_VISIBLE = "VISIBLE";
 const PHOTO_VISIBILITY_HIDDEN = "HIDDEN";
@@ -112,6 +118,8 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "hasChallenge",
   "photoCount",
   "photoId",
+  "challengeItemId",
+  "categoryId",
   "visibilityStatus",
   "templateSlug",
   "promptPackSlug",
@@ -334,6 +342,102 @@ function activePhotoWhere(extra = {}) {
   return { deletedAt: null, ...extra };
 }
 
+function parseBooleanFlag(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const normalized = value.toLowerCase().trim();
+    return normalized === "true" ? true : normalized === "false" ? false : null;
+  }
+  return null;
+}
+
+function isAwardVotingEnabled(challenge) {
+  if (!challenge || challenge.type !== CHALLENGE_TYPE_EVENT_AWARDS) return false;
+  const config = challenge?.config || {};
+  if (!config || typeof config !== "object") return true;
+  const override = parseBooleanFlag(config.votingEnabled);
+  return override === null ? true : override;
+}
+
+function buildAwardVotingSummary({ challenge, photos, votes, myVotesByCategory }) {
+  const categories = categoriesFromConfig(challenge?.config);
+  const votingEnabled = isAwardVotingEnabled(challenge || {});
+  if (challenge?.type !== CHALLENGE_TYPE_EVENT_AWARDS) {
+    return { votingEnabled: false, categories: [] };
+  }
+
+  const votesByCategory = new Map();
+  for (const vote of votes || []) {
+    if (!vote?.challengeItemId || !vote?.photoId) continue;
+    const key = vote.challengeItemId;
+    const byPhoto = votesByCategory.get(key) || new Map();
+    byPhoto.set(vote.photoId, (byPhoto.get(vote.photoId) || 0) + 1);
+    votesByCategory.set(key, byPhoto);
+  }
+
+  const photoIdsByCategory = new Map();
+  for (const photo of photos || []) {
+    if (!photo?.challengeItemId) continue;
+    const set = photoIdsByCategory.get(photo.challengeItemId) || new Set();
+    set.add(photo.id);
+    photoIdsByCategory.set(photo.challengeItemId, set);
+  }
+
+  return {
+    votingEnabled,
+    categories: categories.map((category) => {
+      const categoryId = category.id || `award-${category.order}`;
+      const categoryPhotoIds = photoIdsByCategory.get(categoryId) || new Set();
+      const byPhoto = votesByCategory.get(categoryId) || new Map();
+      const entries = Array.from(byPhoto.entries())
+        .filter(([photoId]) => categoryPhotoIds.has(photoId))
+        .map(([photoId, voteCount]) => ({ photoId, voteCount }))
+        .sort((a, b) => b.voteCount - a.voteCount || a.photoId.localeCompare(b.photoId));
+      const totalVotes = entries.reduce((total, item) => total + item.voteCount, 0);
+      const topVoteCount = entries[0]?.voteCount || 0;
+      const leaderPhotoIds = entries.filter((item) => item.voteCount === topVoteCount && topVoteCount > 0).map((item) => item.photoId);
+      return {
+        categoryId,
+        categoryLabel: category.label,
+        submissionCount: categoryPhotoIds.size,
+        totalVotes,
+        voteTotals: entries,
+        leaderPhotoIds,
+        isTie: leaderPhotoIds.length > 1,
+        noSubmissions: categoryPhotoIds.size === 0,
+        noVotes: entries.length === 0,
+        myVotePhotoId: myVotesByCategory?.[categoryId],
+      };
+    }),
+  };
+}
+
+async function loadAwardVotingSummary(event, { clientId = "" } = {}) {
+  const challenge = event?.challenges?.[0] || null;
+  if (challenge?.type !== CHALLENGE_TYPE_EVENT_AWARDS) return undefined;
+
+  const visiblePhotos = Array.isArray(event.photos) ? event.photos : [];
+  const visiblePhotoIds = visiblePhotos.map((photo) => photo.id);
+  const votes = visiblePhotoIds.length
+    ? await prisma.photoVote.findMany({
+        where: {
+          eventId: event.id,
+          photoId: { in: visiblePhotoIds },
+        },
+        select: { photoId: true, challengeItemId: true, guestClientId: true },
+      })
+    : [];
+
+  const myVotesByCategory = {};
+  if (clientId) {
+    for (const vote of votes) {
+      if (vote.guestClientId === clientId) myVotesByCategory[vote.challengeItemId] = vote.photoId;
+    }
+  }
+
+  return buildAwardVotingSummary({ challenge, photos: visiblePhotos, votes, myVotesByCategory });
+}
+
 function photoReportPayload(report) {
   return {
     id: report.id,
@@ -413,6 +517,8 @@ function normalizeChallengeSetup(input) {
 
   if (challengeType === CHALLENGE_TYPE_EVENT_AWARDS) {
     const categories = normalizeCategories(input.categories || input.config?.categories);
+    const baseConfig = input.config && typeof input.config === "object" ? input.config : {};
+    const votingEnabled = parseBooleanFlag(baseConfig.votingEnabled);
     if (categories.length < 2) {
       throw new Error("Add at least 2 award categories.");
     }
@@ -429,7 +535,7 @@ function normalizeChallengeSetup(input) {
       type: CHALLENGE_TYPE_EVENT_AWARDS,
       title: String(input.title || EVENT_AWARDS_TITLE).trim() || EVENT_AWARDS_TITLE,
       instructions: String(input.instructions || EVENT_AWARDS_INSTRUCTIONS).trim() || EVENT_AWARDS_INSTRUCTIONS,
-      config: { categories },
+      config: { ...baseConfig, categories, ...(votingEnabled === null ? {} : { votingEnabled }) },
       isActive: true,
       participants: [],
     };
@@ -698,7 +804,13 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
   const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
   const event = await prisma.event.findFirst({
     where: { id: req.params.eventId, hostId: req.user.userId },
-    select: { id: true, slug: true },
+    include: {
+      photos: {
+        where: visiblePhotoWhere(),
+        select: { id: true, challengeItemId: true },
+      },
+      challenges: activeChallengeInclude(),
+    },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
@@ -748,6 +860,7 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       liveWallOpens,
       recapOpens,
       activeGuests: activeGuestRows.length,
+      eventAwardsVoting: await loadAwardVotingSummary(event),
     },
   });
 });
@@ -1164,6 +1277,8 @@ app.get("/api/events/:slug/live-wall", async (req, res) => {
   const isLocked = event.challenges?.[0]?.type === CHALLENGE_TYPE_MEMORY_CAPSULE && !isRevealed;
   const eventLink = publicEventUrl(event.slug);
   const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 360 });
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
+  const awardVoting = await loadAwardVotingSummary(event, { clientId });
 
   res.json({
     event: {
@@ -1177,6 +1292,7 @@ app.get("/api/events/:slug/live-wall", async (req, res) => {
     qrCodeDataUrl,
     isLocked,
     photos: isLocked ? [] : event.photos.map(photoPayload),
+    ...(awardVoting ? { awardVoting } : {}),
   });
 });
 
@@ -1196,6 +1312,15 @@ app.get("/api/events/:slug/recap", async (req, res) => {
   if (!event) return res.status(404).json({ error: "Event not found" });
 
   const isRevealed = event.revealAt <= new Date();
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
+  const awardVoting = isRevealed ? await loadAwardVotingSummary(event, { clientId }) : undefined;
+
+  if (event.challenges?.[0]?.type === CHALLENGE_TYPE_EVENT_AWARDS) {
+    trackApiAnalytics("award_votes_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap" } });
+  }
+  if (event.challenges?.[0]?.type === CHALLENGE_TYPE_EVENT_AWARDS) {
+    trackApiAnalytics("award_winner_section_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap" } });
+  }
 
   res.json({
     event: {
@@ -1207,7 +1332,82 @@ app.get("/api/events/:slug/recap", async (req, res) => {
     recapLink: recapUrl(event.slug),
     isLocked: !isRevealed,
     photos: isRevealed ? event.photos.map(photoPayload) : [],
+    ...(awardVoting ? { awardVoting } : {}),
   });
+});
+
+app.post("/api/events/:slug/votes", async (req, res) => {
+  const photoId = String(req.body?.photoId || "").trim();
+  const clientId = String(req.body?.clientId || "").trim();
+  const requestedChallengeItemId = String(req.body?.challengeItemId || "").trim();
+  if (!photoId || !clientId) return res.status(400).json({ error: "photoId and clientId are required" });
+
+  const event = await prisma.event.findUnique({
+    where: { slug: req.params.slug },
+    include: { challenges: activeChallengeInclude() },
+  });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const challenge = event.challenges?.[0] || null;
+  if (challenge?.type !== CHALLENGE_TYPE_EVENT_AWARDS) {
+    return res.status(400).json({ error: "Voting is only available for Event Awards events" });
+  }
+  if (!isAwardVotingEnabled(challenge)) {
+    return res.status(403).json({ error: "Voting is not enabled for this event" });
+  }
+
+  const photo = await prisma.photo.findFirst({
+    where: visiblePhotoWhere({ id: photoId, eventId: event.id }),
+    select: { id: true, eventId: true, challengeItemId: true, challengeItemKind: true },
+  });
+  if (!photo) return res.status(404).json({ error: "Photo is not available for voting" });
+
+  const challengeItemId = requestedChallengeItemId || photo.challengeItemId;
+  const category = categoriesFromConfig(challenge.config).find((item) => item.id === challengeItemId);
+  if (!category || photo.challengeItemId !== category.id || photo.challengeItemKind !== "award") {
+    return res.status(400).json({ error: "Photo is not in that award category" });
+  }
+
+  try {
+    await prisma.photoVote.create({
+      data: {
+        eventId: event.id,
+        photoId: photo.id,
+        challengeItemId: category.id,
+        guestClientId: clientId.slice(0, 160),
+      },
+    });
+
+    trackApiAnalytics("award_vote_cast", {
+      eventId: event.id,
+      eventSlug: event.slug,
+      anonymousId: clientId,
+      metadata: { photoId: photo.id, challengeItemId: category.id, categoryId: category.id },
+    });
+
+    return res.status(201).json({ ok: true, photoId: photo.id, challengeItemId: category.id, selected: true, duplicate: false });
+  } catch (error) {
+    if (error.code === "P2002") {
+      const existingVote = await prisma.photoVote.findUnique({
+        where: {
+          eventId_challengeItemId_guestClientId: {
+            eventId: event.id,
+            challengeItemId: category.id,
+            guestClientId: clientId.slice(0, 160),
+          },
+        },
+        select: { photoId: true },
+      });
+      trackApiAnalytics("award_vote_duplicate_blocked", {
+        eventId: event.id,
+        eventSlug: event.slug,
+        anonymousId: clientId,
+        metadata: { photoId: existingVote?.photoId || photo.id, challengeItemId: category.id, categoryId: category.id },
+      });
+      return res.json({ ok: true, photoId: existingVote?.photoId || photo.id, challengeItemId: category.id, selected: true, duplicate: true });
+    }
+    return res.status(400).json({ error: error.message || "Could not record vote" });
+  }
 });
 
 app.get("/api/events/:slug/guest-status", async (req, res) => {

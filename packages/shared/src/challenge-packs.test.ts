@@ -9,6 +9,8 @@ import {
   applyEventTemplateToDraft,
   buildHostLaunchKit,
   buildChallengeProgressSummary,
+  buildAwardVotingSummary,
+  isAwardVotingEnabled,
   buildChallengePayload,
   buildEventRecapMetadata,
   createDefaultAwardCategories,
@@ -198,6 +200,107 @@ test("report reasons and upload validation stay beta-safe", () => {
   assert.equal(validateUploadFile(null).reason, "missing");
   assert.equal(validateUploadFile({ type: "application/pdf", size: 500 }).reason, "unsupported_type");
   assert.equal(validateUploadFile({ type: "image/png", size: 11 * 1024 * 1024 }).reason, "too_large");
+});
+
+test("award voting defaults to enabled for Event Awards and respects config override", () => {
+  const enabled = isAwardVotingEnabled({
+    type: CHALLENGE_TYPES.EVENT_AWARDS,
+    config: {},
+  } as EventChallenge);
+  const disabled = isAwardVotingEnabled({
+    type: CHALLENGE_TYPES.EVENT_AWARDS,
+    config: { votingEnabled: false },
+  } as EventChallenge);
+  const disabledByString = isAwardVotingEnabled({
+    type: CHALLENGE_TYPES.EVENT_AWARDS,
+    config: { votingEnabled: "false" },
+  } as EventChallenge);
+  const nonAward = isAwardVotingEnabled({
+    type: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
+    config: {},
+  } as EventChallenge);
+
+  assert.equal(enabled, true);
+  assert.equal(disabled, false);
+  assert.equal(disabledByString, false);
+  assert.equal(nonAward, false);
+});
+
+test("award voting summary marks ties, no-submissions, no-votes, and old config categories correctly", () => {
+  const challenge = {
+    type: CHALLENGE_TYPES.EVENT_AWARDS,
+    config: {
+      categories: [
+        { id: "award-one", label: "Funniest Photo", order: 0 },
+        { id: "award-two", label: "Best Outfit", order: 1 },
+        { id: "award-three", label: "Most Wholesome", order: 2 },
+      ],
+    },
+  };
+
+  const photos = [
+    photo({ id: "a", challengeItemId: "award-one" }),
+    photo({ id: "b", challengeItemId: "award-one" }),
+    photo({ id: "c", challengeItemId: "award-two" }),
+    photo({ id: "d", challengeItemId: "award-two" }),
+  ];
+  const votes = [
+    { photoId: "a", challengeItemId: "award-one" },
+    { photoId: "a", challengeItemId: "award-one" },
+    { photoId: "b", challengeItemId: "award-one" },
+    { photoId: "c", challengeItemId: "award-two" },
+    { photoId: "d", challengeItemId: "award-two" },
+  ];
+  const summary = buildAwardVotingSummary({
+    challenge,
+    photos,
+    votes,
+    myVotesByCategory: {
+      "award-one": "a",
+      "award-two": "c",
+    },
+  });
+
+  const funniest = summary.categories.find((category) => category.categoryId === "award-one");
+  const bestOutfit = summary.categories.find((category) => category.categoryId === "award-two");
+  const wholesome = summary.categories.find((category) => category.categoryId === "award-three");
+
+  assert.equal(summary.votingEnabled, true);
+  assert.equal(funniest?.submissionCount, 2);
+  assert.equal(funniest?.totalVotes, 3);
+  assert.equal(funniest?.isTie, false);
+  assert.equal(funniest?.leaderPhotoIds.join(","), "a");
+  assert.equal(funniest?.myVotePhotoId, "a");
+
+  assert.equal(bestOutfit?.submissionCount, 2);
+  assert.equal(bestOutfit?.totalVotes, 2);
+  assert.equal(bestOutfit?.isTie, true);
+  assert.equal(bestOutfit?.leaderPhotoIds.join(","), "c,d");
+
+  assert.equal(wholesome?.submissionCount, 0);
+  assert.equal(wholesome?.noSubmissions, true);
+  assert.equal(wholesome?.noVotes, true);
+});
+
+test("award voting summary ignores votes for photos not in the visible photo set", () => {
+  const summary = buildAwardVotingSummary({
+    challenge: {
+      type: CHALLENGE_TYPES.EVENT_AWARDS,
+      config: {
+        categories: [{ id: "award-one", label: "Funniest Photo", order: 0 }],
+      },
+    },
+    photos: [photo({ id: "visible-photo", challengeItemId: "award-one" })],
+    votes: [
+      { photoId: "visible-photo", challengeItemId: "award-one" },
+      { photoId: "hidden-photo", challengeItemId: "award-one" },
+      { photoId: "deleted-photo", challengeItemId: "award-one" },
+    ],
+  });
+
+  const funniest = summary.categories[0];
+  assert.equal(funniest.totalVotes, 1);
+  assert.equal(funniest.leaderPhotoIds.join(","), "visible-photo");
 });
 
 function photo(input: Partial<Photo>): Photo {
