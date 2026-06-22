@@ -147,6 +147,14 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_feedback_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_feedback_submitted"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_feedback_skipped"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("beta_handoff_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("first_event_checklist_item_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("beta_issue_report_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("beta_issue_submitted"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("host_support_link_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("qr_poster_viewed_from_beta_handoff"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_opened_from_beta_handoff"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_opened_from_beta_handoff"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("repeat_event_cta_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_shared_after_event"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_dashboard_viewed"), true);
@@ -457,14 +465,23 @@ test("host feedback validation supports submit and skip states with bounded text
   });
   const skipped = validateHostFeedback({ skipped: true });
   const invalid = validateHostFeedback({ outcome: "great" });
+  const issue = validateHostFeedback({ kind: "beta_issue", issueArea: "guest_upload", note: "Upload failed on iPhone Safari." });
+  const invalidIssue = validateHostFeedback({ kind: "beta_issue", issueArea: "guest_upload", note: "" });
 
   assert.equal(submitted.ok, true);
   if (submitted.ok) {
+    assert.equal(submitted.value.kind, "post_event");
     assert.equal(submitted.value.guestConfusion, "QR code placement");
     assert.equal(submitted.value.featureRequest?.length, 500);
   }
   assert.equal(skipped.ok, true);
   assert.equal(invalid.ok, false);
+  assert.equal(issue.ok, true);
+  if (issue.ok) {
+    assert.equal(issue.value.kind, "beta_issue");
+    assert.equal(issue.value.issueArea, "guest_upload");
+  }
+  assert.equal(invalidIssue.ok, false);
 });
 
 test("report reasons and upload validation stay beta-safe", () => {

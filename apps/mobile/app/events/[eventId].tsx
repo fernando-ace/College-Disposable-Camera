@@ -19,6 +19,16 @@ function buildWebUrl(event: EventSummary, path: string) {
   }
 }
 
+const BETA_ISSUE_AREAS = [
+  ["guest_upload", "Guest upload"],
+  ["live_wall", "Live Wall"],
+  ["recap", "Recap"],
+  ["qr_poster", "QR or poster"],
+  ["moderation", "Moderation"],
+  ["analytics", "Analytics"],
+  ["other", "Other"],
+] as const;
+
 export default function EventDetailScreen() {
   const { eventId } = useLocalSearchParams<{ eventId: string }>();
   const { api } = useAuth();
@@ -97,6 +107,14 @@ export default function EventDetailScreen() {
     if (!event) return;
     api.trackAnalyticsEvent({
       name: "host_launch_kit_opened",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+    api.trackAnalyticsEvent({
+      name: "beta_handoff_viewed",
       source: "mobile",
       path: `/events/${event.id}`,
       eventId: event.id,
@@ -208,6 +226,8 @@ export default function EventDetailScreen() {
                 </View>
               </Card>
             ) : null}
+            <FirstEventHandoffPanel event={event} />
+            <HostBetaIssuePanel event={event} />
             {lifecycle ? <RepeatEventPanel event={event} lifecycle={lifecycle} /> : null}
             <LinkHealthPanel linkChecks={linkChecks} />
             <EventMetricsPanel summary={analyticsSummary} />
@@ -268,6 +288,162 @@ export default function EventDetailScreen() {
         </>
       ) : null}
     </Screen>
+  );
+}
+
+function FirstEventHandoffPanel({ event }: { event: EventSummary }) {
+  const { api } = useAuth();
+
+  function track(label: string) {
+    api.trackAnalyticsEvent({
+      name: "first_event_checklist_item_clicked",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail", label },
+    }).catch(() => {});
+  }
+
+  function openPoster() {
+    track("open_poster");
+    api.trackAnalyticsEvent({
+      name: "qr_poster_viewed_from_beta_handoff",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+    Linking.openURL(buildWebUrl(event, `/dashboard/events/${event.id}/poster`));
+  }
+
+  function openLiveWall() {
+    track("open_live_wall");
+    api.trackAnalyticsEvent({
+      name: "live_wall_opened_from_beta_handoff",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+    if (event.liveWallLink) Linking.openURL(event.liveWallLink);
+  }
+
+  function openRecap() {
+    track("open_recap");
+    api.trackAnalyticsEvent({
+      name: "recap_opened_from_beta_handoff",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+    if (event.recapLink) Linking.openURL(event.recapLink);
+  }
+
+  return (
+    <Card tone="accent">
+      <SectionHeader title="First beta host handoff" subtitle="Use Guest Upload before and during the event, Live Wall during, and Recap after reveal." />
+      <View style={{ gap: 10 }}>
+        <Body tone="muted">Before: confirm the mode and share the QR poster or guest link.</Body>
+        <Body tone="muted">During: keep Live Wall open and remind guests to use Safari or Chrome.</Body>
+        <Body tone="muted">After: feature favorites, hide off-tone photos, then share Recap.</Body>
+      </View>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 132 }}>
+          <Button tone="secondary" onPress={openPoster}>QR poster</Button>
+        </View>
+        <View style={{ flex: 1, minWidth: 132 }}>
+          <Button tone="secondary" disabled={!event.liveWallLink} onPress={openLiveWall}>Live Wall</Button>
+        </View>
+        <View style={{ flex: 1, minWidth: 132 }}>
+          <Button tone="secondary" disabled={!event.recapLink} onPress={openRecap}>Recap</Button>
+        </View>
+      </View>
+      <Body tone="muted">Upload issues: retry with a smaller image, switch Wi-Fi or cellular, then report a beta issue below if guests still cannot upload.</Body>
+    </Card>
+  );
+}
+
+function HostBetaIssuePanel({ event }: { event: EventSummary }) {
+  const { api } = useAuth();
+  const [open, setOpen] = React.useState(false);
+  const [form, setForm] = React.useState<HostFeedbackInput>({ kind: "beta_issue", issueArea: "guest_upload", note: "" });
+  const [status, setStatus] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+
+  function openForm() {
+    setOpen(true);
+    api.trackAnalyticsEvent({
+      name: "beta_issue_report_opened",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+  }
+
+  function openSupport() {
+    api.trackAnalyticsEvent({
+      name: "host_support_link_clicked",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+    Linking.openURL(buildWebUrl(event, "/support"));
+  }
+
+  async function submitIssue() {
+    const validation = validateHostFeedback(form);
+    if (!validation.ok) {
+      setStatus(validation.message);
+      return;
+    }
+    setBusy(true);
+    setStatus("");
+    try {
+      await api.submitHostEventFeedback(event.id, validation.value);
+      setStatus("Issue sent. Fernando can see it in founder beta ops.");
+      setOpen(false);
+      setForm({ kind: "beta_issue", issueArea: "guest_upload", note: "" });
+    } catch (err) {
+      setStatus((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card>
+      <SectionHeader title="Report a beta issue" subtitle="Host-only, with this event attached. Do not include sensitive guest details." action={!open ? <Button onPress={openForm}>Open</Button> : undefined} />
+      {open ? (
+        <View style={{ gap: 12 }}>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+            {BETA_ISSUE_AREAS.map(([value, label]) => (
+              <Button key={value} tone={form.issueArea === value ? "primary" : "secondary"} onPress={() => setForm((current) => ({ ...current, issueArea: value }))}>{label}</Button>
+            ))}
+          </View>
+          <FieldGroup label="What happened?">
+            <Field value={form.note || ""} onChangeText={(note) => setForm((current) => ({ ...current, note }))} multiline />
+          </FieldGroup>
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+            <View style={{ flex: 1, minWidth: 140 }}>
+              <Button loading={busy} onPress={submitIssue}>Send issue</Button>
+            </View>
+            <View style={{ flex: 1, minWidth: 140 }}>
+              <Button tone="secondary" onPress={openSupport}>Support</Button>
+            </View>
+          </View>
+        </View>
+      ) : null}
+      {status ? <Body tone={status.includes("sent") ? "success" : "danger"}>{status}</Body> : null}
+    </Card>
   );
 }
 

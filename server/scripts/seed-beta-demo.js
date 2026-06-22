@@ -153,6 +153,7 @@ async function main() {
     hostEmail: DEMO_HOST_EMAIL,
     hostPassword: DEMO_HOST_PASSWORD,
     note: "Dev-only demo events contain challenge configs but no fake photos. Upload real test photos through guest links. The storage smoke event is already revealed so album, Live Wall, and Recap can be verified.",
+    temporaryUploadQa: "For visual QA, run npm run smoke:storage against a safe local/deployed target or upload a tiny throwaway image through a demo guest link, then run cleanup. Do not commit uploaded images or seed fake production photos.",
     events: [...events, storageSmokeEvent].map((event) => ({
       name: event.name,
       slug: event.slug,

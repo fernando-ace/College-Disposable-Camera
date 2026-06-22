@@ -120,7 +120,7 @@ test("founder overview helper uses founder endpoint with auth", async () => {
     fetchImpl: (async (url, init) => {
       calls.push(String(url));
       authHeader = String(new Headers(init?.headers).get("Authorization") || "");
-      return new Response(JSON.stringify({ overview: { overview: {}, funnel: {}, recentEvents: [], activeEvents: [], recentUploads: [], recentFeedback: [], reportedPhotos: [], usage: {}, activity: [], metricDefinitions: {}, generatedAt: "now" } }), {
+      return new Response(JSON.stringify({ overview: { overview: {}, funnel: {}, recentEvents: [], activeEvents: [], recentUploads: [], recentFeedback: [], recentBetaIssues: [], reportedPhotos: [], usage: {}, activity: [], metricDefinitions: {}, generatedAt: "now" } }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -255,7 +255,9 @@ test("host feedback helper posts submit and skip payloads", async () => {
 
   await client.submitHostEventFeedback("event-1", { outcome: "great", repeatIntent: "yes", note: "Guests got it." }, "token");
   await client.submitHostEventFeedback("event-1", { skipped: true }, "token");
+  await client.submitHostEventFeedback("event-1", { kind: "beta_issue", issueArea: "guest_upload", note: "Upload stalled." }, "token");
 
   assert.equal(bodies[0], JSON.stringify({ outcome: "great", repeatIntent: "yes", note: "Guests got it." }));
   assert.equal(bodies[1], JSON.stringify({ skipped: true }));
+  assert.equal(bodies[2], JSON.stringify({ kind: "beta_issue", issueArea: "guest_upload", note: "Upload stalled." }));
 });

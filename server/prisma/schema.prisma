@@ -208,6 +208,8 @@ model HostEventFeedback {
   id             String    @id @default(cuid())
   eventId        String
   hostId         String
+  kind           String    @default("post_event")
+  issueArea      String?
   outcome        String?
   repeatIntent   String?
   guestConfusion String?

@@ -45,6 +45,12 @@ npm run seed:beta-demo -w server
 
 The script creates one event for each flagship mode: Color Hunt, Photo Scavenger Hunt, Event Awards, and Memory Capsule. It also creates `eventfilm-beta-demo-storage-smoke`, a revealed dev-only event used by the Supabase storage smoke so album, Live Wall, and Recap visibility can be checked with a real upload. It does not create fake guest testimonials or fake production photos.
 
+For visual QA, keep the default seed photo-free and use one of these temporary paths:
+
+- Run `npm run smoke:storage` against a safe local or deployed smoke event.
+- Upload a tiny throwaway image through a demo guest link, verify guest upload, Live Wall, Recap, moderation, and cleanup.
+- Do not commit real uploaded images, fake production photos, or fake testimonials.
+
 Cleanup:
 
 ```bash
@@ -111,6 +117,20 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Confirm host metrics update after guest, upload, Live Wall, Recap, moderation, feature, and report activity.
 - Confirm analytics records event activity.
 - Run `npm run demo:cleanup` or otherwise remove test data before real beta use.
+
+## Real-Device First Event Checklist
+
+- iPhone Safari: scan the QR poster, open the guest upload page, enter an optional display name, upload from camera/library, and confirm My Uploads.
+- Android Chrome: repeat guest upload, including anonymous continuation.
+- Expo Go host app: open the event, share kit, Live Wall, Recap, metrics, moderation, and beta issue report.
+- Desktop Live Wall: open grid, slideshow, join, challenge, and awards modes when applicable.
+- Desktop Recap: confirm locked state before reveal and full recap after reveal.
+- QR poster scan: scan from printed paper or a second display, not just a copied link.
+- Wi-Fi versus cellular: try at least one upload on each when practical.
+- Large photo upload: try one high-resolution phone photo and confirm friendly behavior if it is too large or slow.
+- Slow network behavior: confirm upload errors/retry copy are understandable and do not trap the guest.
+- Hidden photo behavior: hide one photo and confirm it disappears from guest album, Live Wall, Recap, and public image routes.
+- Beta issue path: submit one non-sensitive test issue from the host event page and confirm founder ops can see it.
 
 ## Host Flow
 

@@ -482,6 +482,14 @@ export const ANALYTICS_EVENT_NAMES = [
   "host_feedback_opened",
   "host_feedback_submitted",
   "host_feedback_skipped",
+  "beta_handoff_viewed",
+  "first_event_checklist_item_clicked",
+  "beta_issue_report_opened",
+  "beta_issue_submitted",
+  "host_support_link_clicked",
+  "qr_poster_viewed_from_beta_handoff",
+  "live_wall_opened_from_beta_handoff",
+  "recap_opened_from_beta_handoff",
   "repeat_event_cta_clicked",
   "recap_shared_after_event",
   "founder_dashboard_viewed",
@@ -493,6 +501,8 @@ export const ANALYTICS_EVENT_NAMES = [
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
 export type AnalyticsSource = "web" | "mobile" | "api";
+export type HostFeedbackKind = "post_event" | "beta_issue";
+export type HostIssueArea = "guest_upload" | "live_wall" | "recap" | "qr_poster" | "moderation" | "analytics" | "other";
 
 export type AwardVoteTotal = {
   photoId: string;
@@ -528,6 +538,8 @@ export type AnalyticsEventInput = {
 };
 
 export type HostFeedbackInput = {
+  kind?: HostFeedbackKind | string | null;
+  issueArea?: HostIssueArea | string | null;
   outcome?: HostFeedbackRating | string | null;
   repeatIntent?: HostFeedbackRepeatIntent | string | null;
   guestConfusion?: string | null;
@@ -537,7 +549,7 @@ export type HostFeedbackInput = {
 };
 
 export type HostFeedbackValidationResult =
-  | { ok: true; value: Required<Pick<HostFeedbackInput, "skipped">> & { outcome: HostFeedbackRating | null; repeatIntent: HostFeedbackRepeatIntent | null; guestConfusion: string | null; featureRequest: string | null; note: string | null } }
+  | { ok: true; value: Required<Pick<HostFeedbackInput, "skipped">> & { kind: HostFeedbackKind; issueArea: HostIssueArea | null; outcome: HostFeedbackRating | null; repeatIntent: HostFeedbackRepeatIntent | null; guestConfusion: string | null; featureRequest: string | null; note: string | null } }
   | { ok: false; message: string };
 
 export const BETA_METRIC_DEFINITIONS = {
@@ -623,6 +635,8 @@ export type FounderFeedbackSummary = {
   hostEmail?: string | null;
   isOwnEvent: boolean;
   hostEventPath?: string | null;
+  kind?: HostFeedbackKind | string | null;
+  issueArea?: HostIssueArea | string | null;
   outcome?: string | null;
   repeatIntent?: string | null;
   guestConfusion?: string | null;
@@ -690,6 +704,7 @@ export type FounderOverview = {
   activeEvents: FounderEventSummary[];
   recentUploads: FounderUploadSummary[];
   recentFeedback: FounderFeedbackSummary[];
+  recentBetaIssues: FounderFeedbackSummary[];
   reportedPhotos: FounderReportedPhotoSummary[];
   usage: FounderUsageInsights;
   activity: FounderActivityItem[];
@@ -1977,11 +1992,33 @@ function cleanFeedbackText(value: unknown, maxLength: number) {
 }
 
 export function validateHostFeedback(input: HostFeedbackInput): HostFeedbackValidationResult {
+  const kind: HostFeedbackKind = input.kind === "beta_issue" ? "beta_issue" : "post_event";
+  const issueAreas: HostIssueArea[] = ["guest_upload", "live_wall", "recap", "qr_poster", "moderation", "analytics", "other"];
+  const issueArea = issueAreas.includes(input.issueArea as HostIssueArea) ? (input.issueArea as HostIssueArea) : null;
   const skipped = Boolean(input.skipped);
   if (skipped) {
     return {
       ok: true,
-      value: { skipped: true, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note: null },
+      value: { skipped: true, kind, issueArea: null, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note: null },
+    };
+  }
+
+  if (kind === "beta_issue") {
+    const note = cleanFeedbackText(input.note, 1000);
+    if (!issueArea) return { ok: false, message: "Choose what the issue is about." };
+    if (!note) return { ok: false, message: "Add a short note so Fernando knows what happened." };
+    return {
+      ok: true,
+      value: {
+        skipped: false,
+        kind,
+        issueArea,
+        outcome: null,
+        repeatIntent: null,
+        guestConfusion: null,
+        featureRequest: null,
+        note,
+      },
     };
   }
 
@@ -1996,6 +2033,8 @@ export function validateHostFeedback(input: HostFeedbackInput): HostFeedbackVali
     ok: true,
     value: {
       skipped: false,
+      kind,
+      issueArea: null,
       outcome,
       repeatIntent,
       guestConfusion: cleanFeedbackText(input.guestConfusion, 500),

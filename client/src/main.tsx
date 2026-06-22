@@ -81,6 +81,16 @@ type DemoPhoto = {
   createdAt: string;
 };
 
+const BETA_ISSUE_AREAS = [
+  ["guest_upload", "Guest upload"],
+  ["live_wall", "Live Wall"],
+  ["recap", "Recap"],
+  ["qr_poster", "QR or poster"],
+  ["moderation", "Moderation"],
+  ["analytics", "Analytics"],
+  ["other", "Other"],
+] as const;
+
 const AuthContext = createContext<AuthContextValue | null>(null);
 const eventFilmApi = createEventFilmApiClient({ baseUrl: API_BASE_URL });
 const api = eventFilmApi.request;
@@ -446,8 +456,8 @@ function LiveDemoPill() {
   );
 }
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return <div className={cx("rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]", className)}>{children}</div>;
+function Card({ children, className = "", id }: { children: React.ReactNode; className?: string; id?: string }) {
+  return <div id={id} className={cx("rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]", className)}>{children}</div>;
 }
 
 function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "colorName" | "colorHex"> }) {
@@ -1300,6 +1310,164 @@ function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: 
           {copyStatus && <p className="mt-3 text-sm font-bold text-amber-800">{copyStatus}</p>}
         </div>
       </div>
+    </Card>
+  );
+}
+
+function BetaHandoffPanel({ event, lifecycle }: { event: EventSummary; lifecycle: EventLifecycle | null }) {
+  useEffect(() => {
+    trackAnalytics("beta_handoff_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
+  }, [event.id, event.slug]);
+
+  function trackChecklist(label: string) {
+    trackAnalytics("first_event_checklist_item_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail", label } });
+  }
+
+  function trackPoster() {
+    trackChecklist("open_poster");
+    trackAnalytics("qr_poster_viewed_from_beta_handoff", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
+  }
+
+  function trackLiveWall(label = "open_live_wall") {
+    trackChecklist(label);
+    trackAnalytics("live_wall_opened_from_beta_handoff", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail", label } });
+  }
+
+  function trackRecap() {
+    trackChecklist("open_recap");
+    trackAnalytics("recap_opened_from_beta_handoff", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
+  }
+
+  const rows = [
+    {
+      title: "Before",
+      copy: "Create the event, confirm the mode, and send the QR or guest link before people arrive.",
+      action: <Link className="inline-flex min-h-10 items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-900" to={`/dashboard/events/${event.id}/poster`} onClick={trackPoster}>Open QR poster</Link>,
+    },
+    {
+      title: "During",
+      copy: "Keep Live Wall open on the room display and remind guests to upload from Safari or Chrome.",
+      action: event.liveWallLink ? <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-900" href={event.liveWallLink} target="_blank" rel="noreferrer" onClick={() => trackLiveWall()}>Open Live Wall</a> : null,
+    },
+    {
+      title: "After",
+      copy: "Feature favorites, hide anything off-tone, share the Recap, then leave a quick host note.",
+      action: event.recapLink ? <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-900" href={event.recapLink} target="_blank" rel="noreferrer" onClick={trackRecap}>Open Recap</a> : null,
+    },
+  ];
+
+  return (
+    <Card className="mt-5 border-[#ffd4c7] bg-[#fff3ee] lg:p-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <StatusPill tone="amber">First beta host handoff</StatusPill>
+          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Run this first event without guessing.</h2>
+          <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-700">{lifecycle?.description || "Use these links in order: guest upload before and during the event, Live Wall during, Recap after reveal."}</p>
+        </div>
+        <a className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#e1d4c5] bg-white px-4 py-2 text-sm font-bold text-stone-900" href="#beta-issue-report" onClick={() => trackChecklist("report_beta_issue")}>Report issue</a>
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        {rows.map((row) => (
+          <div className="rounded-[1.35rem] border border-[#ffd4c7] bg-white/70 p-4" key={row.title}>
+            <p className="text-xs font-extrabold uppercase text-[#d94f33]">{row.title}</p>
+            <p className="mt-2 text-sm font-semibold leading-6 text-stone-700">{row.copy}</p>
+            <div className="mt-4">{row.action}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr]">
+        <div className="rounded-[1.35rem] bg-white p-4">
+          <h3 className="font-display text-xl font-bold text-stone-950">What each link is for</h3>
+          <div className="mt-3 grid gap-2 text-sm text-stone-700">
+            <p><strong className="text-stone-950">Guest upload:</strong> send to guests and put behind the QR code.</p>
+            <p><strong className="text-stone-950">Live Wall:</strong> open on the display while people add photos.</p>
+            <p><strong className="text-stone-950">Recap:</strong> share after reveal once favorites are featured.</p>
+            <p><strong className="text-stone-950">Host dashboard:</strong> manage photos, mode, feedback, and exports.</p>
+          </div>
+        </div>
+        <div className="rounded-[1.35rem] bg-white p-4">
+          <h3 className="font-display text-xl font-bold text-stone-950">If uploads get weird</h3>
+          <div className="mt-3 grid gap-2 text-sm text-stone-700">
+            <p>Try Safari on iPhone or Chrome on Android, then retry from the photo library.</p>
+            <p>Switch between Wi-Fi and cellular if the progress hangs.</p>
+            <p>Choose a smaller image if the file is large or the network is slow.</p>
+            <p>Send a beta issue below if guests still cannot upload.</p>
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+function HostBetaIssuePanel({ event }: { event: EventSummary }) {
+  const auth = useAuth();
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState<HostFeedbackInput>({ kind: "beta_issue", issueArea: "guest_upload", note: "" });
+  const [status, setStatus] = useState("");
+  const [busy, setBusy] = useState(false);
+  const issueTemplate = `EventFilm beta issue\nEvent: ${event.name}\nEvent slug: ${event.slug}\nEvent id: ${event.id}\nWhat happened:\nDevice/browser:\nWhat I tried:`;
+
+  function openForm() {
+    setOpen(true);
+    trackAnalytics("beta_issue_report_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
+  }
+
+  async function copyIssueTemplate() {
+    await copyText(issueTemplate);
+    setStatus("Issue template copied.");
+  }
+
+  async function submitIssue() {
+    const validation = validateHostFeedback(form);
+    if (!validation.ok) {
+      setStatus(validation.message);
+      return;
+    }
+    setBusy(true);
+    setStatus("");
+    try {
+      await eventFilmApi.submitHostEventFeedback(event.id, validation.value, auth.token);
+      setStatus("Issue sent. Fernando can see it in founder beta ops.");
+      setForm({ kind: "beta_issue", issueArea: "guest_upload", note: "" });
+      setOpen(false);
+    } catch (err) {
+      setStatus((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Card id="beta-issue-report" className="mt-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <StatusPill tone="plum">Beta support</StatusPill>
+          <h3 className="mt-3 font-display text-2xl font-bold text-stone-950">Something off during the event?</h3>
+          <p className="mt-2 max-w-2xl text-sm text-stone-600">Send a short host-only issue with this event attached. Avoid phone numbers, private guest details, or anything sensitive.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" onClick={openForm}>{open ? "Issue form open" : "Report issue"}</Button>
+          <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900" to="/support" onClick={() => trackAnalytics("host_support_link_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } })}>Support</Link>
+        </div>
+      </div>
+
+      {open ? (
+        <div className="mt-5 grid gap-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            {BETA_ISSUE_AREAS.map(([value, label]) => (
+              <button type="button" className={cx("rounded-[1.15rem] border px-4 py-3 text-sm font-extrabold", form.issueArea === value ? "border-[#e85d3f] bg-[#fff3ee] text-[#653e00]" : "border-[#eadfce] bg-white text-stone-700")} onClick={() => setForm((current) => ({ ...current, issueArea: value }))} key={value}>{label}</button>
+            ))}
+          </div>
+          <TextArea rows={4} value={form.note || ""} onChange={(input) => setForm((current) => ({ ...current, note: input.target.value }))} placeholder="What happened? Include device/browser only if useful." />
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="button" disabled={busy} onClick={submitIssue}>{busy ? "Sending..." : "Send issue"}</Button>
+            <SecondaryButton type="button" onClick={copyIssueTemplate}>Copy issue template</SecondaryButton>
+          </div>
+        </div>
+      ) : null}
+      {status ? <p className="mt-3 text-sm font-bold text-amber-800">{status}</p> : null}
     </Card>
   );
 }
@@ -2408,6 +2576,24 @@ function FounderDashboard() {
         ))}
       </section>
 
+      <section className="mt-8 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+        <Card>
+          <StatusPill tone="amber">First event checklist</StatusPill>
+          <h2 className="mt-3 font-display text-2xl font-bold">Run the first beta event</h2>
+          <div className="mt-4 grid gap-3 text-sm font-semibold text-stone-700">
+            {[
+              "Confirm one real event has guest, poster, Live Wall, and Recap links.",
+              "Watch guest joins, uploads, contributors, Live Wall opens, and Recap opens.",
+              "Check Event Awards votes if the event uses awards.",
+              "Review beta issues, host feedback, reported photos, and hidden photos after the event.",
+            ].map((item, index) => (
+              <p className="rounded-[1.15rem] bg-[#fffaf6] p-4" key={item}><strong className="text-[#653e00]">{index + 1}.</strong> {item}</p>
+            ))}
+          </div>
+        </Card>
+        <FounderBetaIssueInbox issues={overview.recentBetaIssues || []} />
+      </section>
+
       <section className="mt-8 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
         <Card>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -2518,6 +2704,39 @@ function FounderEventList({ title, events, empty, onOpen }: { title: string; eve
           </div>
         ))}
         {!events.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">{empty}</p>}
+      </div>
+    </Card>
+  );
+}
+
+function FounderBetaIssueInbox({ issues }: { issues: FounderOverview["recentBetaIssues"] }) {
+  return (
+    <Card>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-display text-2xl font-bold">Beta issue watchlist</h2>
+          <p className="mt-1 text-sm text-stone-600">Host-submitted beta issues with event context attached.</p>
+        </div>
+        <StatusPill tone={issues.length ? "amber" : "green"}>{issues.length}</StatusPill>
+      </div>
+      <div className="mt-4 grid gap-4">
+        {issues.map((item) => (
+          <div className="rounded-[1.25rem] bg-[#fffaf6] p-4" key={item.id}>
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-display text-xl font-bold text-stone-950">{item.eventName}</h3>
+                <p className="mt-1 text-sm text-stone-600">{item.hostEmail || "Unknown host"} - {formatDateTime(item.createdAt)}</p>
+              </div>
+              <StatusPill tone="amber">{String(item.issueArea || "issue").replace(/_/g, " ")}</StatusPill>
+            </div>
+            {item.note && <p className="mt-3 rounded-[1rem] bg-white p-3 text-sm font-semibold text-stone-700">{item.note}</p>}
+            <div className="mt-3 flex flex-wrap gap-2">
+              {item.hostEventPath && <Link className="rounded-full bg-stone-950 px-3 py-2 text-xs font-bold text-white hover:bg-stone-800" to={item.hostEventPath}>Open event</Link>}
+              <span className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-600">Slug: {item.eventSlug}</span>
+            </div>
+          </div>
+        ))}
+        {!issues.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">No beta issues have been reported.</p>}
       </div>
     </Card>
   );
@@ -2930,6 +3149,8 @@ function ManageEvent() {
 
           <section className="mt-8">
             <HostLaunchKitPanel event={event} qrCodeDataUrl={event.qrCodeDataUrl} />
+            <BetaHandoffPanel event={event} lifecycle={lifecycle} />
+            <HostBetaIssuePanel event={event} />
             {lifecycle ? <div className="mt-5"><RepeatEventActions event={event} lifecycle={lifecycle} /></div> : null}
             <div className="mt-4 grid gap-3 rounded-3xl bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
               <p className="text-sm font-semibold text-stone-600">Visible export excludes hidden and reported photos by default.</p>

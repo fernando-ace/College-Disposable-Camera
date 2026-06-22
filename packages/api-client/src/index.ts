@@ -137,6 +137,8 @@ export type FounderOverviewResponse = {
 
 export type HostEventFeedback = {
   id: string;
+  kind?: string | null;
+  issueArea?: string | null;
   outcome?: string | null;
   repeatIntent?: string | null;
   guestConfusion?: string | null;

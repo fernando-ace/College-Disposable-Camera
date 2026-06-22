@@ -48,6 +48,7 @@ test("founder overview handles empty beta state", async () => {
   assert.equal(overview.overview.totalEvents, 0);
   assert.deepEqual(overview.recentEvents, []);
   assert.deepEqual(overview.reportedPhotos, []);
+  assert.deepEqual(overview.recentBetaIssues, []);
   assert.equal(overview.usage.eventAwardsVotes, 0);
   assert.match(overview.metricDefinitions.activeHostsLast30Days, /created at least one event/i);
 });

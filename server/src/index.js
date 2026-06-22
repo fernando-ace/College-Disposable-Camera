@@ -135,6 +135,14 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "host_feedback_opened",
   "host_feedback_submitted",
   "host_feedback_skipped",
+  "beta_handoff_viewed",
+  "first_event_checklist_item_clicked",
+  "beta_issue_report_opened",
+  "beta_issue_submitted",
+  "host_support_link_clicked",
+  "qr_poster_viewed_from_beta_handoff",
+  "live_wall_opened_from_beta_handoff",
+  "recap_opened_from_beta_handoff",
   "repeat_event_cta_clicked",
   "recap_shared_after_event",
   "founder_dashboard_viewed",
@@ -181,6 +189,8 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "duplicateEventId",
   "repeatIntent",
   "feedbackOutcome",
+  "feedbackKind",
+  "issueArea",
   "skipped",
   "exportFormat",
 ]);
@@ -708,8 +718,16 @@ function cleanFeedbackText(value, maxLength) {
 }
 
 function validateHostFeedback(input = {}) {
+  const kind = input.kind === "beta_issue" ? "beta_issue" : "post_event";
+  const issueArea = ["guest_upload", "live_wall", "recap", "qr_poster", "moderation", "analytics", "other"].includes(input.issueArea) ? input.issueArea : null;
   if (input.skipped) {
-    return { skipped: true, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note: null };
+    return { skipped: true, kind, issueArea: null, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note: null };
+  }
+  if (kind === "beta_issue") {
+    const note = cleanFeedbackText(input.note, 1000);
+    if (!issueArea) throw new Error("Choose what the issue is about.");
+    if (!note) throw new Error("Add a short note so Fernando knows what happened.");
+    return { skipped: false, kind, issueArea, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note };
   }
   const outcome = ["great", "okay", "rough"].includes(input.outcome) ? input.outcome : null;
   const repeatIntent = ["yes", "maybe", "no"].includes(input.repeatIntent) ? input.repeatIntent : null;
@@ -717,6 +735,8 @@ function validateHostFeedback(input = {}) {
   if (!repeatIntent) throw new Error("Choose whether you would use EventFilm again.");
   return {
     skipped: false,
+    kind,
+    issueArea: null,
     outcome,
     repeatIntent,
     guestConfusion: cleanFeedbackText(input.guestConfusion, 500),
@@ -729,6 +749,8 @@ function hostFeedbackPayload(feedback) {
   if (!feedback) return null;
   return {
     id: feedback.id,
+    kind: feedback.kind,
+    issueArea: feedback.issueArea,
     outcome: feedback.outcome,
     repeatIntent: feedback.repeatIntent,
     guestConfusion: feedback.guestConfusion,
@@ -970,7 +992,7 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       select: { anonymousIdHash: true },
     }),
     prisma.hostEventFeedback.findFirst({
-      where: { eventId: event.id, hostId: req.user.userId },
+      where: { eventId: event.id, hostId: req.user.userId, kind: "post_event" },
       orderBy: { createdAt: "desc" },
     }),
   ]);
@@ -1222,6 +1244,8 @@ app.post("/api/host/events/:eventId/feedback", requireAuth, async (req, res) => 
     data: {
       eventId: event.id,
       hostId: req.user.userId,
+      kind: feedbackInput.kind,
+      issueArea: feedbackInput.issueArea,
       outcome: feedbackInput.outcome,
       repeatIntent: feedbackInput.repeatIntent,
       guestConfusion: feedbackInput.guestConfusion,
@@ -1231,12 +1255,14 @@ app.post("/api/host/events/:eventId/feedback", requireAuth, async (req, res) => 
     },
   });
 
-  trackApiAnalytics(feedbackInput.skipped ? "host_feedback_skipped" : "host_feedback_submitted", {
+  trackApiAnalytics(feedbackInput.kind === "beta_issue" ? "beta_issue_submitted" : feedbackInput.skipped ? "host_feedback_skipped" : "host_feedback_submitted", {
     userId: req.user.userId,
     eventId: event.id,
     eventSlug: event.slug,
     metadata: {
       skipped: feedbackInput.skipped,
+      feedbackKind: feedbackInput.kind,
+      issueArea: feedbackInput.issueArea,
       feedbackOutcome: feedbackInput.outcome,
       repeatIntent: feedbackInput.repeatIntent,
     },

@@ -2,6 +2,8 @@ import { expect, test } from "@playwright/test";
 
 const apiUrl = (process.env.EVENTFILM_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 const seededSlug = process.env.EVENTFILM_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-memory-capsule";
+const demoHostEmail = process.env.DEMO_HOST_EMAIL || "fernando+eventfilm-demo@example.com";
+const demoHostPassword = process.env.DEMO_HOST_PASSWORD || "eventfilm-beta-demo";
 
 test.describe("EventFilm browser smoke", () => {
   test.beforeEach(async ({ page }) => {
@@ -76,5 +78,34 @@ test.describe("EventFilm browser smoke", () => {
 
     await page.goto(`/recap/${seededSlug}`);
     await expect(page.locator("body")).toContainText(/Recap|EventFilm Beta Demo|locked/i);
+  });
+
+  test("seeded host event shows beta handoff and issue-report entry", async ({ page, request }) => {
+    const health = await request.get(`${apiUrl}/api/health`);
+    test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
+
+    const eventResponse = await request.get(`${apiUrl}/api/events/${seededSlug}`);
+    test.skip(!eventResponse.ok(), `Seeded event ${seededSlug} not found. Run npm run demo:seed first.`);
+    const eventPayload = await eventResponse.json();
+    const eventId = eventPayload.event?.id;
+    test.skip(!eventId, `Seeded event ${seededSlug} did not include an id.`);
+
+    const login = await request.post(`${apiUrl}/api/auth/login`, {
+      data: { email: demoHostEmail, password: demoHostPassword },
+    });
+    test.skip(!login.ok(), `Demo host login failed. Run npm run demo:seed first.`);
+    const auth = await login.json();
+
+    await page.addInitScript(({ token, user }) => {
+      window.localStorage.setItem("eventfilm_token", token);
+      window.localStorage.setItem("eventfilm_user", JSON.stringify(user));
+    }, { token: auth.token, user: auth.user });
+
+    await page.goto(`/dashboard/events/${eventId}`);
+    await expect(page.getByText(/First beta host handoff/i)).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Run this first event without guessing/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Something off during the event/i })).toBeVisible();
+    await page.getByRole("button", { name: /Report issue/i }).click();
+    await expect(page.getByPlaceholder(/What happened/i)).toBeVisible();
   });
 });
