@@ -103,9 +103,20 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "award_winner_section_viewed",
   "award_host_voting_summary_viewed",
   "award_voting_toggled",
+  "guest_name_entered",
+  "guest_continued_anonymous",
+  "upload_success_action_clicked",
+  "guest_my_uploads_viewed",
+  "guest_album_opened",
+  "guest_recap_opened",
+  "challenge_progress_viewed",
+  "guest_share_clicked",
+  "guest_returned_to_event",
 ]);
 const PHOTO_VISIBILITY_VISIBLE = "VISIBLE";
 const PHOTO_VISIBILITY_HIDDEN = "HIDDEN";
+const ANONYMOUS_GUEST_DISPLAY_NAME = "Anonymous guest";
+const MAX_GUEST_DISPLAY_NAME_LENGTH = 40;
 const PHOTO_REPORT_REASON_MAP = new Map([
   ["inappropriate", "INAPPROPRIATE"],
   ["privacy", "PRIVACY"],
@@ -132,6 +143,9 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "visibilityStatus",
   "templateSlug",
   "promptPackSlug",
+  "method",
+  "photoCount",
+  "remainingUploads",
 ]);
 
 const upload = multer({
@@ -349,6 +363,12 @@ function visiblePhotoWhere(extra = {}) {
 
 function activePhotoWhere(extra = {}) {
   return { deletedAt: null, ...extra };
+}
+
+function sanitizeGuestDisplayName(value) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return ANONYMOUS_GUEST_DISPLAY_NAME;
+  return normalized.slice(0, MAX_GUEST_DISPLAY_NAME_LENGTH).trim() || ANONYMOUS_GUEST_DISPLAY_NAME;
 }
 
 function parseBooleanFlag(value) {
@@ -1434,6 +1454,32 @@ app.get("/api/events/:slug/guest-status", async (req, res) => {
   res.json({ uploadedCount: used, remainingUploads: Math.max(event.photoLimitPerGuest - used, 0), nickname: guest?.nickname || null });
 });
 
+app.get("/api/events/:slug/my-uploads", async (req, res) => {
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: "clientId is required" });
+
+  const event = await prisma.event.findUnique({ where: { slug: req.params.slug } });
+  if (!event) return res.status(404).json({ error: "Event not found" });
+
+  const guest = await prisma.guest.findUnique({
+    where: { eventId_clientId: { eventId: event.id, clientId: String(clientId) } },
+    include: {
+      _count: { select: { photos: { where: activePhotoWhere() } } },
+      photos: {
+        where: visiblePhotoWhere(),
+        orderBy: { createdAt: "desc" },
+        include: { guest: true, challengeParticipant: true },
+      },
+    },
+  });
+  const used = guest?._count.photos || 0;
+  res.json({
+    uploadedCount: used,
+    remainingUploads: Math.max(event.photoLimitPerGuest - used, 0),
+    photos: (guest?.photos || []).map(photoPayload),
+  });
+});
+
 app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), async (req, res) => {
   let uploadedObjectKey;
 
@@ -1465,9 +1511,6 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
         return res.status(400).json({ error: "Selected Color Hunt participant is not valid for this event" });
       }
     } else if (activeChallenge?.type === CHALLENGE_TYPE_PHOTO_SCAVENGER_HUNT) {
-      if (!nickname?.trim()) {
-        return res.status(400).json({ error: "Enter your name or nickname first" });
-      }
       if (!challengePromptId) {
         return res.status(400).json({ error: "Choose a Photo Scavenger Hunt prompt before uploading" });
       }
@@ -1476,9 +1519,6 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
         return res.status(400).json({ error: "Selected Photo Scavenger Hunt prompt is not valid for this event" });
       }
     } else if (activeChallenge?.type === CHALLENGE_TYPE_EVENT_AWARDS) {
-      if (!nickname?.trim()) {
-        return res.status(400).json({ error: "Enter your name or nickname first" });
-      }
       if (!challengeItemId) {
         return res.status(400).json({ error: "Choose an Event Awards category before uploading" });
       }
@@ -1486,16 +1526,14 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
       if (!selectedAwardCategory) {
         return res.status(400).json({ error: "Selected Event Awards category is not valid for this event" });
       }
-    } else if (!nickname?.trim()) {
-      return res.status(400).json({ error: "Nickname and clientId are required" });
     }
 
-    const uploadNickname = selectedParticipant ? selectedParticipant.displayName : nickname.trim();
+    const uploadNickname = selectedParticipant ? selectedParticipant.displayName : sanitizeGuestDisplayName(nickname);
 
     const guest = await prisma.guest.upsert({
-      where: { eventId_clientId: { eventId: event.id, clientId } },
+      where: { eventId_clientId: { eventId: event.id, clientId: String(clientId) } },
       update: { nickname: uploadNickname },
-      create: { eventId: event.id, clientId, nickname: uploadNickname },
+      create: { eventId: event.id, clientId: String(clientId), nickname: uploadNickname },
     });
 
     const used = await prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, guestId: guest.id }) });

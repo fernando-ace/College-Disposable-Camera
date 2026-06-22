@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useLocalSearchParams } from "expo-router";
+import { Link, useLocalSearchParams } from "expo-router";
 import { Alert, View } from "react-native";
 import type { Photo, PublicEvent } from "@eventfilm/shared";
 import { CHALLENGE_TYPES, memoryCapsuleFromChallenge } from "@eventfilm/shared";
@@ -69,6 +69,11 @@ export default function AlbumScreen() {
           body={capsuleCopy?.revealNote || `Photos unlock at ${new Date(event.revealAt).toLocaleString()}. Guests can still upload before then.`}
         />
       ) : null}
+      {event ? (
+        <Link href={{ pathname: "/(tabs)/upload", params: { eventLink: event.slug } }} asChild>
+          <Button tone="secondary">Upload photos</Button>
+        </Link>
+      ) : null}
 
       {event?.isRevealed ? (
         <>
@@ -79,7 +84,7 @@ export default function AlbumScreen() {
               <Button tone="secondary" onPress={() => reportPhoto(photo)}>Report photo</Button>
             </View>
           )) : (
-            <EmptyState title="No photos have been shared yet" body="Once guests upload, their photos will appear here after the reveal." />
+            <EmptyState title="No photos have been shared yet" body="Use the upload button to add the first memory from this device." />
           )}
         </>
       ) : null}

@@ -7,6 +7,9 @@ import {
   EVENT_TEMPLATES,
   PROMPT_PACKS,
   applyEventTemplateToDraft,
+  buildContributorSummary,
+  buildGuestChallengeProgress,
+  buildGuestUploadSuccessSummary,
   buildHostLaunchKit,
   buildHostShareAssets,
   buildChallengeProgressSummary,
@@ -20,12 +23,14 @@ import {
   getChallengePack,
   getEventTemplate,
   getPromptPack,
+  isAnonymousGuestDisplayName,
   normalizeReportReason,
+  sanitizeGuestDisplayName,
   validateUploadFile,
   visiblePhotos,
   validateChallengeDraft,
 } from "./index.ts";
-import type { EventChallenge, EventSummary, Photo } from "./index.ts";
+import type { EventChallenge, EventSummary, GuestUploadLocalMetadata, Photo, PublicEvent } from "./index.ts";
 
 test("registry exposes every supported mode with unique slugs", () => {
   assert.deepEqual(
@@ -102,6 +107,15 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_shared"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_share_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("native_share_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_name_entered"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_continued_anonymous"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("upload_success_action_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_my_uploads_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_album_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_recap_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("challenge_progress_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_share_clicked"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_returned_to_event"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
 });
 
@@ -210,6 +224,97 @@ test("report reasons and upload validation stay beta-safe", () => {
   assert.equal(validateUploadFile(null).reason, "missing");
   assert.equal(validateUploadFile({ type: "application/pdf", size: 500 }).reason, "unsupported_type");
   assert.equal(validateUploadFile({ type: "image/png", size: 11 * 1024 * 1024 }).reason, "too_large");
+});
+
+test("guest display names are optional, sanitized, and length limited", () => {
+  assert.equal(sanitizeGuestDisplayName("  Mia   Chen  "), "Mia Chen");
+  assert.equal(sanitizeGuestDisplayName(""), "Anonymous guest");
+  assert.equal(sanitizeGuestDisplayName(null), "Anonymous guest");
+  assert.equal(sanitizeGuestDisplayName("a".repeat(80)), "a".repeat(40));
+  assert.equal(isAnonymousGuestDisplayName("anonymous guest"), true);
+  assert.equal(isAnonymousGuestDisplayName("Mia"), false);
+});
+
+test("guest upload success summary describes identity and challenge context", () => {
+  const event = {
+    id: "event",
+    name: "Spring Formal",
+    slug: "spring-formal",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    isRevealed: false,
+    photoCount: null,
+    eventTemplateSlug: null,
+    promptPackSlug: null,
+    challenge: { id: "challenge", type: CHALLENGE_TYPES.MEMORY_CAPSULE, title: "Capsule", instructions: "Upload now.", participants: [], config: { revealNote: "Come back after reveal.", revealTitle: "Unlock soon" } },
+  } satisfies PublicEvent;
+  const summary = buildGuestUploadSuccessSummary({
+    event,
+    photo: photo({ guestNickname: "", challengeItemLabel: "Best candid" }),
+    remainingUploads: 2,
+  });
+
+  assert.equal(summary.title, "Upload succeeded");
+  assert.equal(summary.guestDisplayName, "Anonymous guest");
+  assert.equal(summary.challengeLabel, "Memory Capsule");
+  assert.equal(summary.detail, "Best candid");
+  assert.equal(summary.remainingUploads, 2);
+  assert.equal(summary.revealNote, "Come back after reveal.");
+});
+
+test("contributor summary stays positive and ignores anonymous labels", () => {
+  const summary = buildContributorSummary([
+    photo({ id: "one", guestNickname: "Mia" }),
+    photo({ id: "two", guestNickname: "Mia" }),
+    photo({ id: "three", guestNickname: "Anonymous guest" }),
+    photo({ id: "four", guestNickname: "Alex" }),
+    photo({ id: "hidden", guestNickname: "Sam", visibilityStatus: "HIDDEN" }),
+  ]);
+
+  assert.equal(summary.totalPhotos, 4);
+  assert.equal(summary.contributorCount, 2);
+  assert.deepEqual(summary.topContributors, [
+    { displayName: "Mia", photoCount: 2 },
+    { displayName: "Alex", photoCount: 1 },
+  ]);
+});
+
+test("guest challenge progress includes selected guest context", () => {
+  const challenge = {
+    id: "challenge",
+    type: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
+    title: "Scavenger",
+    instructions: "Pick a prompt.",
+    participants: [],
+    prompts: [
+      { id: "one", text: "Best dance move", order: 0 },
+      { id: "two", text: "Final group photo", order: 1 },
+    ],
+  } satisfies EventChallenge;
+
+  const progress = buildGuestChallengeProgress(challenge, [photo({ challengePromptId: "one", challengeItemId: "one" })], { promptId: "two" });
+
+  assert.equal(progress.mode, CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT);
+  assert.equal(progress.selectedLabel, "Final group photo");
+  assert.match(progress.headline, /1 of 2 prompts/);
+  assert.match(progress.note, /Current prompt/);
+});
+
+test("guest upload local metadata records only local-safe upload details", () => {
+  const metadata = {
+    photoId: "photo-1",
+    uploadedAt: "2026-01-01T00:00:00.000Z",
+    guestDisplayName: sanitizeGuestDisplayName("Jordan"),
+    challengeLabel: "Best candid",
+  } satisfies GuestUploadLocalMetadata;
+
+  assert.deepEqual(metadata, {
+    photoId: "photo-1",
+    uploadedAt: "2026-01-01T00:00:00.000Z",
+    guestDisplayName: "Jordan",
+    challengeLabel: "Best candid",
+  });
 });
 
 test("award voting defaults to enabled for Event Awards and respects config override", () => {

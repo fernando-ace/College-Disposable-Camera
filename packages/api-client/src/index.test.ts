@@ -124,6 +124,24 @@ test("live wall and recap helpers accept optional clientId query", async () => {
   assert.equal(calls[1], "https://api.eventfilm.test/api/events/abc/recap?clientId=client-1");
 });
 
+test("guest my uploads helper sends clientId query", async () => {
+  const calls: string[] = [];
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ uploadedCount: 1, remainingUploads: 4, photos: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  const data = await client.getGuestMyUploads("spring formal", "client 1");
+  assert.deepEqual(data, { uploadedCount: 1, remainingUploads: 4, photos: [] });
+  assert.equal(calls[0], "https://api.eventfilm.test/api/events/spring%20formal/my-uploads?clientId=client%201");
+});
+
 test("award vote endpoint helper sends requested payload", async () => {
   const calls: string[] = [];
   let seenBody = "";

@@ -41,6 +41,8 @@ export const PHOTO_REPORT_REASONS: PhotoReportReason[] = ["inappropriate", "priv
 export const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"] as const;
 export const DEFAULT_MAX_UPLOAD_SIZE_MB = 10;
 export const DEFAULT_MAX_UPLOAD_SIZE_BYTES = DEFAULT_MAX_UPLOAD_SIZE_MB * 1024 * 1024;
+export const ANONYMOUS_GUEST_DISPLAY_NAME = "Anonymous guest";
+export const MAX_GUEST_DISPLAY_NAME_LENGTH = 40;
 
 export type UploadValidationResult =
   | { ok: true }
@@ -170,6 +172,39 @@ export type ChallengeProgressSummary = {
   rows: ChallengeProgressRow[];
 };
 
+export type GuestChallengeProgress = ChallengeProgressSummary & {
+  headline: string;
+  note: string;
+  selectedLabel?: string;
+};
+
+export type GuestUploadLocalMetadata = {
+  photoId: string;
+  uploadedAt: ISODateString;
+  guestDisplayName: string;
+  challengeLabel?: string;
+};
+
+export type GuestUploadSuccessSummary = {
+  title: string;
+  guestDisplayName: string;
+  challengeLabel: string;
+  detail: string;
+  remainingUploads: number;
+  revealNote?: string;
+};
+
+export type ContributorSummaryItem = {
+  displayName: string;
+  photoCount: number;
+};
+
+export type ContributorSummary = {
+  contributorCount: number;
+  totalPhotos: number;
+  topContributors: ContributorSummaryItem[];
+};
+
 export type EventRecapMetadata = {
   modeLabel: string;
   templateName?: string;
@@ -291,6 +326,15 @@ export const ANALYTICS_EVENT_NAMES = [
   "award_winner_section_viewed",
   "award_host_voting_summary_viewed",
   "award_voting_toggled",
+  "guest_name_entered",
+  "guest_continued_anonymous",
+  "upload_success_action_clicked",
+  "guest_my_uploads_viewed",
+  "guest_album_opened",
+  "guest_recap_opened",
+  "challenge_progress_viewed",
+  "guest_share_clicked",
+  "guest_returned_to_event",
 ] as const;
 
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
@@ -904,6 +948,16 @@ export function validateUploadFile(input: { type?: string | null; size?: number 
   return { ok: true };
 }
 
+export function sanitizeGuestDisplayName(input: unknown) {
+  const normalized = String(input || "").replace(/\s+/g, " ").trim();
+  if (!normalized) return ANONYMOUS_GUEST_DISPLAY_NAME;
+  return normalized.slice(0, MAX_GUEST_DISPLAY_NAME_LENGTH).trim() || ANONYMOUS_GUEST_DISPLAY_NAME;
+}
+
+export function isAnonymousGuestDisplayName(input: unknown) {
+  return sanitizeGuestDisplayName(input).toLowerCase() === ANONYMOUS_GUEST_DISPLAY_NAME.toLowerCase();
+}
+
 export function isPhotoVisible(photo: Pick<Photo, "visibilityStatus">) {
   return (photo.visibilityStatus || "VISIBLE") === "VISIBLE";
 }
@@ -1367,9 +1421,55 @@ function countUniqueContributors(photos: Photo[]) {
   const contributors = new Set<string>();
   photos.forEach((photo) => {
     const value = photo.guestNickname || photo.challengeParticipantName;
-    if (value?.trim()) contributors.add(value.trim().toLowerCase());
+    if (value?.trim() && !isAnonymousGuestDisplayName(value)) contributors.add(value.trim().toLowerCase());
   });
   return contributors.size;
+}
+
+function contributorDisplayName(photo: Pick<Photo, "guestNickname" | "challengeParticipantName">) {
+  return sanitizeGuestDisplayName(photo.challengeParticipantName || photo.guestNickname);
+}
+
+export function buildContributorSummary(photos: Photo[], limit = 3): ContributorSummary {
+  const counts = new Map<string, ContributorSummaryItem>();
+  const sortedPhotos = visiblePhotos(photos);
+  for (const photo of sortedPhotos) {
+    const displayName = contributorDisplayName(photo);
+    if (isAnonymousGuestDisplayName(displayName)) continue;
+    const key = displayName.toLowerCase();
+    const current = counts.get(key) || { displayName, photoCount: 0 };
+    current.photoCount += 1;
+    counts.set(key, current);
+  }
+
+  return {
+    contributorCount: counts.size,
+    totalPhotos: sortedPhotos.length,
+    topContributors: Array.from(counts.values())
+      .sort((a, b) => b.photoCount - a.photoCount || a.displayName.localeCompare(b.displayName))
+      .slice(0, limit),
+  };
+}
+
+export function buildGuestUploadSuccessSummary({
+  event,
+  photo,
+  remainingUploads,
+}: {
+  event: Pick<PublicEvent, "challenge" | "isRevealed" | "revealAt">;
+  photo: Photo;
+  remainingUploads: number;
+}): GuestUploadSuccessSummary {
+  const capsuleCopy = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+  const challengeDetail = photoChallengeLabel(photo);
+  return {
+    title: "Upload succeeded",
+    guestDisplayName: contributorDisplayName(photo),
+    challengeLabel: challengeLabel(event.challenge),
+    detail: challengeDetail || "Added to the event album",
+    remainingUploads,
+    revealNote: capsuleCopy && !event.isRevealed ? capsuleCopy.revealNote : undefined,
+  };
 }
 
 function byCreatedAtDesc(a: Pick<Photo, "createdAt">, b: Pick<Photo, "createdAt">) {
@@ -1448,6 +1548,68 @@ export function buildChallengeProgressSummary(challenge: EventChallenge | null |
     instructions: challenge.instructions || pack.guestInstructions,
     totalPhotos,
     rows: [],
+  };
+}
+
+export function buildGuestChallengeProgress(
+  challenge: EventChallenge | null | undefined,
+  photos: Photo[],
+  selection: { participantId?: string; promptId?: string; itemId?: string } = {},
+): GuestChallengeProgress {
+  const summary = buildChallengeProgressSummary(challenge, photos);
+  const mode = challenge?.type || "NONE";
+  if (!challenge) {
+    return {
+      ...summary,
+      headline: `${summary.totalPhotos} ${summary.totalPhotos === 1 ? "photo" : "photos"} in the album`,
+      note: "Every upload helps build the event story.",
+    };
+  }
+
+  if (mode === CHALLENGE_TYPES.COLOR_HUNT) {
+    const selected = challenge.participants.find((participant) => participant.id === selection.participantId);
+    return {
+      ...summary,
+      headline: "Color teams are filling the album",
+      note: selected ? `You are posting for ${selected.displayName}.` : "Pick a color team before uploading.",
+      selectedLabel: selected?.displayName,
+    };
+  }
+
+  if (mode === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
+    const selected = promptsFromChallenge(challenge).find((prompt) => prompt.id === selection.promptId);
+    const completed = summary.rows.filter((row) => row.count > 0).length;
+    return {
+      ...summary,
+      headline: `${completed} of ${summary.rows.length} prompts have photos`,
+      note: selected ? `Current prompt: ${selected.text}` : "Choose a prompt and complete it with a photo.",
+      selectedLabel: selected?.text,
+    };
+  }
+
+  if (mode === CHALLENGE_TYPES.EVENT_AWARDS) {
+    const selected = categoriesFromChallenge(challenge).find((category) => category.id === selection.itemId);
+    return {
+      ...summary,
+      headline: "Award categories are collecting contenders",
+      note: selected ? `Submitting for ${selected.label}. Vote from the recap after reveal.` : "Pick an award category for your upload.",
+      selectedLabel: selected?.label,
+    };
+  }
+
+  if (mode === CHALLENGE_TYPES.MEMORY_CAPSULE) {
+    const capsuleCopy = memoryCapsuleFromChallenge(challenge);
+    return {
+      ...summary,
+      headline: capsuleCopy.revealTitle,
+      note: capsuleCopy.revealNote,
+    };
+  }
+
+  return {
+    ...summary,
+    headline: "Challenge progress",
+    note: summary.instructions,
   };
 }
 

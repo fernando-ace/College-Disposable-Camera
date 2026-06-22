@@ -2,8 +2,8 @@ import * as React from "react";
 import * as ImagePicker from "expo-image-picker";
 import { Link, useLocalSearchParams } from "expo-router";
 import { Image, View } from "react-native";
-import type { ChallengeCategory, ChallengeParticipant, ChallengePrompt, PublicEvent } from "@eventfilm/shared";
-import { CHALLENGE_TYPES, categoriesFromChallenge, challengeLabel, getChallengePack, memoryCapsuleFromChallenge, promptsFromChallenge, validateUploadFile } from "@eventfilm/shared";
+import type { ChallengeCategory, ChallengeParticipant, ChallengePrompt, GuestUploadSuccessSummary, PublicEvent } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, buildGuestUploadSuccessSummary, categoriesFromChallenge, challengeLabel, getChallengePack, memoryCapsuleFromChallenge, promptsFromChallenge, sanitizeGuestDisplayName, validateUploadFile } from "@eventfilm/shared";
 import {
   Badge,
   Body,
@@ -21,7 +21,7 @@ import {
   TaskHeader,
 } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
-import { getGuestClientId, slugFromInput } from "../../src/guest-session";
+import { getGuestClientId, getGuestDisplayName, setGuestDisplayName, slugFromInput } from "../../src/guest-session";
 
 export default function UploadScreen() {
   const { eventLink } = useLocalSearchParams<{ eventLink?: string }>();
@@ -38,6 +38,7 @@ export default function UploadScreen() {
   const [uploadedPreviewUri, setUploadedPreviewUri] = React.useState("");
   const [remaining, setRemaining] = React.useState<number | null>(null);
   const [message, setMessage] = React.useState("");
+  const [uploadSuccess, setUploadSuccess] = React.useState<GuestUploadSuccessSummary | null>(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [findingEvent, setFindingEvent] = React.useState(false);
@@ -53,13 +54,13 @@ export default function UploadScreen() {
     && remaining !== 0
     && (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT || Boolean(selectedParticipant))
     && (event?.challenge?.type !== CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT || Boolean(selectedPrompt))
-    && (event?.challenge?.type !== CHALLENGE_TYPES.EVENT_AWARDS || Boolean(selectedAward))
-    && (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT || Boolean(nickname.trim()));
+    && (event?.challenge?.type !== CHALLENGE_TYPES.EVENT_AWARDS || Boolean(selectedAward));
 
   const loadEvent = React.useCallback(async (nextInput = input) => {
     const nextSlug = slugFromInput(nextInput);
     setSlug(nextSlug);
     setMessage("");
+    setUploadSuccess(null);
     setError("");
     setEvent(null);
     setFindingEvent(true);
@@ -71,11 +72,13 @@ export default function UploadScreen() {
     try {
       const nextClientId = await getGuestClientId(nextSlug);
       setClientId(nextClientId);
+      const savedDisplayName = await getGuestDisplayName(nextSlug);
+      if (savedDisplayName) setNickname(savedDisplayName);
       const eventData = await api.getPublicEventBySlug(nextSlug);
       setEvent(eventData.event);
       const status = await api.getGuestStatus(nextSlug, nextClientId);
       setRemaining(status.remainingUploads);
-      if (status.nickname) setNickname(status.nickname);
+      if (status.nickname && status.nickname !== "Anonymous guest") setNickname(status.nickname);
     } catch (err) {
       setError(`${(err as Error).message}. Check the event link and your API connection, then try again.`);
     } finally {
@@ -92,6 +95,7 @@ export default function UploadScreen() {
   async function choosePhoto(source: "camera" | "library") {
     setError("");
     setMessage("");
+    setUploadSuccess(null);
 
     try {
       const permission =
@@ -134,7 +138,6 @@ export default function UploadScreen() {
     if (event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Choose your Color Hunt team first.");
     if (event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a scavenger prompt first.");
     if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an award category first.");
-    if (event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim()) return setError("Enter your name or nickname first.");
 
     setLoading(true);
     setError("");
@@ -146,15 +149,17 @@ export default function UploadScreen() {
           name: asset.fileName || "eventfilm-photo.jpg",
           type: asset.mimeType || "image/jpeg",
         },
-        nickname: selectedParticipant?.displayName || nickname.trim(),
+        nickname: selectedParticipant?.displayName || sanitizeGuestDisplayName(nickname),
         clientId,
         challengeParticipantId: selectedParticipant?.id,
         challengePromptId: selectedPrompt?.id,
         challengeItemId: selectedAward?.id,
       });
+      if (event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT) await setGuestDisplayName(slug, nickname);
       setUploadedPreviewUri(asset.uri);
       setAsset(null);
       setRemaining(data.remainingUploads);
+      setUploadSuccess(buildGuestUploadSuccessSummary({ event, photo: data.photo, remainingUploads: data.remainingUploads }));
       setMessage(event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT ? "Photo uploaded. Pick another prompt or upload another angle." : event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? "Photo submitted for the award category." : "Photo uploaded.");
     } catch (err) {
       setError(`${(err as Error).message}. Check your connection or choose a smaller image, then try again.`);
@@ -217,10 +222,13 @@ export default function UploadScreen() {
           />
 
           <Card>
-            <SectionHeader title="Upload a photo" subtitle="Choose a camera shot or pick from your library." />
+            <SectionHeader title="Upload a photo" subtitle="Choose a camera shot or pick from your library. No account needed." />
             {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT ? (
-              <FieldGroup label="Name or nickname" helper="This appears with your upload in the album.">
-                <Field placeholder="Your name" value={nickname} onChangeText={setNickname} autoCapitalize="words" />
+              <FieldGroup label="Name or nickname" helper="Optional. Leave blank to post as Anonymous guest.">
+                <Field placeholder="Optional" value={nickname} onChangeText={(value) => {
+                  setNickname(value);
+                  if (slug) setGuestDisplayName(slug, value).catch(() => {});
+                }} autoCapitalize="words" />
               </FieldGroup>
             ) : selectedParticipant ? (
               <Card tone="warm" padding={12}>
@@ -261,6 +269,22 @@ export default function UploadScreen() {
             {!asset && uploadedPreviewUri ? (
               <View style={{ gap: 10 }}>
                 <Image source={{ uri: uploadedPreviewUri }} style={{ width: "100%", aspectRatio: 1, borderRadius: 22, opacity: 0.9 }} />
+                {uploadSuccess ? (
+                  <Card tone="warm" padding={14}>
+                    <Badge tone="green">{uploadSuccess.title}</Badge>
+                    <SectionHeader title={`Thanks, ${uploadSuccess.guestDisplayName}`} subtitle={`${uploadSuccess.challengeLabel} - ${uploadSuccess.detail}`} />
+                    <Body tone="muted">{uploadSuccess.remainingUploads} uploads left.</Body>
+                    {uploadSuccess.revealNote ? <Body tone="muted">{uploadSuccess.revealNote}</Body> : null}
+                    {event.isRevealed ? (
+                      <Link href={`/album/${event.slug}`} asChild>
+                        <Button tone="secondary">View album</Button>
+                      </Link>
+                    ) : null}
+                    {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? (
+                      <Body tone="muted">Vote on awards from the recap after reveal.</Body>
+                    ) : null}
+                  </Card>
+                ) : null}
                 <SuccessState message={message || "Photo uploaded."} />
               </View>
             ) : message ? <SuccessState message={message} /> : null}

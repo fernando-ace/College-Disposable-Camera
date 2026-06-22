@@ -10,6 +10,9 @@ import {
   EVENT_TEMPLATES,
   PROMPT_PACKS,
   applyEventTemplateToDraft,
+  buildContributorSummary,
+  buildGuestChallengeProgress,
+  buildGuestUploadSuccessSummary,
   buildHostLaunchKit,
   buildHostShareAssets,
   buildChallengeProgressSummary,
@@ -36,10 +39,11 @@ import {
   memoryCapsuleFromChallenge,
   photoChallengeLabel,
   promptsFromChallenge,
+  sanitizeGuestDisplayName,
   validateUploadFile,
   validateChallengeDraft,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, HostLaunchKit, HostShareAssets, HostShareLinkCard, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventSummary, EventTemplateSlug, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostLaunchKit, HostShareAssets, HostShareLinkCard, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, User } from "@eventfilm/shared";
 import "./styles.css";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -268,6 +272,38 @@ function getGuestSession(slug: string) {
   if (saved) return { key, session: JSON.parse(saved) as { clientId: string; nickname: string } };
   const clientId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
   return { key, session: { clientId, nickname: "" } };
+}
+
+function getGuestUploadMetadataKey(slug: string) {
+  return `eventfilm_guest_uploads_${slug}`;
+}
+
+function loadGuestUploadMetadata(slug: string): GuestUploadLocalMetadata[] {
+  try {
+    const saved = localStorage.getItem(getGuestUploadMetadataKey(slug));
+    if (!saved) return [];
+    const parsed = JSON.parse(saved);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is GuestUploadLocalMetadata => Boolean(item?.photoId && item?.uploadedAt && item?.guestDisplayName));
+  } catch {
+    return [];
+  }
+}
+
+function saveGuestUploadMetadata(slug: string, uploads: GuestUploadLocalMetadata[]) {
+  localStorage.setItem(getGuestUploadMetadataKey(slug), JSON.stringify(uploads.slice(0, 40)));
+}
+
+function recordGuestUploadMetadata(slug: string, photo: Photo) {
+  const nextItem: GuestUploadLocalMetadata = {
+    photoId: photo.id,
+    uploadedAt: photo.createdAt,
+    guestDisplayName: sanitizeGuestDisplayName(photo.challengeParticipantName || photo.guestNickname),
+    challengeLabel: photoChallengeLabel(photo) || undefined,
+  };
+  const existing = loadGuestUploadMetadata(slug).filter((item) => item.photoId !== photo.id);
+  saveGuestUploadMetadata(slug, [nextItem, ...existing]);
+  return [nextItem, ...existing];
 }
 
 function getChallengeParticipantSession(slug: string) {
@@ -2159,6 +2195,7 @@ function ManageEvent() {
     return true;
   }) || [];
   const visiblePhotos = event?.photos.filter(isPhotoVisible) || [];
+  const hostContributorSummary = buildContributorSummary(visiblePhotos);
   const hiddenCount = event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0;
   const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
   const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
@@ -2222,6 +2259,21 @@ function ManageEvent() {
                 ].map(([label, value], index) => (
                   <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 1 ? "accent" : index === 2 ? "green" : index === 3 ? "plum" : "default"} />
                 ))}
+              </div>
+              <div className="mt-4 rounded-[1.45rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h3 className="font-display text-2xl font-bold text-stone-950">Contributor summary</h3>
+                    <p className="mt-1 text-sm font-semibold text-stone-600">{hostContributorSummary.totalPhotos} visible photos from {hostContributorSummary.contributorCount || "guest"} {hostContributorSummary.contributorCount === 1 ? "contributor" : "contributors"}.</p>
+                  </div>
+                  {hostContributorSummary.topContributors.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {hostContributorSummary.topContributors.map((contributor) => (
+                        <span className="rounded-full bg-[#fffaf6] px-3 py-2 text-xs font-extrabold text-[#653e00]" key={contributor.displayName}>{contributor.displayName}: {contributor.photoCount}</span>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
               </div>
               <HostAwardVotingSummary awardVoting={eventAnalytics.eventAwardsVoting} photos={event.photos} onFeatureWinner={(photo) => updatePhotoFeatured(photo, true)} />
             </section>
@@ -2653,6 +2705,7 @@ function LiveWall() {
 
   const event = data?.event;
   const summary = event ? buildChallengeProgressSummary(event.challenge, data.photos) : null;
+  const contributors = data ? buildContributorSummary(data.photos) : null;
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
 
   return (
@@ -2707,6 +2760,7 @@ function LiveWall() {
               <p className="text-sm font-bold uppercase tracking-wide">Live count</p>
               <p className="mt-2 font-display text-6xl font-bold">{data.photos.length}</p>
               <p className="text-sm font-bold">photos uploaded</p>
+              {contributors ? <p className="mt-2 text-sm font-bold">{contributors.contributorCount || "Guest"} {contributors.contributorCount === 1 ? "contributor" : "contributors"}</p> : null}
               {error && <p className="mt-4 rounded-2xl bg-red-100 p-3 text-sm font-bold text-red-800">{error}</p>}
               <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-[1rem] bg-white px-4 py-2 text-sm font-bold text-[#d94f33]" onClick={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment.")))}>Refresh now</button>
             </section>
@@ -2758,6 +2812,7 @@ function RecapSharePanel({ event, data, assets, hasWinners }: { event: PublicEve
         surface: "recap",
       });
       trackAnalytics("recap_share_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", method: "native_or_copy" } });
+      trackAnalytics("guest_share_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", method: "native_or_copy" } });
     } catch (err) {
       setStatus((err as Error).message);
     }
@@ -2793,6 +2848,7 @@ function EventRecap() {
 
   useEffect(() => {
     trackAnalytics("recap_opened", { eventSlug: slug, path: `/recap/${slug}` });
+    trackAnalytics("guest_recap_opened", { eventSlug: slug, path: `/recap/${slug}`, metadata: { surface: "recap" } });
     loadRecap()
       .catch((err) => setError(publicRouteErrorMessage(err, "Recap is not available right now. Check the event link or try again after reveal.")));
   }, [slug]);
@@ -2801,6 +2857,7 @@ function EventRecap() {
   const summary = event ? buildChallengeProgressSummary(event.challenge, data.photos) : null;
   const recap = event ? buildEventRecapMetadata(event, data.photos) : null;
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+  const contributors = data ? buildContributorSummary(data.photos) : null;
   const shareAssets = event
     ? buildHostShareAssets({
         ...event,
@@ -2845,6 +2902,10 @@ function EventRecap() {
                     <span className="rounded-full bg-white/10 px-4 py-2">Event: {formatDateTime(event.eventDate)}</span>
                     <span className="rounded-full bg-white/10 px-4 py-2">Reveal: {formatDateTime(event.revealAt)}</span>
                   </div>
+                  <div className="mt-6 flex flex-wrap gap-3">
+                    <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" to={`/e/${slug}`} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>Upload photos</Link>
+                    {data.eventLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" href={data.eventLink} onClick={() => trackAnalytics("guest_share_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_guest_link" } })}>Share event</a> : null}
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="rounded-[1.35rem] bg-white/10 p-5">
@@ -2855,6 +2916,16 @@ function EventRecap() {
                     <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Contributors</p>
                     <p className="mt-2 font-display text-5xl font-bold">{recap?.contributorCount || 0}</p>
                   </div>
+                  {contributors?.topContributors.length ? (
+                    <div className="col-span-2 rounded-[1.35rem] bg-white/10 p-5">
+                      <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Top contributors</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {contributors.topContributors.map((contributor) => (
+                          <span className="rounded-full bg-white/10 px-3 py-2 text-xs font-extrabold text-white" key={contributor.displayName}>{contributor.displayName}: {contributor.photoCount}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {shareAssets ? <div className="col-span-2"><RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} /></div> : null}
                 </div>
               </div>
@@ -2923,14 +2994,20 @@ function GuestEvent() {
   const promptSelectRef = useRef<HTMLSelectElement | null>(null);
   const itemSelectRef = useRef<HTMLSelectElement | null>(null);
   const joinedTrackedRef = useRef(false);
+  const returnedTrackedRef = useRef(false);
+  const nameChoiceTrackedRef = useRef(false);
+  const progressTrackedRef = useRef(false);
   const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [myUploads, setMyUploads] = useState<Photo[]>([]);
+  const [localUploads, setLocalUploads] = useState<GuestUploadLocalMetadata[]>(() => loadGuestUploadMetadata(slug));
   const [file, setFile] = useState<File | null>(null);
   const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showScavengerSuccessActions, setShowScavengerSuccessActions] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState<GuestUploadSuccessSummary | null>(null);
   const [awardVoting, setAwardVoting] = useState<AwardVotingSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
@@ -2938,6 +3015,16 @@ function GuestEvent() {
   async function load() {
     const eventData = await api<{ event: PublicEvent }>(`/api/events/${slug}`);
     setEvent(eventData.event);
+    const rememberedUploads = loadGuestUploadMetadata(slug);
+    setLocalUploads(rememberedUploads);
+    if (rememberedUploads.length && !returnedTrackedRef.current) {
+      returnedTrackedRef.current = true;
+      trackAnalytics("guest_returned_to_event", {
+        eventId: eventData.event.id,
+        eventSlug: eventData.event.slug,
+        metadata: { photoCount: rememberedUploads.length },
+      });
+    }
     if (!joinedTrackedRef.current) {
       joinedTrackedRef.current = true;
       trackAnalytics("guest_joined_event", {
@@ -2949,6 +3036,9 @@ function GuestEvent() {
     const status = await api<{ remainingUploads: number; nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
     setRemaining(status.remainingUploads);
     if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && status.nickname && !nickname) setNickname(status.nickname);
+    const myUploadData = await eventFilmApi.getGuestMyUploads(slug, session.clientId);
+    setMyUploads(myUploadData.photos);
+    trackAnalytics("guest_my_uploads_viewed", { eventId: eventData.event.id, eventSlug: eventData.event.slug, metadata: { surface: "guest_upload", photoCount: myUploadData.photos.length } });
     if (eventData.event.isRevealed) {
       if (eventData.event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
         const recapData = await eventFilmApi.getRecapData(slug, session.clientId);
@@ -3013,6 +3103,10 @@ function GuestEvent() {
     const nextSession = { ...session, nickname: nextNickname };
     localStorage.setItem(key, JSON.stringify(nextSession));
     setGuestSessionState({ key, session: nextSession });
+    if (nextNickname.trim() && !nameChoiceTrackedRef.current) {
+      nameChoiceTrackedRef.current = true;
+      trackAnalytics("guest_name_entered", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
+    }
   }
 
   function saveSelectedParticipant(participantId: string) {
@@ -3049,6 +3143,7 @@ function GuestEvent() {
     setMessage("");
     setError("");
     setShowScavengerSuccessActions(false);
+    setUploadSuccess(null);
 
     if (loading) return;
     const validation = validateUploadFile(file);
@@ -3060,11 +3155,14 @@ function GuestEvent() {
     if (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Select your Color Hunt name first");
     if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a Photo Scavenger Hunt prompt first");
     if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an Event Awards category first");
-    if (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim()) return setError("Enter your name or nickname first");
+    if (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim() && !nameChoiceTrackedRef.current) {
+      nameChoiceTrackedRef.current = true;
+      trackAnalytics("guest_continued_anonymous", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
+    }
 
     const formData = new FormData();
     formData.append("photo", file);
-    formData.append("nickname", selectedParticipant?.displayName || nickname.trim());
+    formData.append("nickname", selectedParticipant?.displayName || sanitizeGuestDisplayName(nickname));
     formData.append("clientId", session.clientId);
     if (selectedParticipant?.id) formData.append("challengeParticipantId", selectedParticipant.id);
     if (selectedPrompt?.id) formData.append("challengePromptId", selectedPrompt.id);
@@ -3073,10 +3171,13 @@ function GuestEvent() {
     setLoading(true);
     trackAnalytics("photo_upload_started", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
     try {
-      const data = await api<{ remainingUploads: number }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
+      const data = await api<{ photo: Photo; remainingUploads: number }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
       trackAnalytics("photo_upload_succeeded", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
       setFile(null);
       setRemaining(data.remainingUploads);
+      const nextLocalUploads = recordGuestUploadMetadata(slug, data.photo);
+      setLocalUploads(nextLocalUploads);
+      setUploadSuccess(buildGuestUploadSuccessSummary({ event: event as PublicEvent, photo: data.photo, remainingUploads: data.remainingUploads }));
       if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
         setMessage("Photo uploaded. Want to complete another prompt?");
         setShowScavengerSuccessActions(true);
@@ -3102,6 +3203,16 @@ function GuestEvent() {
   const selectedAward = guestAwards.find((category) => category.id === selectedItemId);
   const activePack = getChallengePack(event?.challenge?.type || "NONE");
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+  const guestProgress = event ? buildGuestChallengeProgress(event.challenge, photos, { participantId: selectedParticipantId, promptId: selectedPromptId, itemId: selectedItemId }) : null;
+  const contributorSummary = buildContributorSummary(photos);
+  const visibleMyUploadIds = new Set(myUploads.map((photo) => photo.id));
+  const unavailableUploads = localUploads.filter((item) => !visibleMyUploadIds.has(item.photoId));
+
+  useEffect(() => {
+    if (!event || !guestProgress || progressTrackedRef.current) return;
+    progressTrackedRef.current = true;
+    trackAnalytics("challenge_progress_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { mode: guestProgress.mode, surface: "guest_upload" } });
+  }, [event?.id, guestProgress?.mode]);
 
   function uploadAnotherForPrompt() {
     trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
@@ -3116,6 +3227,10 @@ function GuestEvent() {
     setMessage("");
     setError("");
     setTimeout(() => promptSelectRef.current?.focus(), 0);
+  }
+
+  function trackUploadSuccessAction(action: string) {
+    trackAnalytics("upload_success_action_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload", label: action } });
   }
 
   async function reportSelectedPhoto(reason: PhotoReportReason, note: string) {
@@ -3228,7 +3343,7 @@ function GuestEvent() {
 
           <form className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6" onSubmit={uploadPhoto}>
             <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
-            <p className="mt-2 text-stone-600">{event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT ? "Pick a photo and send it to the private album." : "Add your name, choose a photo, and send it in."}</p>
+            <p className="mt-2 text-stone-600">{event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT ? "Pick a photo and send it to the private album." : "Use a nickname or continue anonymous, then send in your photo."}</p>
             {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && selectedParticipant && (
               <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p>
             )}
@@ -3240,8 +3355,9 @@ function GuestEvent() {
             )}
             {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && (
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-                Name or nickname
-                <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="John Doe" required />
+                Display name or nickname
+                <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="Optional" />
+                <span className="text-xs font-semibold text-stone-500">No account needed. Leave blank to post as Anonymous guest.</span>
               </label>
             )}
             <p className="mt-4 rounded-[1rem] bg-[#fffaf6] p-3 text-sm font-bold text-stone-700">
@@ -3269,8 +3385,37 @@ function GuestEvent() {
                 </div>
               </div>
             )}
-            {message && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm text-green-700">{message}</p>}
-            {message && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
+            {uploadSuccess && (
+              <section className="mt-4 rounded-[1.35rem] border border-green-100 bg-green-50 p-4 text-green-950">
+                <p className="text-xs font-extrabold uppercase tracking-wide text-green-700">{uploadSuccess.title}</p>
+                <h3 className="mt-2 font-display text-2xl font-bold">Thanks, {uploadSuccess.guestDisplayName}.</h3>
+                <div className="mt-3 grid gap-2 text-sm font-bold text-green-900 sm:grid-cols-2">
+                  <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.challengeLabel}</span>
+                  <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.detail}</span>
+                  <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.remainingUploads} uploads left</span>
+                  {uploadSuccess.revealNote ? <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.revealNote}</span> : null}
+                </div>
+                <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                  <SecondaryButton type="button" onClick={() => {
+                    trackUploadSuccessAction("upload_another");
+                    setUploadSuccess(null);
+                    setMessage("");
+                    setError("");
+                  }}>Upload another</SecondaryButton>
+                  {event.isRevealed ? <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/e/${slug}`} onClick={() => {
+                    trackUploadSuccessAction("view_album");
+                    trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "upload_success" } });
+                  }}>View album</Link> : null}
+                  {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`} onClick={() => trackUploadSuccessAction("vote_on_awards")}>Vote on awards</Link> : null}
+                  <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`} onClick={() => {
+                    trackUploadSuccessAction("open_recap");
+                    trackAnalytics("guest_recap_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "upload_success" } });
+                  }}>Open recap</Link>
+                </div>
+              </section>
+            )}
+            {message && !uploadSuccess && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm text-green-700">{message}</p>}
+            {message && !uploadSuccess && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
               <Link className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`}>Vote on awards</Link>
             )}
             {showScavengerSuccessActions && (
@@ -3287,6 +3432,72 @@ function GuestEvent() {
             <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Uploading..." : "Upload photo"}</Button>
           </form>
 
+          {guestProgress && (
+            <section className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <StatusPill>{guestProgress.modeLabel}</StatusPill>
+                  <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{guestProgress.headline}</h2>
+                  <p className="mt-2 text-sm font-semibold text-stone-600">{guestProgress.note}</p>
+                </div>
+                <div className="rounded-2xl bg-[#fffaf6] p-4 text-center">
+                  <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Contributed</p>
+                  <p className="font-display text-3xl font-bold text-stone-950">{guestProgress.totalPhotos}</p>
+                </div>
+              </div>
+              {guestProgress.rows.length ? (
+                <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                  {guestProgress.rows.slice(0, 6).map((row) => (
+                    <div className="rounded-2xl bg-stone-50 p-4" key={row.id}>
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="min-w-0 truncate text-sm font-bold text-stone-900">{row.label}</p>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-extrabold text-[#653e00]">{row.count}</span>
+                      </div>
+                      {row.colorHex ? <div className="mt-3 h-2 rounded-full" style={{ backgroundColor: row.colorHex }} /> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 rounded-2xl bg-stone-50 p-4 text-sm font-bold text-stone-600">No challenge steps to track. Every photo counts.</p>
+              )}
+            </section>
+          )}
+
+          <section className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <StatusPill>My uploads</StatusPill>
+                <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Photos from this browser</h2>
+                <p className="mt-2 text-sm font-semibold text-stone-600">No account needed. This only remembers uploads on this device.</p>
+              </div>
+              <span className="rounded-full bg-stone-100 px-4 py-2 text-sm font-extrabold text-stone-700">{myUploads.length} visible</span>
+            </div>
+            {myUploads.length ? (
+              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+                {myUploads.map((photo) => (
+                  <figure className="overflow-hidden rounded-3xl border border-[#eadfce] bg-[#fffaf6] p-2" key={photo.id}>
+                    <img className="aspect-square w-full rounded-2xl object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                    <figcaption className="p-2 text-xs font-bold text-stone-700">
+                      <span className="block truncate">{photo.challengeParticipantName || photo.guestNickname || "Anonymous guest"}</span>
+                      {photoChallengeLabel(photo) ? <span className="mt-1 block truncate text-[#653e00]">{photoChallengeLabel(photo)}</span> : null}
+                    </figcaption>
+                  </figure>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-5 rounded-2xl bg-stone-50 p-4 text-sm font-bold text-stone-600">Uploads from this browser will appear here after they are accepted.</p>
+            )}
+            {unavailableUploads.length ? (
+              <div className="mt-4 grid gap-2">
+                {unavailableUploads.slice(0, 4).map((item) => (
+                  <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-900" key={item.photoId}>
+                    {item.challengeLabel || "Uploaded photo"} is not available publicly right now.
+                  </p>
+                ))}
+              </div>
+            ) : null}
+          </section>
+
           {!event.isRevealed && (
             <section className="mt-8 rounded-3xl border border-amber-200 bg-amber-50 p-5">
               <h2 className="font-display text-2xl font-bold text-[#653e00]">{capsuleCopy?.revealTitle || "Album"}</h2>
@@ -3296,7 +3507,19 @@ function GuestEvent() {
 
           {event.isRevealed && (
             <section className="mt-8">
-              <h2 className="font-display text-2xl font-bold">Album</h2>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="font-display text-2xl font-bold">Album</h2>
+                  <p className="mt-1 text-sm font-semibold text-stone-600">{photos.length} revealed photos from {contributorSummary.contributorCount || "the"} {contributorSummary.contributorCount === 1 ? "contributor" : "contributors"}.</p>
+                </div>
+                {contributorSummary.topContributors.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {contributorSummary.topContributors.map((contributor) => (
+                      <span className="rounded-full bg-[#fffaf6] px-3 py-2 text-xs font-extrabold text-[#653e00]" key={contributor.displayName}>{contributor.displayName}: {contributor.photoCount}</span>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
               {awardVoting && (
                 <div className="mt-4">
                   <AwardVotingPanel event={event} photos={photos} awardVoting={awardVoting} clientId={session.clientId} surface="guest_album" onVoteComplete={load} />

@@ -81,6 +81,12 @@ export type EventRecapResponse = {
   awardVoting?: AwardVotingSummary;
 };
 
+export type GuestMyUploadsResponse = {
+  uploadedCount: number;
+  remainingUploads: number;
+  photos: Photo[];
+};
+
 export type AwardVoteRequest = {
   photoId: string;
   clientId: string;
@@ -375,6 +381,9 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     },
     getGuestStatus(slug: string, clientId: string) {
       return request<GuestStatus>(`/api/events/${encodeURIComponent(slug)}/guest-status?clientId=${encodeURIComponent(clientId)}`);
+    },
+    getGuestMyUploads(slug: string, clientId: string) {
+      return request<GuestMyUploadsResponse>(`/api/events/${encodeURIComponent(slug)}/my-uploads?clientId=${encodeURIComponent(clientId)}`);
     },
     uploadPhoto,
     reportPhoto(photoId: string, input: ReportPhotoInput) {

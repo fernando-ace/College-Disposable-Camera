@@ -15,6 +15,14 @@ export async function getGuestClientId(slug: string) {
   return clientId;
 }
 
+export async function getGuestDisplayName(slug: string) {
+  return (await SecureStore.getItemAsync(`eventfilm_guest_name_${slug}`)) || "";
+}
+
+export async function setGuestDisplayName(slug: string, displayName: string) {
+  await SecureStore.setItemAsync(`eventfilm_guest_name_${slug}`, displayName);
+}
+
 export function slugFromInput(input: string) {
   const trimmed = input.trim();
   if (!trimmed) return "";
