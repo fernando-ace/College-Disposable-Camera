@@ -356,7 +356,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("heading", { name: "Your event is ready." })).toHaveCount(0);
     await expect(page).not.toHaveURL(/created=1/);
 
-    await page.goto(`/dashboard/events/${eventId}`);
+    await page.goto(`/dashboard/events/${eventId}?tab=share`);
     await expect(page.getByText(/Next step/i).first()).toBeVisible();
     await expect(page.getByText("Before the event").first()).toBeVisible();
     await expect(page.getByText("During the event").first()).toBeVisible();
@@ -447,8 +447,8 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto(`/dashboard/events/${eventId}?tab=settings`);
     await page.getByText("Help and repeat event").click();
     await expect(page.getByRole("button", { name: "Create similar event" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Something off during the event/i })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /Report issue/i })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /Something off during the event/i })).toBeVisible();
+    await expect(page.getByRole("button", { name: /Report issue/i })).toBeVisible();
   });
 
   test("guest can upload without signing in when local storage smoke is enabled", async ({ page, request }) => {
