@@ -2457,7 +2457,7 @@ function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSumma
     sections.push({ key, title, description, kind, photos: selected });
   };
 
-  addSection("featured", "Host favorites", "Photos the host marked as the moments everyone should see first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
+  addSection("featured", "Best moments", "Photos the host marked as favorites for everyone to see first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
 
   const winnerIds = (awardVoting?.categories || []).flatMap((category) => category.leaderPhotoIds);
   addSection("award-winners", "Award winners", "Winning and tied Event Awards photos from the recap vote.", "award_winner", photosByIds(sortedPhotos, winnerIds));
@@ -2466,17 +2466,17 @@ function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSumma
     .flatMap((category) => category.voteTotals)
     .sort((a, b) => b.voteCount - a.voteCount)
     .map((vote) => vote.photoId);
-  addSection("most-voted", "Guest picks", "Photos with votes from guests, ranked before the rest of the album.", "voted", photosByIds(sortedPhotos, votedIds));
+  addSection("most-voted", "Guest picks", "Photos guests voted for, ranked before the rest of the album.", "voted", photosByIds(sortedPhotos, votedIds));
 
   addSection(
     "challenge-moments",
-    "Challenge moments",
+    "Photo prompts",
     "Photos tied to teams, prompts, award categories, or event-specific moments.",
     "challenge",
     sortedPhotos.filter((photo) => Boolean(photo.challengeItemId || photo.challengePromptId || photo.challengeParticipantId || photo.challengeColorName)),
   );
 
-  addSection("recent", "Fresh from the album", "Recent visible photos keep the event story moving when there are no curated picks yet.", "recent", sortedPhotos);
+  addSection("recent", "Recent moments", "Recent photos keep the event story moving when there are no curated picks yet.", "recent", sortedPhotos);
 
   return sections;
 }
@@ -2487,8 +2487,8 @@ function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined
     return [
       {
         key: "shared-album",
-        title: "Shared album highlights",
-        description: photos.length ? "The recap is built from the photos guests added together." : "The album is ready for the first guest uploads.",
+        title: "Photos from the event",
+        description: photos.length ? "The recap is built from the photos guests added together." : "Photos will appear here once guests start uploading.",
         count: photos.length,
         photos: photos.slice(0, 4),
         isComplete: photos.length > 0,
@@ -2501,7 +2501,7 @@ function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined
     return [
       {
         key: "opened-memories",
-        title: capsule.revealTitle || "Opened memories",
+        title: "The Memory Capsule is open",
         description: photos.length ? "The capsule is open, and these are the memories guests left for reveal time." : capsule.revealNote,
         count: photos.length,
         photos: photos.slice(0, 4),
@@ -2542,12 +2542,12 @@ function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined
 function buildRecapAlbumFilters(challenge: EventChallenge | null | undefined, photos: Photo[]): EventRecapAlbumFilter[] {
   const sortedPhotos = sortPhotosForRecap(photos);
   const filters: EventRecapAlbumFilter[] = [
-    { key: "all", label: "All", count: sortedPhotos.length, photoIds: photoIds(sortedPhotos) },
+    { key: "all", label: "Photos from the event", count: sortedPhotos.length, photoIds: photoIds(sortedPhotos) },
   ];
   const featured = sortedPhotos.filter((photo) => Boolean(photo.isFeatured));
-  if (featured.length) filters.push({ key: "featured", label: "Featured", count: featured.length, photoIds: photoIds(featured) });
+  if (featured.length) filters.push({ key: "featured", label: "Best moments", count: featured.length, photoIds: photoIds(featured) });
   const recent = sortedPhotos.slice(0, Math.min(12, sortedPhotos.length));
-  if (recent.length && recent.length !== sortedPhotos.length) filters.push({ key: "recent", label: "Recent", count: recent.length, photoIds: photoIds(recent) });
+  if (recent.length && recent.length !== sortedPhotos.length) filters.push({ key: "recent", label: "Recent moments", count: recent.length, photoIds: photoIds(recent) });
 
   for (const row of buildChallengeProgressSummary(challenge, sortedPhotos).rows) {
     const rowPhotos = photosForChallengeMoment(sortedPhotos, row);
@@ -2577,32 +2577,32 @@ export function buildEventRecapStory(
   const challengeHeadline = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !isLocked
     ? "Opened memories"
     : event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
-      ? "Event Awards moments"
+      ? "Award winners"
       : event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT
-        ? "Color team recap"
+        ? "Color Hunt progress"
         : event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT
-          ? "Scavenger Hunt progress"
-          : "The shared album story";
+          ? "Photo prompt progress"
+          : "Photos from the event";
   const challengeCopy = event.challenge
-    ? `${completedMoments}/${challengeMoments.length || 1} ${challengeMoments.length === 1 ? "moment" : "moments"} have photos in the recap.`
+    ? `${completedMoments}/${challengeMoments.length || 1} ${challengeMoments.length === 1 ? "moment" : "moments"} have photos.`
     : sortedPhotos.length
       ? "Guests built this album together, one upload at a time."
-      : "Share the guest link so the recap has moments to show.";
+      : "Photos will appear here once guests start uploading.";
 
   return {
     modeLabel,
     templateName: template?.name,
-    recapTitle: template ? `${template.name} recap` : "Event recap",
-    recapSubtitle: template?.recapFraming || "A shared album from the people who were there.",
+    recapTitle: "Best moments",
+    recapSubtitle: "Favorite photos and standout moments from the event.",
     totalPhotos: sortedPhotos.length,
     contributorCount: contributors.contributorCount,
     highlightPhotos: highlightPhotos.length ? highlightPhotos : sortedPhotos.slice(0, 8),
     recentPhotos: sortedPhotos.slice(0, 8),
     heroCopy,
-    lockedTitle: capsuleCopy?.revealTitle || "The recap opens at reveal time",
-    lockedCopy: capsuleCopy?.revealNote || "Photos are locked until the reveal time. Come back after the event story opens.",
+    lockedTitle: capsuleCopy?.revealTitle || "Photos are saved for the reveal",
+    lockedCopy: capsuleCopy?.revealNote || "Photos are still private until the reveal time.",
     emptyTitle: "No photos yet",
-    emptyCopy: "No photos yet. Share the guest upload link so the recap has moments to show.",
+    emptyCopy: "The host can feature photos as they review the album.",
     highlightReel: highlights,
     challengeHeadline,
     challengeCopy,

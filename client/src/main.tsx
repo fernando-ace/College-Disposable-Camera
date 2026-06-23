@@ -22,7 +22,6 @@ import {
   buildChallengePayload,
   buildDuplicateEventInput,
   buildHostNextStep,
-  buildPostEventHostSummary,
   categoriesFromChallenge,
   challengeLabel,
   colorBySlug,
@@ -1630,128 +1629,6 @@ function RepeatEventActions({ event, lifecycle, compact = false, onDuplicated }:
   );
 }
 
-function RecapReadinessPreview({ event, analytics }: { event: EventSummary & { photos: Photo[] }; analytics: EventAnalyticsSummary | null }) {
-  const story = buildEventRecapStory(event, event.photos, { awardVoting: analytics?.eventAwardsVoting });
-  const lifecycle = deriveEventLifecycleStatus(event, analytics || undefined);
-  const featuredCount = event.photos.filter((photo) => photo.isFeatured && isPhotoVisible(photo)).length;
-  const ready = lifecycle.status === "recap_ready" || lifecycle.status === "archived_or_past";
-  return (
-    <section className="mt-8 rounded-[1.45rem] border border-[#ffd4c7] bg-[#fff3ee] p-5 shadow-[0_18px_54px_rgba(101,62,0,0.055)]">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <StatusPill tone={ready ? "green" : "plum"}>{ready ? "Recap ready" : "Recap preview"}</StatusPill>
-          <h2 className="mt-3 font-display text-3xl font-bold text-[#653e00]">The share page is becoming the event story.</h2>
-          <p className="mt-2 max-w-2xl text-sm font-semibold text-amber-950">
-            {ready
-              ? "Open the public Recap, feature favorites, then send it as the finished memory page."
-              : "Keep collecting and featuring favorites now so the Recap feels polished after reveal."}
-          </p>
-        </div>
-        <div className="grid grid-cols-3 gap-2 text-center">
-          <div className="rounded-[1rem] bg-white p-3">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Visible</p>
-            <p className="font-display text-3xl font-bold text-stone-950">{story.totalPhotos}</p>
-          </div>
-          <div className="rounded-[1rem] bg-white p-3">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Featured</p>
-            <p className="font-display text-3xl font-bold text-stone-950">{featuredCount}</p>
-          </div>
-          <div className="rounded-[1rem] bg-white p-3">
-            <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Contributors</p>
-            <p className="font-display text-3xl font-bold text-stone-950">{story.contributorCount}</p>
-          </div>
-        </div>
-      </div>
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-        {event.recapLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Open Recap</a> : null}
-        <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900" href="#post-event-summary">Review post-event signal</a>
-      </div>
-    </section>
-  );
-}
-
-function PostEventSummaryPanel({ event, analytics }: { event: EventSummary & { photos: Photo[] }; analytics: EventAnalyticsSummary | null }) {
-  const summary = buildPostEventHostSummary(event, event.photos, analytics || {});
-  const hasTrend = summary.uploadsOverTime.length > 0;
-
-  useEffect(() => {
-    trackAnalytics("post_event_summary_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
-  }, [event.id, event.slug]);
-
-  return (
-    <section id="post-event-summary" className="mt-8">
-      <div className="mb-4">
-        <StatusPill tone="plum">Post-event summary</StatusPill>
-        <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">What happened at this event?</h2>
-        <p className="text-sm text-stone-600">A host-safe recap of activity, contributors, challenge progress, sharing, and moderation.</p>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricCard label="Total photos" value={summary.totalPhotos} tone="accent" />
-        <MetricCard label="Contributors" value={summary.totalContributors} />
-        <MetricCard label="Guest joins" value={summary.guestJoins} tone="green" />
-        <MetricCard label="Recap opens" value={summary.recapOpens} tone="plum" />
-        <MetricCard label="Live Wall opens" value={summary.liveWallOpens} tone="green" />
-        <MetricCard label="Hidden photos" value={summary.hiddenPhotos} />
-        <MetricCard label="Reported photos" value={summary.reportedPhotos} />
-        <MetricCard label="Featured photos" value={summary.featuredPhotos} />
-      </div>
-      <div className="mt-5 grid gap-5 lg:grid-cols-3">
-        <Card>
-          <h3 className="font-display text-2xl font-bold text-stone-950">Top contributors</h3>
-          <p className="mt-1 text-sm text-stone-600">{summary.visiblePhotos} visible photos from named guests.</p>
-          <div className="mt-4 grid gap-2">
-            {summary.topContributors.length ? summary.topContributors.map((contributor) => (
-              <div className="flex items-center justify-between rounded-2xl bg-stone-50 p-3 text-sm font-bold" key={contributor.displayName}>
-                <span>{contributor.displayName}</span>
-                <span className="text-[#653e00]">{contributor.photoCount}</span>
-              </div>
-            )) : <p className="rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-600">No named contributors yet.</p>}
-          </div>
-        </Card>
-        <Card>
-          <h3 className="font-display text-2xl font-bold text-stone-950">Uploads over time</h3>
-          <div className="mt-4 grid gap-3">
-            {hasTrend ? summary.uploadsOverTime.map((bucket) => {
-              const max = Math.max(...summary.uploadsOverTime.map((item) => item.count), 1);
-              return (
-                <div key={bucket.label}>
-                  <div className="flex justify-between text-sm font-bold text-stone-700"><span>{bucket.label}</span><span>{bucket.count}</span></div>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-stone-100"><div className="h-full rounded-full bg-[#e85d3f]" style={{ width: `${Math.max(8, Math.round((bucket.count / max) * 100))}%` }} /></div>
-                </div>
-              );
-            }) : <p className="rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-600">No upload trend yet.</p>}
-          </div>
-        </Card>
-        <Card>
-          <h3 className="font-display text-2xl font-bold text-stone-950">Challenge completion</h3>
-          <p className="mt-1 text-sm font-semibold text-stone-600">{summary.challengeCompletion.modeLabel}</p>
-          <div className="mt-4 grid gap-2">
-            {summary.challengeCompletion.rows.length ? summary.challengeCompletion.rows.slice(0, 5).map((row) => (
-              <div className="flex items-center justify-between rounded-2xl bg-stone-50 p-3 text-sm font-bold" key={row.id}>
-                <span className="truncate">{row.label}</span>
-                <span className={row.complete ? "text-emerald-700" : "text-stone-500"}>{row.count}{row.total ? `/${row.total}` : ""}</span>
-              </div>
-            )) : <p className="rounded-2xl bg-stone-50 p-3 text-sm font-semibold text-stone-600">Classic album mode collected photos without challenge steps.</p>}
-          </div>
-        </Card>
-      </div>
-      {summary.awardWinners.length ? (
-        <Card className="mt-5">
-          <h3 className="font-display text-2xl font-bold text-stone-950">Event Awards winners</h3>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {summary.awardWinners.map((winner) => (
-              <div className="rounded-2xl bg-[#fffaf6] p-4" key={winner.categoryId}>
-                <p className="font-bold text-stone-950">{winner.categoryLabel}</p>
-                <p className="mt-1 text-sm font-semibold text-stone-600">{winner.photoId ? `${winner.voteCount} ${winner.voteCount === 1 ? "vote" : "votes"}` : "No winner yet"}{winner.isTie ? " - tie" : ""}</p>
-              </div>
-            ))}
-          </div>
-        </Card>
-      ) : null}
-    </section>
-  );
-}
-
 function HostFeedbackPanel({ event, analytics, onSubmitted }: { event: EventSummary; analytics: EventAnalyticsSummary | null; onSubmitted: () => Promise<void> }) {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
@@ -3350,6 +3227,26 @@ function ManageEvent() {
     }
   }
 
+  async function shareHostRecap() {
+    if (!event?.recapLink) return;
+    const assets = buildHostShareAssets(event);
+    try {
+      await shareOrCopyText({
+        title: `${event.name} recap`,
+        text: event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? assets.winnerShareText : assets.recapShareText,
+        url: event.recapLink,
+        fallbackLabel: "Recap",
+        analyticsName: "recap_shared_after_event",
+        eventId: event.id,
+        eventSlug: event.slug,
+        surface: "event_detail",
+        onStatus: setLinkCopyStatus,
+      });
+    } catch (err) {
+      setLinkCopyStatus((err as Error).message);
+    }
+  }
+
   return (
     <Shell wide>
       {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -3435,12 +3332,29 @@ function ManageEvent() {
           {activeTab === "recap" ? (
           <section className="mt-8">
             <Card className="lg:p-8">
-              <h2 className="font-display text-3xl font-bold text-stone-950">Recap</h2>
-              <p className="mt-2 text-stone-600">{event.photoCount ? "Your recap is ready to preview, polish, and share." : "No photos yet. Share the QR code to start collecting uploads."}</p>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <StatusPill tone={lifecycle?.phase === "after" ? "green" : "plum"}>{lifecycle?.phase === "after" ? "Recap ready" : "Recap building"}</StatusPill>
+                  <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Your recap is almost the send-to-everyone page.</h2>
+                  <p className="mt-2 max-w-2xl text-stone-600">{event.photoCount ? "Preview it, feature a few favorites, then share the recap link with guests." : "No photos yet. Share the QR code to start collecting uploads."}</p>
+                </div>
+                <div className="grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-bold text-stone-700">
+                  <span>{visiblePhotos.length} visible photos</span>
+                  <span>{featuredCount} featured favorites</span>
+                  <span>{hostContributorSummary.contributorCount || "Guest"} {hostContributorSummary.contributorCount === 1 ? "contributor" : "contributors"}</span>
+                </div>
+              </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 {event.recapLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Preview recap</a> : null}
-                {event.recapLink ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Share recap</SecondaryButton> : null}
+                {event.recapLink ? <SecondaryButton type="button" onClick={shareHostRecap}>Share recap</SecondaryButton> : null}
+                {event.recapLink ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</SecondaryButton> : null}
                 <SecondaryButton onClick={() => downloadZip("visible")}>Download photos</SecondaryButton>
+              </div>
+              <div className="mt-6 grid gap-2 rounded-[1.15rem] bg-white p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
+                <p className="font-extrabold text-stone-950">Before you send it</p>
+                <p>Review uploads</p>
+                <p>Feature favorite photos</p>
+                <p>Share recap link</p>
               </div>
               {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
             </Card>
@@ -3453,17 +3367,15 @@ function ManageEvent() {
           ) : null}
 
           {activeTab === "recap" && eventAnalytics && (
-            <section className="mt-8">
-              <div className="mb-4">
-                <h2 className="font-display text-2xl font-bold">Event activity</h2>
-                <p className="text-sm text-stone-600">Secondary recap and upload details for host review.</p>
-              </div>
+            <details className="mt-8 rounded-[1.45rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
+              <summary className="cursor-pointer list-none font-display text-2xl font-bold text-stone-950">Recap activity</summary>
+              <p className="mt-2 text-sm text-stone-600">Secondary recap and upload details for host review.</p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
                   ["Guest joins", eventAnalytics.guestJoins],
                   ["Uploads", eventAnalytics.uploads],
                   ["Live Wall opens", eventAnalytics.liveWallOpens],
-                  ["Recap opens", eventAnalytics.recapOpens],
+                  ["Recap views", eventAnalytics.recapOpens],
                   ["Visible photos", eventAnalytics.visiblePhotos],
                   ["Hidden photos", eventAnalytics.hiddenPhotos],
                   ["Reported photos", eventAnalytics.reportedPhotos],
@@ -3475,7 +3387,7 @@ function ManageEvent() {
               <div className="mt-4 rounded-[1.45rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
-                    <h3 className="font-display text-2xl font-bold text-stone-950">Contributor summary</h3>
+                    <h3 className="font-display text-2xl font-bold text-stone-950">People who uploaded</h3>
                     <p className="mt-1 text-sm font-semibold text-stone-600">{hostContributorSummary.totalPhotos} visible photos from {hostContributorSummary.contributorCount || "guest"} {hostContributorSummary.contributorCount === 1 ? "contributor" : "contributors"}.</p>
                   </div>
                   {hostContributorSummary.topContributors.length ? (
@@ -3488,15 +3400,11 @@ function ManageEvent() {
                 </div>
               </div>
               <HostAwardVotingSummary awardVoting={eventAnalytics.eventAwardsVoting} photos={event.photos} onFeatureWinner={(photo) => updatePhotoFeatured(photo, true)} />
-              <RecapReadinessPreview event={event} analytics={eventAnalytics} />
-            </section>
+            </details>
           )}
 
           {activeTab === "recap" && lifecycle?.phase === "after" ? (
-            <>
-              <PostEventSummaryPanel event={event} analytics={eventAnalytics} />
-              <HostFeedbackPanel event={event} analytics={eventAnalytics} onSubmitted={load} />
-            </>
+            <HostFeedbackPanel event={event} analytics={eventAnalytics} onSubmitted={load} />
           ) : null}
 
           {activeTab === "settings" ? (
@@ -4447,7 +4355,7 @@ function RecapMiniStrip({ photos, onPhotoClick }: { photos: Photo[]; onPhotoClic
           type="button"
           onClick={() => onPhotoClick(photo)}
         >
-          <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+          <img className="aspect-square h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photoChallengeLabel(photo) || photo.originalFilename || "Event photo"} />
         </button>
       ))}
     </div>
@@ -4465,7 +4373,7 @@ function RecapHighlightReel({ story, onPhotoClick }: { story: EventRecapStory; o
       </div>
       {!story.totalPhotos ? (
         <Card className="border-dashed text-center">
-          <h3 className="font-display text-2xl font-bold">{story.emptyTitle}</h3>
+          <h3 className="font-display text-2xl font-bold">No highlights yet.</h3>
           <p className="mx-auto mt-2 max-w-xl text-stone-600">{story.emptyCopy}</p>
         </Card>
       ) : (
@@ -4538,18 +4446,18 @@ function RecapContributorCelebration({ story }: { story: EventRecapStory }) {
     <section className="mt-8 rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.06)]" id="recap-contributors">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <StatusPill tone="green">Contributors</StatusPill>
-          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">The people who built the album</h2>
+          <StatusPill tone="green">People who uploaded</StatusPill>
+          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">People who helped capture the event</h2>
           <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">
             {contributors.contributorCount
-              ? `${contributors.contributorCount} named ${contributors.contributorCount === 1 ? "contributor" : "contributors"} added visible photos to this recap.`
+              ? `${contributors.contributorCount} named ${contributors.contributorCount === 1 ? "person" : "people"} added photos to this recap.`
               : contributors.totalPhotos
                 ? "Guests added photos without display names, so the recap celebrates the group instead."
-                : "Contributors will appear here once guests add photos."}
+                : "People will appear here once guests add photos."}
           </p>
         </div>
         <div className="rounded-[1.15rem] bg-[#fffaf6] px-5 py-4 text-center">
-          <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Visible photos</p>
+          <p className="text-xs font-extrabold uppercase tracking-wide text-[#653e00]">Photos</p>
           <p className="font-display text-4xl font-bold text-stone-950">{contributors.totalPhotos}</p>
         </div>
       </div>
@@ -4637,6 +4545,24 @@ function EventRecap() {
       })
     : null;
   const hasAwardWinners = Boolean(data?.awardVoting?.categories.some((category) => category.leaderPhotoIds.length > 0));
+  const awardWinnerCount = data?.awardVoting?.categories.filter((category) => category.leaderPhotoIds.length > 0).length || 0;
+  const completedChallengeCount = story?.challengeMoments.filter((moment) => moment.isComplete).length || 0;
+  const recapStatusLabel = data?.isLocked ? "Album still locked" : story?.totalPhotos ? "Recap ready" : "Photos still coming in";
+  const recapHeroSentence = data?.isLocked
+    ? `Photos are still private until ${event ? formatDateTime(event.revealAt) : "the reveal time"}.`
+    : story?.totalPhotos
+      ? "The event album is ready to share."
+      : "Photos will appear here once guests start uploading.";
+  const primaryHeroCta = data?.isLocked || !story?.totalPhotos
+    ? { label: "Add photos", href: `/e/${slug}`, kind: "link" as const }
+    : data?.awardVoting?.votingEnabled
+      ? { label: "Vote on awards", href: "#recap-challenge-moments", kind: "anchor" as const }
+      : { label: "View photos", href: "#recap-photos", kind: "anchor" as const };
+  const heroStats = [
+    { label: "Photos", value: story?.totalPhotos ?? 0 },
+    { label: "Contributors", value: story?.contributorCount || "Guests" },
+    ...(awardWinnerCount ? [{ label: "Award winners", value: awardWinnerCount }] : completedChallengeCount ? [{ label: "Prompts complete", value: completedChallengeCount }] : []),
+  ].slice(0, 3);
   const selectedFilter = story?.albumFilters.find((filter) => filter.key === activeAlbumFilter) || story?.albumFilters[0] || null;
   const albumPhotoIds = new Set(selectedFilter?.photoIds || []);
   const albumPhotos = data?.photos.filter((photo) => !selectedFilter || albumPhotoIds.has(photo.id)) || [];
@@ -4685,60 +4611,69 @@ function EventRecap() {
         {event && story && (
           <>
             <section className="overflow-hidden rounded-[1.6rem] bg-stone-950 p-5 text-white shadow-[0_28px_90px_rgba(101,62,0,0.16)] sm:rounded-[2rem] sm:p-8 lg:p-10">
-              <div className="grid gap-8 lg:grid-cols-[1fr_0.78fr] lg:items-end">
+              <div className="grid gap-8 lg:grid-cols-[1fr_0.62fr] lg:items-end">
                 <div>
-                  <StatusPill>{story.templateName || story.modeLabel || "EventFilm"}</StatusPill>
+                  <StatusPill>{recapStatusLabel}</StatusPill>
                   <h1 className="mt-5 font-display text-4xl font-bold leading-none sm:text-6xl lg:text-7xl">{event.name}</h1>
-                  <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-stone-200 sm:text-lg">{event.description || story.heroCopy}</p>
-                  <div className="mt-6 flex flex-wrap gap-3 text-sm font-bold text-stone-200">
-                    <span className="rounded-full bg-white/10 px-4 py-2">Event: {formatDateTime(event.eventDate)}</span>
-                    <span className="rounded-full bg-white/10 px-4 py-2">Reveal: {formatDateTime(event.revealAt)}</span>
-                  </div>
+                  <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-stone-200 sm:text-lg">{recapHeroSentence}</p>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" href="#recap-share">Share recap</a>
-                    <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" to={`/e/${slug}`} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>Upload photos</Link>
+                    {primaryHeroCta.kind === "link" ? (
+                      <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" to={primaryHeroCta.href} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>{primaryHeroCta.label}</Link>
+                    ) : (
+                      <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" href={primaryHeroCta.href}>{primaryHeroCta.label}</a>
+                    )}
+                    <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" href="#recap-share">Share recap</a>
                   </div>
                   <RecapMiniStrip photos={story.highlightPhotos} onPhotoClick={openPublicPhoto} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <RecapStat label="Photos" value={story.totalPhotos} />
-                  <RecapStat label="Contributors" value={story.contributorCount || "Guest"} />
-                  {story.contributorSummary.topContributors.length ? (
-                    <div className="col-span-2 rounded-[1.35rem] bg-white/10 p-5">
-                      <p className="text-sm font-bold uppercase tracking-wide text-amber-200">Top contributors</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {story.contributorSummary.topContributors.map((contributor) => (
-                          <span className="rounded-full bg-white/10 px-3 py-2 text-xs font-extrabold text-white" key={contributor.displayName}>{contributor.displayName}: {contributor.photoCount}</span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                  {shareAssets ? <div className="col-span-2" id="recap-share"><RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} /></div> : null}
+                <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
+                  {heroStats.map((stat) => <RecapStat key={stat.label} label={stat.label} value={stat.value} />)}
                 </div>
               </div>
             </section>
 
             {data.isLocked ? (
-              <section className="mt-8 rounded-[1.65rem] border border-amber-200 bg-amber-50 p-6 text-center sm:p-8">
-                <Icon className="mx-auto h-12 w-12 text-[#653e00]">lock</Icon>
-                <h2 className="mt-4 font-display text-3xl font-bold text-[#653e00] sm:text-4xl">{story.lockedTitle}</h2>
-                <p className="mx-auto mt-3 max-w-2xl text-amber-900">{capsuleCopy?.revealNote || story.lockedCopy}</p>
-                <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-white px-5 py-3 text-sm font-extrabold text-stone-950 shadow-sm" to={`/e/${slug}`}>Add photos before reveal</Link>
-              </section>
+              <>
+                <section className="mt-8 rounded-[1.65rem] border border-amber-200 bg-amber-50 p-6 text-center sm:p-8">
+                  <Icon className="mx-auto h-12 w-12 text-[#653e00]">lock</Icon>
+                  <h2 className="mt-4 font-display text-3xl font-bold text-[#653e00] sm:text-4xl">{event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Photos are saved for the reveal." : story.lockedTitle}</h2>
+                  <p className="mx-auto mt-3 max-w-2xl text-amber-900">{capsuleCopy?.revealNote || story.lockedCopy}</p>
+                  <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-white px-5 py-3 text-sm font-extrabold text-stone-950 shadow-sm" to={`/e/${slug}`}>Add photos before reveal</Link>
+                </section>
+                {shareAssets ? (
+                  <section className="mt-8 rounded-[1.65rem] bg-stone-950 p-5 text-white shadow-[0_24px_70px_rgba(101,62,0,0.15)] sm:p-7" id="recap-share">
+                    <h2 className="font-display text-3xl font-bold">Share recap</h2>
+                    <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-200">Copy the recap link now, or send it after the reveal opens.</p>
+                    <div className="mt-4">
+                      <RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} />
+                    </div>
+                  </section>
+                ) : null}
+              </>
             ) : (
               <>
                 <RecapHighlightReel story={story} onPhotoClick={openPublicPhoto} />
-                <RecapChallengeMoments story={story} awardVoting={data.awardVoting} event={event} photos={data.photos} clientId={session.clientId} onVoteComplete={loadRecap} onPhotoClick={openPublicPhoto} />
-                <RecapContributorCelebration story={story} />
 
-                <section className="mt-8">
+                <section className="mt-8" id="recap-photos">
                   <div className="mb-4">
-                    <h2 className="font-display text-3xl font-bold">Full album</h2>
-                    <p className="text-stone-600">Every revealed photo from the event, with quick filters for the moments that matter.</p>
+                    <h2 className="font-display text-3xl font-bold">Photos from the event</h2>
+                    <p className="text-stone-600">Every revealed photo from the event, with simple filters for the moments that matter.</p>
                   </div>
                   <RecapAlbumFilterTabs filters={story.albumFilters} activeFilter={selectedFilter?.key || "all"} onChange={chooseAlbumFilter} />
                   <PhotoMosaic photos={albumPhotos} onPhotoClick={openPublicPhoto} />
                 </section>
+                <RecapContributorCelebration story={story} />
+                {event.challenge ? <RecapChallengeMoments story={story} awardVoting={data.awardVoting} event={event} photos={data.photos} clientId={session.clientId} onVoteComplete={loadRecap} onPhotoClick={openPublicPhoto} /> : null}
+                {shareAssets ? (
+                  <section className="mt-8 rounded-[1.65rem] bg-stone-950 p-5 text-white shadow-[0_24px_70px_rgba(101,62,0,0.15)] sm:p-7" id="recap-share">
+                    <div className="mb-4">
+                      <h2 className="font-display text-3xl font-bold">Share or add photos</h2>
+                      <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-200">Send the recap to everyone, or keep adding photos from the same event link.</p>
+                    </div>
+                    <RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} />
+                    <Link className="mt-4 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" to={`/e/${slug}`} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_add_photos_cta" } })}>Add photos</Link>
+                  </section>
+                ) : null}
                 <RecapCreateEventCta story={story} event={event} />
               </>
             )}

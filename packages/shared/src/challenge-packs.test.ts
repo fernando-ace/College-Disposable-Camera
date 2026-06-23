@@ -361,8 +361,8 @@ test("unknown templates and old events use safe fallbacks", () => {
     [],
   );
   assert.equal(metadata.templateName, undefined);
-  assert.equal(metadata.recapTitle, "Event recap");
-  assert.equal(metadata.recapSubtitle, "A shared album from the people who were there.");
+  assert.equal(metadata.recapTitle, "Best moments");
+  assert.equal(metadata.recapSubtitle, "Favorite photos and standout moments from the event.");
 });
 
 test("event lifecycle status is derived from dates, photo state, and reveal state", () => {
@@ -935,9 +935,11 @@ test("recap story prioritizes featured, winners, voted, challenge, and recent ph
   );
 
   assert.deepEqual(story.highlightReel.map((section) => section.key), ["featured", "award-winners", "most-voted", "challenge-moments", "recent"]);
+  assert.deepEqual(story.highlightReel.map((section) => section.title), ["Best moments", "Award winners", "Guest picks", "Photo prompts", "Recent moments"]);
   assert.deepEqual(story.highlightReel.map((section) => section.photos.map((item) => item.id)), [["featured"], ["winner"], ["voted"], ["challenge"], ["recent"]]);
   assert.equal(new Set(story.highlightReel.flatMap((section) => section.photos.map((item) => item.id))).size, 5);
   assert.equal(story.challengeMoments[0]?.voteCount, 3);
+  assert.equal(story.challengeHeadline, "Award winners");
 });
 
 test("recap story excludes hidden photos and builds mode-specific moments and filters", () => {
@@ -968,7 +970,7 @@ test("recap story excludes hidden photos and builds mode-specific moments and fi
   ]);
 
   assert.equal(story.totalPhotos, 1);
-  assert.equal(story.challengeHeadline, "Color team recap");
+  assert.equal(story.challengeHeadline, "Color Hunt progress");
   assert.deepEqual(story.challengeMoments.map((moment) => [moment.title, moment.count]), [["Red Team", 1], ["Blue Team", 0]]);
   assert.equal(story.albumFilters.some((filter) => filter.photoIds.includes("hidden")), false);
   assert.equal(story.albumFilters.some((filter) => filter.key === "challenge-red-team"), true);
@@ -1011,6 +1013,8 @@ test("recap story handles old events, templates, and memory capsule locked copy"
   assert.equal(oldStory.challengeMoments[0]?.key, "shared-album");
   assert.equal(lockedStory.lockedTitle, "Opens tonight");
   assert.equal(lockedStory.heroCopy, "Come back after dinner.");
+  assert.equal(lockedStory.lockedCopy, "Come back after dinner.");
+  assert.equal(oldStory.emptyCopy, "The host can feature photos as they review the album.");
 });
 
 test("host launch kit separates guest, live wall, and recap jobs", () => {

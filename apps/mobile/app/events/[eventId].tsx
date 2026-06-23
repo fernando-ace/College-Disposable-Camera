@@ -1,5 +1,6 @@
 import * as React from "react";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import * as Clipboard from "expo-clipboard";
 import { Link, router, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, Text, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
@@ -719,18 +720,18 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
 
   return (
     <Card>
-      <SectionHeader title="Post-event summary" subtitle="The quick host view of what happened and what worked." />
+      <SectionHeader title="Recap activity" subtitle="Secondary event stats for host review." />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         <StatTile label="Photos" value={postSummary.totalPhotos} tone="accent" />
         <StatTile label="Contributors" value={postSummary.totalContributors} />
         <StatTile label="Guest joins" value={postSummary.guestJoins} />
-        <StatTile label="Recaps" value={postSummary.recapOpens} />
+        <StatTile label="Recap views" value={postSummary.recapOpens} />
         <StatTile label="Hidden" value={postSummary.hiddenPhotos} />
         <StatTile label="Reported" value={postSummary.reportedPhotos} />
       </View>
       {postSummary.topContributors.length ? (
         <View style={{ gap: 8 }}>
-          <SectionHeader title="Top contributors" />
+          <SectionHeader title="People who uploaded" />
           {postSummary.topContributors.map((contributor) => (
             <View key={contributor.displayName} style={{ flexDirection: "row", justifyContent: "space-between", gap: 10, borderRadius: 16, borderCurve: "continuous", backgroundColor: "#faf7f2", padding: 12 }}>
               <Body>{contributor.displayName}</Body>
@@ -752,14 +753,41 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
 }
 
 function RecapStatusPanel({ event, summary }: { event: EventSummary & { photos: Photo[] }; summary: EventAnalyticsSummary | null }) {
+  const { api } = useAuth();
+  const [status, setStatus] = React.useState("");
   const story = buildEventRecapStory(event, event.photos, { awardVoting: summary?.eventAwardsVoting });
   const lifecycle = deriveEventLifecycleStatus(event, summary || undefined);
   const featuredCount = event.photos.filter((photo) => photo.isFeatured).length;
+
+  async function previewRecap() {
+    if (!event.recapLink) return;
+    await Linking.openURL(event.recapLink);
+  }
+
+  async function shareRecap() {
+    if (!event.recapLink) return;
+    await Linking.openURL(event.recapLink);
+    api.trackAnalyticsEvent({
+      name: "recap_shared_after_event",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail", method: "open_url" },
+    }).catch(() => {});
+  }
+
+  async function copyRecapLink() {
+    if (!event.recapLink) return;
+    await Clipboard.setStringAsync(event.recapLink);
+    setStatus("Recap link copied.");
+  }
+
   return (
     <Card tone="warm">
       <SectionHeader
         title={lifecycle.phase === "after" ? "Recap is ready to share" : "Recap is building"}
-        subtitle="Feature favorites now so the public Recap feels like a finished memory page after reveal."
+        subtitle="Preview the recap, feature favorites, then send one link to everyone."
       />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         <StatTile label="Visible" value={story.totalPhotos} tone="accent" />
@@ -767,7 +795,18 @@ function RecapStatusPanel({ event, summary }: { event: EventSummary & { photos: 
         <StatTile label="Contributors" value={story.contributorCount} />
       </View>
       <Body tone="muted">{story.challengeHeadline}: {story.challengeCopy}</Body>
-      <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open finished Recap</Button>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+        <View style={{ flex: 1, minWidth: 140 }}>
+          <Button disabled={!event.recapLink} onPress={previewRecap}>Preview recap</Button>
+        </View>
+        <View style={{ flex: 1, minWidth: 140 }}>
+          <Button tone="secondary" disabled={!event.recapLink} onPress={shareRecap}>Share recap</Button>
+        </View>
+        <View style={{ flex: 1, minWidth: 140 }}>
+          <Button tone="secondary" disabled={!event.recapLink} onPress={copyRecapLink}>Copy link</Button>
+        </View>
+      </View>
+      {status ? <Body tone="success">{status}</Body> : null}
     </Card>
   );
 }

@@ -82,6 +82,18 @@ test.describe("EventFilm browser smoke", () => {
 
     await page.goto(`/recap/${seededSlug}`);
     await expect(page.locator("body")).toContainText(/Recap|EventFilm Beta Demo|locked/i);
+
+    const revealedRecapResponse = await request.get(`${apiUrl}/api/events/${revealedSeededSlug}/recap`);
+    if (revealedRecapResponse.ok()) {
+      const revealedRecap = await revealedRecapResponse.json();
+      await page.goto(`/recap/${revealedSeededSlug}`);
+      await expect(page.getByRole("heading", { name: revealedRecap.event.name })).toBeVisible();
+      await expect(page.locator("body")).toContainText(/Recap ready|Photos still coming in|Photos/i);
+      await expect(page.getByRole("link", { name: /Add photos/i }).first()).toBeVisible();
+      if ((revealedRecap.photos || []).length > 0) {
+        await expect(page.locator("#recap-photos img").first()).toBeVisible();
+      }
+    }
   });
 
   test("seeded host event shows beta handoff and issue-report entry", async ({ page, request }) => {
@@ -131,6 +143,14 @@ test.describe("EventFilm browser smoke", () => {
       await page.goto(`/e/${seededSlug}`);
       await expect(page.locator("body")).toContainText("No account needed");
       await expect(page.locator("#guest-upload-card")).toContainText(/Add photos/i);
+
+      await page.goto(`/dashboard/events/${eventId}?tab=recap`);
+      await expect(page.getByRole("heading", { name: /send-to-everyone page/i })).toBeVisible();
+      await expect(page.getByRole("link", { name: "Preview recap" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Share recap" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Copy recap link" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Download photos" })).toBeVisible();
+      await expect(page.locator("body")).toContainText("Before you send it");
     } finally {
       await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
         headers: { Authorization: `Bearer ${auth.token}` },
