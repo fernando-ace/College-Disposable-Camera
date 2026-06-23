@@ -1070,7 +1070,7 @@ test("host share assets generate poster and share card metadata", () => {
   assert.equal(assets.poster.instruction, "Scan to add photos");
   assert.match(assets.poster.modeHint, /Awards/);
   assert.match(assets.guestInviteMessage, /No account needed/);
-  assert.match(assets.recapMessage, /The shared recap is ready/);
+  assert.match(assets.recapMessage, /Here are the photos from Spring Formal/);
   assert.match(assets.liveWallSetupTip, /Photo Wall/);
   assert.match(assets.qrPosterHint, /scan to add photos/);
   assert.match(assets.inviteText, /birthday/i);

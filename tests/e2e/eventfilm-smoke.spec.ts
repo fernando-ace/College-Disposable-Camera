@@ -271,7 +271,7 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto(`/e/${seededSlug}`);
     await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
     await expect(page.locator("body")).toContainText("No account needed");
-    await expect(page.locator("body")).toContainText("Add your photos to the private event album.");
+    await expect(page.locator("body")).toContainText("Add your photos to the event album.");
     await expect(page.locator("#guest-upload-card")).toContainText(/Add photos/i);
     await expect(page.locator("#event-album")).toContainText(/Photos are being collected|album unlocks|revealed photos|No photos yet/i);
 
@@ -350,8 +350,8 @@ test.describe("EventFilm browser smoke", () => {
     await expect(createdHandoff.getByRole("button", { name: "Copy guest link" })).toBeVisible();
     await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
     await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
-    await expect(createdHandoff).toContainText("Open the Photo Wall during the event");
-    await expect(createdHandoff).toContainText("Share the Shared Recap after the event");
+    await expect(createdHandoff).toContainText("Use the Photo Wall if you want it");
+    await expect(createdHandoff).toContainText("Share the recap after the event");
     await page.getByRole("button", { name: "Dismiss" }).click();
     await expect(page.getByRole("heading", { name: "Your event is ready." })).toHaveCount(0);
     await expect(page).not.toHaveURL(/created=1/);
@@ -388,7 +388,7 @@ test.describe("EventFilm browser smoke", () => {
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
       await expect(page.getByRole("heading", { name: "Photo Wall" })).toBeVisible();
-      await expect(page.locator("body")).toContainText("Use this during the event. Guests scan the QR code, add photos, and see them appear here.");
+      await expect(page.locator("body")).toContainText("Use this during the event, or just share the guest link for smaller hangouts.");
       await expect(page.locator(`a[href$="/wall/${seededSlug}"]`).first()).toBeVisible();
       await expect(page.getByRole("link", { name: "Open Photo Wall" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy guest link" }).first()).toBeVisible();

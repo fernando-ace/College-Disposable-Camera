@@ -867,7 +867,7 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, c
       <div className="grid gap-3">
         <div>
           <h2 className="font-display text-xl font-bold text-[#653e00]">Choose the photo setup</h2>
-          <p className="mt-1 text-sm text-stone-600">{selectedPack.shortDescription}</p>
+          <p className="mt-1 text-sm text-stone-600">{draft.type === "NONE" ? "Best for most hangouts. Everyone adds photos without extra setup." : selectedPack.shortDescription}</p>
         </div>
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
           {CHALLENGE_PACKS.map((pack) => (
@@ -878,7 +878,7 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, c
               key={pack.slug}
             >
               <span className="block font-bold text-stone-950">{plainModeLabel(pack.mode)}</span>
-              <span className="mt-1 block text-stone-600">{pack.shortDescription}</span>
+              <span className="mt-1 block text-stone-600">{pack.mode === "NONE" ? "Best for most hangouts. No prompts or extra choices." : pack.shortDescription}</span>
             </button>
           ))}
         </div>
@@ -890,7 +890,7 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, c
             <div>
               <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Current setup</p>
               <h3 className="mt-1 font-display text-lg font-bold">{plainModeLabel(draft.type)}</h3>
-              <p className="mt-1 text-sm text-stone-600">{draft.type === "NONE" ? "The easiest way to collect everyone's photos." : "You can adjust the details now or after creating the event."}</p>
+              <p className="mt-1 text-sm text-stone-600">{draft.type === "NONE" ? "Best for most hangouts. Guests just add photos." : "Optional twist. You can adjust the details now or after creating the event."}</p>
             </div>
             <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setIsMoreOptionsOpen((current) => !current)}>{isMoreOptionsOpen ? "Hide options" : "More options"}</SecondaryButton>
           </div>
@@ -1750,7 +1750,7 @@ function Landing() {
           {[
             ["Do guests need an account?", "No. Guests can upload from the event link in a browser without creating an account."],
             ["Can I show photos during the event?", "Yes. Use the Photo Wall link on a laptop, TV, projector, or iPad."],
-            ["What happens after the event?", "Share the Shared Recap link so everyone can view the final album."],
+            ["What happens after the event?", "Share the recap link so everyone can view the final album."],
             ["How does privacy work?", "EventFilm is built for private event sharing. Guests upload through your event link, and you control when the album is shared."],
           ].map(([question, answer]) => (
             <div className="rounded-3xl bg-white p-5 shadow-sm" key={question}>
@@ -2776,8 +2776,8 @@ function CreateEvent() {
 function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss }: { event: EventSummary; shareAssets: HostShareAssets; onCopyGuestLink: () => void; onDismiss: () => void }) {
   const steps = [
     ["Share the guest link", "Send this before people arrive. Guests can add photos without an account."],
-    ["Open the Photo Wall during the event", "Put it on a TV, laptop, or iPad during the event."],
-    ["Share the Shared Recap after the event", "Send the recap after reveal so everyone has one finished page."],
+    ["Use the Photo Wall if you want it", "Put it on a TV, laptop, or iPad during the event. For small hangouts, the guest link is enough."],
+    ["Share the recap after the event", "Send it after reveal so everyone has the photos in one place."],
   ];
 
   return (
@@ -2808,6 +2808,29 @@ function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss
         </div>
       </div>
     </section>
+  );
+}
+
+function HostLinkPurposeHelper() {
+  const rows = [
+    ["Guest link", "Text this to friends so they can add photos from their phone."],
+    ["QR poster", "Print it or show it when scanning is easier than texting a link."],
+    ["Photo Wall", "Open this while people are together if you want a live screen. Smaller hangouts can skip it."],
+    ["Shared Recap", "Send this when it is over so everyone has the photos in one place."],
+  ];
+
+  return (
+    <details className="mt-5 rounded-[1.25rem] border border-[#eadfce] bg-white p-4 shadow-sm">
+      <summary className="cursor-pointer list-none font-display text-xl font-bold text-stone-950">Which link should I use?</summary>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {rows.map(([label, copy]) => (
+          <div className="rounded-[1rem] bg-[#fffaf6] p-4 ring-1 ring-[#eadfce]" key={label}>
+            <p className="font-extrabold text-stone-950">{label}</p>
+            <p className="mt-1 text-sm font-semibold leading-6 text-stone-600">{copy}</p>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
 
@@ -3011,8 +3034,8 @@ function ManageEvent() {
   const liveWallStatus = event?.photoCount
     ? { label: "Photos are coming in", tone: "green" as const, copy: `${event.photoCount} ${event.photoCount === 1 ? "photo has" : "photos have"} been added.` }
     : lifecycle?.phase === "during"
-      ? { label: "Waiting for photos", tone: "amber" as const, copy: "No photos yet. Ask guests to scan the QR code." }
-      : { label: "Photo Wall is ready", tone: "stone" as const, copy: "Use this during the event. Guests scan the QR code, add photos, and see them appear here." };
+      ? { label: "Waiting for photos", tone: "amber" as const, copy: "No photos yet. Ask guests to scan the QR code or use the guest link." }
+      : { label: "Photo Wall is ready", tone: "stone" as const, copy: "Use this during the event, or just share the guest link for smaller hangouts." };
 
   useEffect(() => {
     if (!event || !lifecycle) return;
@@ -3132,6 +3155,7 @@ function ManageEvent() {
                     <div className="flex flex-wrap gap-2">{detailPrimaryAction}</div>
                   </div>
                 </section>
+                <HostLinkPurposeHelper />
 
                 <div className="mt-5 grid gap-5 xl:grid-cols-3">
                   <Card className="flex h-full flex-col">
@@ -3168,7 +3192,7 @@ function ManageEvent() {
                   <Card className="flex h-full flex-col">
                     <StatusPill tone={isRecapReady ? "green" : "plum"}>After the event</StatusPill>
                     <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{isRecapReady ? "Shared Recap" : "Shared Recap is not ready yet."}</h2>
-                    <p className="mt-2 text-sm font-semibold text-stone-600">{isRecapReady ? "Send one finished page after reveal." : recapUnavailableCopy}</p>
+                    <p className="mt-2 text-sm font-semibold text-stone-600">{isRecapReady ? "Send this after the event so everyone has the photos in one place." : recapUnavailableCopy}</p>
                     <div className="mt-5 flex flex-wrap gap-2">
                       {event.recapLink && isRecapReady ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</SecondaryButton> : null}
                       {event.recapLink && isRecapReady ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Preview recap</a> : null}
@@ -3194,7 +3218,7 @@ function ManageEvent() {
                 <div>
                   <StatusPill tone={liveWallStatus.tone}>{liveWallStatus.label}</StatusPill>
                   <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Photo Wall</h2>
-                  <p className="mt-2 max-w-2xl text-stone-600">Use this during the event. Guests scan the QR code, add photos, and see them appear here.</p>
+                  <p className="mt-2 max-w-2xl text-stone-600">{liveWallStatus.copy}</p>
                 </div>
                 <div className="rounded-[1.15rem] bg-[#fff3ee] px-5 py-4 text-center">
                   <p className="font-display text-3xl font-bold text-[#d94f33]">{event.photoCount}</p>
@@ -4938,20 +4962,20 @@ function GuestEvent() {
       )}
       {event && (
         <div className="mx-auto max-w-2xl pb-24 sm:pb-8">
-          <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
+          <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-5 text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
             <div className="flex flex-wrap items-center gap-2">
               <StatusPill>{activePack.badge}</StatusPill>
               <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-amber-100">No account needed</span>
             </div>
-            <h1 className="mt-5 font-display text-4xl font-bold">{event.name}</h1>
-            <p className="mt-3 text-lg font-semibold text-stone-100">Add your photos to the private event album.</p>
+            <h1 className="mt-4 font-display text-3xl font-bold sm:mt-5 sm:text-4xl">{event.name}</h1>
+            <p className="mt-2 text-base font-semibold text-stone-100 sm:mt-3 sm:text-lg">Add your photos to the event album.</p>
             {event.description && <p className="mt-3 text-stone-300">{event.description}</p>}
-            {!event.isRevealed && <p className="mt-4 text-sm font-semibold text-amber-100">The full album unlocks after {formatDateTime(event.revealAt)}.</p>}
-            <p className="mt-5 rounded-3xl bg-white/10 p-4 text-sm font-bold text-white">{guestChallengeHint(event)}</p>
-            <a className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_16px_34px_rgba(232,93,63,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d94f33] sm:w-auto" href="#guest-upload-card">
+            {!event.isRevealed && <p className="mt-3 text-sm font-semibold text-amber-100 sm:mt-4">The full album unlocks after {formatDateTime(event.revealAt)}.</p>}
+            <a className="mt-4 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_16px_34px_rgba(232,93,63,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d94f33] sm:mt-5 sm:w-auto" href="#guest-upload-card">
               <Icon>photo_camera</Icon>
               Add photos
             </a>
+            <p className="mt-4 rounded-3xl bg-white/10 p-4 text-sm font-bold text-white">{guestChallengeHint(event)}</p>
           </section>
 
           {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && (
@@ -5038,7 +5062,7 @@ function GuestEvent() {
             </section>
           )}
 
-          <form id="guest-upload-card" ref={uploadCardRef} className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6" onSubmit={uploadPhoto}>
+          <form id="guest-upload-card" ref={uploadCardRef} className="mt-4 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:mt-6 sm:p-6" onSubmit={uploadPhoto}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
                 <h2 className="font-display text-3xl font-bold text-stone-950">Add photos</h2>

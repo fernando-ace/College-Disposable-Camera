@@ -1526,8 +1526,8 @@ export function buildHostShareAssets(
   const guestInviteMessage = `Add your photos here: ${guestLink}\nNo account needed.`;
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : guestInviteMessage;
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
-  const recapMessage = `The shared recap is ready: ${recapLink}`;
-  const recapShareText = template ? `${template.recapFraming} View the shared recap: ${recapLink}` : recapMessage;
+  const recapMessage = `Here are the photos from ${event.name}: ${recapLink}`;
+  const recapShareText = template ? `${template.recapFraming} Photos are in one place here: ${recapLink}` : recapMessage;
   const liveWallSetupTip = "Open the Photo Wall during the event so people can scan the QR code and watch photos appear. For small hangouts, you can also just share the guest link.";
   const qrPosterHint = "Print this or show it on a phone so guests can scan to add photos.";
   const winnerShareText =
