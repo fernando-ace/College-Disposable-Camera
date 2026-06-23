@@ -73,6 +73,7 @@ export type EventLifecycle = {
 export type User = {
   id: string;
   email: string;
+  isFounder?: boolean;
 };
 
 export type ColorHuntColor = {
@@ -2160,7 +2161,7 @@ export function validateHostFeedback(input: HostFeedbackInput): HostFeedbackVali
   if (kind === "beta_issue") {
     const note = cleanFeedbackText(input.note, 1000);
     if (!issueArea) return { ok: false, message: "Choose what the issue is about." };
-    if (!note) return { ok: false, message: "Add a short note so Fernando knows what happened." };
+    if (!note) return { ok: false, message: "Add a short note so the support team knows what happened." };
     return {
       ok: true,
       value: {

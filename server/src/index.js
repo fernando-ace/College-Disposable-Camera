@@ -11,7 +11,7 @@ const QRCode = require("qrcode");
 const rateLimit = require("express-rate-limit");
 const prisma = require("./prisma");
 const { signToken, requireAuth, requireFounderAuth } = require("./auth");
-const { port, clientUrl, clientOrigins, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction } = require("./config");
+const { port, clientUrl, clientOrigins, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction, founderEmails, isFounderEmail } = require("./config");
 const { EventSettingsError, updateHostEventSettings, validateEventSettingsInput } = require("./event-settings");
 const { buildFounderOverview } = require("./founder");
 const {
@@ -91,14 +91,18 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "recap_create_event_cta_clicked",
   "native_share_opened",
   "live_wall_opened",
+  "live_wall_viewed",
   "live_wall_mode_viewed",
   "live_wall_mode_switched",
+  "live_wall_mode_changed",
   "live_wall_fullscreen_clicked",
   "live_wall_slideshow_paused",
   "live_wall_slideshow_resumed",
   "live_wall_qr_display_opened",
+  "live_wall_qr_toggled",
   "live_wall_challenge_display_opened",
   "live_wall_awards_leaders_viewed",
+  "live_wall_upload_link_clicked",
   "recap_opened",
   "guest_upload_page_viewed",
   "guest_joined_event",
@@ -197,6 +201,14 @@ const ANALYTICS_METADATA_KEYS = new Set([
   "skipped",
   "exportFormat",
 ]);
+
+function userPayload(user) {
+  return {
+    id: user.id,
+    email: user.email,
+    isFounder: Boolean(founderEmails.length && isFounderEmail(user.email, founderEmails)),
+  };
+}
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -724,7 +736,7 @@ function validateHostFeedback(input = {}) {
   if (kind === "beta_issue") {
     const note = cleanFeedbackText(input.note, 1000);
     if (!issueArea) throw new Error("Choose what the issue is about.");
-    if (!note) throw new Error("Add a short note so Fernando knows what happened.");
+    if (!note) throw new Error("Add a short note so the support team knows what happened.");
     return { skipped: false, kind, issueArea, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note };
   }
   const outcome = ["great", "okay", "rough"].includes(input.outcome) ? input.outcome : null;
@@ -1066,7 +1078,7 @@ app.post("/api/auth/signup", async (req, res) => {
       data: { email: normalizedEmail, passwordHash },
     });
     logDevAuth("signup_success", { email: normalizedEmail });
-    res.status(201).json({ token: signToken(user), user: { id: user.id, email: user.email } });
+    res.status(201).json({ token: signToken(user), user: userPayload(user) });
   } catch (error) {
     if (error.code === "P2002") {
       logDevAuth("signup_duplicate", { email: String(email || "").toLowerCase().trim() });
@@ -1086,13 +1098,13 @@ app.post("/api/auth/login", async (req, res) => {
     return res.status(401).json({ error: "Invalid email or password" });
   }
   logDevAuth("login_success", { email: normalizedEmail });
-  res.json({ token: signToken(user), user: { id: user.id, email: user.email } });
+  res.json({ token: signToken(user), user: userPayload(user) });
 });
 
 app.get("/api/me", requireAuth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.user.userId } });
   if (!user) return res.status(404).json({ error: "User not found" });
-  res.json({ user: { id: user.id, email: user.email } });
+  res.json({ user: userPayload(user) });
 });
 
 app.get("/api/host/events", requireAuth, async (req, res) => {

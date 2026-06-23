@@ -627,7 +627,7 @@ function HostBetaIssuePanel({ event }: { event: EventSummary }) {
     setStatus("");
     try {
       await api.submitHostEventFeedback(event.id, validation.value);
-      setStatus("Issue sent. Fernando can see it in founder beta ops.");
+      setStatus("Issue sent. The support team can review it with this event attached.");
       setOpen(false);
       setForm({ kind: "beta_issue", issueArea: "guest_upload", note: "" });
     } catch (err) {

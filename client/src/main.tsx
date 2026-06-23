@@ -1251,7 +1251,7 @@ function HostBetaIssuePanel({ event }: { event: EventSummary }) {
     setStatus("");
     try {
       await eventFilmApi.submitHostEventFeedback(event.id, validation.value, auth.token);
-      setStatus("Issue sent. Fernando can see it in founder beta ops.");
+      setStatus("Issue sent. The support team can review it with this event attached.");
       setForm({ kind: "beta_issue", issueArea: "guest_upload", note: "" });
       setOpen(false);
     } catch (err) {
@@ -1921,11 +1921,8 @@ function Dashboard() {
     api<{ events: EventSummary[] }>("/api/host/events", { token: auth.token })
       .then((data) => setEvents(data.events))
       .catch((err) => setError((err as Error).message));
-    eventFilmApi
-      .getFounderOverview(auth.token)
-      .then(() => setCanViewFounder(true))
-      .catch(() => {});
-  }, [auth.token]);
+    setCanViewFounder(Boolean(auth.user?.isFounder));
+  }, [auth.token, auth.user?.isFounder]);
 
   useEffect(() => {
     const missingPreviewEvents = events.filter((event) => event.photoCount > 0 && !event.previewPhotos?.length && !previewLoadIds.current.has(event.id));

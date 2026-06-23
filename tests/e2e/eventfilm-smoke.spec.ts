@@ -1,10 +1,31 @@
 import { expect, test } from "@playwright/test";
+import { execFileSync } from "node:child_process";
 
 const apiUrl = (process.env.EVENTFILM_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 const seededSlug = process.env.EVENTFILM_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-memory-capsule";
 const revealedSeededSlug = process.env.EVENTFILM_REVEALED_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-storage-smoke";
 const demoHostEmail = process.env.DEMO_HOST_EMAIL || "fernando+eventfilm-demo@example.com";
 const demoHostPassword = process.env.DEMO_HOST_PASSWORD || "eventfilm-beta-demo";
+
+function cleanupCreatedSmokeEvent(eventId: string) {
+  const script = `
+    const prisma = require("./server/src/prisma");
+    const eventId = process.argv[1];
+    (async () => {
+      if (process.env.NODE_ENV === "production") throw new Error("Refusing to cleanup smoke event in production.");
+      const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, name: true } });
+      if (event?.name?.startsWith("Browser Smoke")) {
+        await prisma.event.delete({ where: { id: eventId } });
+      }
+    })()
+      .finally(async () => prisma.$disconnect())
+      .catch((error) => {
+        console.error(error.message);
+        process.exitCode = 1;
+      });
+  `;
+  execFileSync(process.execPath, ["-e", script, eventId], { cwd: process.cwd(), stdio: "pipe" });
+}
 
 test.describe("EventFilm browser smoke", () => {
   test.beforeEach(async ({ page }) => {
@@ -56,6 +77,46 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto("/dashboard/founder");
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
+  });
+
+  test("host can sign in and create an event with the beta handoff", async ({ page, request }) => {
+    const health = await request.get(`${apiUrl}/api/health`);
+    test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
+
+    let createdEventId = "";
+
+    try {
+      await page.goto("/login");
+      await page.locator("input[type='email']").fill(demoHostEmail);
+      await page.locator("input[type='password']").fill(demoHostPassword);
+      await page.getByRole("button", { name: "Log in" }).click();
+      await expect(page).toHaveURL(/\/dashboard$/);
+      await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+
+      await page.getByRole("link", { name: "Create event" }).first().click();
+      await expect(page.getByRole("heading", { name: "Create your first event" })).toBeVisible();
+      await page.getByRole("button", { name: "Start with this" }).last().click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await page.getByRole("button", { name: "Continue" }).click();
+      await expect(page.getByRole("heading", { name: "Confirm details" })).toBeVisible();
+
+      const eventName = `Browser Smoke ${Date.now()}`;
+      await page.getByLabel("Event name").fill(eventName);
+      await page.getByRole("button", { name: "Create event" }).click();
+
+      await expect(page.getByRole("heading", { name: "Your event is ready." })).toBeVisible();
+      const createdUrl = page.url();
+      createdEventId = createdUrl.match(/\/dashboard\/events\/([^/?#]+)/)?.[1] || "";
+      expect(createdEventId).toBeTruthy();
+
+      const createdHandoff = page.locator("[aria-label='Event creation success']");
+      await expect(createdHandoff).toContainText("Guests can add photos without an account.");
+      await expect(createdHandoff.getByRole("button", { name: "Copy guest upload link" })).toBeVisible();
+      await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toBeVisible();
+      await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toBeVisible();
+    } finally {
+      if (createdEventId) cleanupCreatedSmokeEvent(createdEventId);
+    }
   });
 
   test("seeded guest, Live Wall, and Recap routes render", async ({ page, request }) => {
