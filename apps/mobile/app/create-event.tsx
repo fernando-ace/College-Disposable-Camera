@@ -540,7 +540,7 @@ export default function CreateEventScreen() {
           metadata,
         }).catch(() => {});
       }
-      router.replace(`/events/${data.event.id}`);
+      router.replace(`/events/${data.event.id}?created=1`);
     } catch (err) {
       setError((err as Error).message);
     } finally {

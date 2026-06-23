@@ -135,6 +135,19 @@ test.describe("EventFilm browser smoke", () => {
       window.localStorage.setItem("eventfilm_user", JSON.stringify(user));
     }, { token: auth.token, user: auth.user });
 
+    await page.goto(`/dashboard/events/${eventId}?created=1`);
+    const createdHandoff = page.getByLabel("Event creation success");
+    await expect(page.getByRole("heading", { name: "Your event is ready." })).toBeVisible();
+    await expect(createdHandoff).toContainText("Guests can add photos without an account.");
+    await expect(createdHandoff.getByRole("button", { name: "Copy guest upload link" })).toBeVisible();
+    await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
+    await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
+    await expect(createdHandoff).toContainText("Open the Live Wall during the event");
+    await expect(createdHandoff).toContainText("Share the recap after the event");
+    await page.getByRole("button", { name: "Dismiss" }).click();
+    await expect(page.getByRole("heading", { name: "Your event is ready." })).toHaveCount(0);
+    await expect(page).not.toHaveURL(/created=1/);
+
     await page.goto(`/dashboard/events/${eventId}`);
     await expect(page.getByText(/Event status/i).first()).toBeVisible();
     await expect(page.getByText("Before the event").first()).toBeVisible();
@@ -171,6 +184,10 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("button", { name: "Copy Live Wall link" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy guest upload link" }).first()).toBeVisible();
       await expect(page.locator("body")).toContainText("Keep the QR code visible.");
+
+      await page.goto(`/dashboard/events/${eventId}?tab=uploads`);
+      await expect(page.getByRole("heading", { name: "Uploads" })).toBeVisible();
+      await expect(page.getByRole("button", { name: /All photos/i })).toBeVisible();
 
       await page.goto(`/e/${seededSlug}`);
       await expect(page.locator("body")).toContainText("No account needed");

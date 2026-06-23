@@ -117,7 +117,7 @@ function eventSettingsInputFromForm(form: EventSettingsForm): UpdateEventSetting
 }
 
 export default function EventDetailScreen() {
-  const { eventId } = useLocalSearchParams<{ eventId: string }>();
+  const { eventId, created } = useLocalSearchParams<{ eventId: string; created?: string }>();
   const { api } = useAuth();
   const [event, setEvent] = React.useState<(EventSummary & { photos: Photo[] }) | null>(null);
   const [analyticsSummary, setAnalyticsSummary] = React.useState<EventAnalyticsSummary | null>(null);
@@ -129,6 +129,7 @@ export default function EventDetailScreen() {
   const [settingsStatus, setSettingsStatus] = React.useState("");
   const [linkCopyStatus, setLinkCopyStatus] = React.useState("");
   const [settingsSaving, setSettingsSaving] = React.useState(false);
+  const [createdHandoffDismissed, setCreatedHandoffDismissed] = React.useState(false);
 
   async function loadEvent() {
     if (!eventId) return;
@@ -277,6 +278,12 @@ export default function EventDetailScreen() {
     ...settingsFieldErrors,
   };
   const canSaveSettings = Boolean(settingsDirty && !settingsSaving && liveSettingsValidation?.ok);
+  const showCreatedHandoff = created === "1" && !createdHandoffDismissed;
+
+  function dismissCreatedHandoff() {
+    setCreatedHandoffDismissed(true);
+    if (event) router.replace(`/events/${event.id}`);
+  }
 
   React.useEffect(() => {
     if (!event || !lifecycleStatus) return;
@@ -311,6 +318,29 @@ export default function EventDetailScreen() {
 
       {event ? (
         <>
+          {showCreatedHandoff ? (
+            <Card tone="warm">
+              <SectionHeader title="Your event is ready." subtitle={event.name} action={<Badge tone="green">Event dashboard</Badge>} />
+              <Body tone="muted">Start by sharing the guest upload link. Guests can add photos without an account.</Body>
+              <View style={{ gap: 8 }}>
+                <Body tone="muted">1. Share the guest link before people arrive.</Body>
+                <Body tone="muted">2. Open the Live Wall during the event.</Body>
+                <Body tone="muted">3. Share the recap after reveal.</Body>
+              </View>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button onPress={() => copyEventLink("Guest upload link", event.eventLink)}>Share guest link</Button>
+                </View>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button tone="secondary" onPress={() => router.push(`/events/${event.id}/share`)}>Open event</Button>
+                </View>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
+                </View>
+              </View>
+              <Button tone="secondary" onPress={dismissCreatedHandoff}>Dismiss</Button>
+            </Card>
+          ) : null}
           <View style={{ gap: 12 }}>
             <SectionHeader title="Share kit" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
             <LinkBlock label="Guest Upload" description="The link and QR code guests need before and during the event." url={event.eventLink} tone="accent">
