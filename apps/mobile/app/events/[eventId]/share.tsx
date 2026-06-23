@@ -4,7 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Image, Linking, Share, View } from "react-native";
 import type { LaunchLinkVerification } from "@eventfilm/api-client";
 import type { AnalyticsEventName, EventSummary, Photo } from "@eventfilm/shared";
-import { buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, getEventTemplate } from "@eventfilm/shared";
+import { buildHostShareAssets, deriveEventLifecycleStatus } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, ErrorState, LinkBlock, LoadingState, Screen, SectionHeader, SuccessState, TaskHeader, colors } from "../../../src/components/ui";
 import { useAuth } from "../../../src/auth";
 
@@ -80,17 +80,19 @@ export default function ShareEventScreen() {
     setMessage(`${label} copied.`);
   }
 
-  const launchKit = event ? buildHostLaunchKit(event) : null;
   const shareAssets = event ? buildHostShareAssets(event) : null;
-  const liveWallDisplayLinks = event ? buildLiveWallDisplayLinks(event) : [];
-  const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
+  const lifecycle = event ? deriveEventLifecycleStatus(event) : null;
+  const isRecapReady = Boolean(event?.recapLink && lifecycle?.phase === "after");
+  const recapUnavailableCopy = lifecycle?.phase === "after"
+    ? "The recap link is not available yet. Refresh this event before sharing it."
+    : "The recap will be ready after the reveal time.";
 
   return (
     <Screen>
       <TaskHeader
-        eyebrow="Share event"
-        title={event ? `${event.name} is ready to share.` : "Preparing share link"}
-        body={template ? `${template.name}. Keep Guest Upload, Live Wall, and Recap in their own moments.` : "Guests scan the QR code or open the guest link from any browser. No account needed."}
+        eyebrow="Share kit"
+        title={event ? event.name : "Preparing share links"}
+        body="Send the guest link before the event, open the Live Wall during it, and share the recap after reveal."
       />
       {error ? <ErrorState message={error} /> : null}
       {!event ? <LoadingState label="Loading sharing details..." /> : null}
@@ -98,79 +100,89 @@ export default function ShareEventScreen() {
         <>
           {shareAssets ? (
             <>
-              {shareAssets.links.map((link) => (
-                <ShareLinkCard
-                  key={link.key}
-                  title={link.label}
-                  subtitle={`${link.audience}. ${link.timing}. ${link.purpose}`}
-                  url={link.url}
-                  tone={link.key === "guest" ? "accent" : undefined}
-                  onShare={() => shareLink(link.label, link.url, link.shareText, link.shareAnalyticsName)}
-                  onCopy={() => copyLink(link.label, link.url, link.copyAnalyticsName)}
-                />
-              ))}
-              {message ? <SuccessState message={message} /> : null}
-
               <Card tone="warm">
-                <SectionHeader title="Invite poster" subtitle="Web-only poster page for printing or saving as PDF." />
-                <Body>{shareAssets.poster.instruction}. {shareAssets.poster.noDownloadCopy}.</Body>
-                <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open poster page</Button>
+                <SectionHeader title="Event status" subtitle={lifecycle?.description || "Use the right link for the moment."} action={lifecycle ? <Badge>{lifecycle.label}</Badge> : undefined} />
+                <Body tone="muted">Next step: {lifecycle?.phase === "during" ? "Open the Live Wall and keep the QR code visible." : lifecycle?.phase === "after" ? "Share the recap with everyone." : "Send the guest upload link before people arrive."}</Body>
+                {lifecycle?.phase === "during" ? (
+                  <Button disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
+                ) : lifecycle?.phase === "after" ? (
+                  <Button disabled={!isRecapReady} onPress={() => copyLink("Recap link", event.recapLink, "recap_link_copied")}>Copy recap link</Button>
+                ) : (
+                  <Button onPress={() => copyLink("Guest upload link", event.eventLink)}>Copy guest upload link</Button>
+                )}
               </Card>
 
               <Card>
-                <SectionHeader title="Presenter displays" subtitle="Use these on a TV, projector, laptop, or iPad." />
-                <View style={{ gap: 10 }}>
-                  {liveWallDisplayLinks.map((link) => (
-                    <ShareLinkCard
-                      key={link.key}
-                      title={link.label}
-                      subtitle={link.purpose}
-                      url={link.url}
-                      onShare={() => shareLink(link.label, link.url, link.instruction, link.analyticsName)}
-                      onCopy={() => copyLink(link.label, link.url, link.analyticsName)}
-                    />
-                  ))}
+                <SectionHeader title="Before the event" subtitle="Send this in the group chat before people arrive." />
+                <ShareLinkCard
+                  title="Guest upload link"
+                  subtitle="No account needed."
+                  url={event.eventLink}
+                  tone="accent"
+                  shareLabel="Share guest link"
+                  copyLabel="Copy guest link"
+                  onShare={() => shareLink("Guest upload link", event.eventLink, shareAssets.guestInviteMessage, "guest_link_shared")}
+                  onCopy={() => copyLink("Guest upload link", event.eventLink, "guest_link_copied")}
+                />
+                <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open QR poster</Button>
+                <Card tone="warm" padding={14}>
+                  <SectionHeader title="Invite message" />
+                  <Body>{shareAssets.guestInviteMessage}</Body>
+                  <Button tone="secondary" onPress={() => copyText("Invite message", shareAssets.guestInviteMessage)}>Copy invite message</Button>
+                </Card>
+              </Card>
+
+              <Card>
+                <SectionHeader title="During the event" subtitle={shareAssets.liveWallSetupTip} />
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                  <View style={{ flex: 1, minWidth: 150 }}>
+                    <Button disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 150 }}>
+                    <Button tone="secondary" onPress={() => shareLink("Guest upload link", event.eventLink, shareAssets.guestInviteMessage, "guest_link_shared")}>Share guest link</Button>
+                  </View>
+                  <View style={{ flex: 1, minWidth: 150 }}>
+                    <Button tone="secondary" onPress={() => copyLink("Guest upload link", event.eventLink, "guest_link_copied")}>Copy guest link</Button>
+                  </View>
                 </View>
+                <Body tone="muted">{shareAssets.liveWallSetupTip}</Body>
+              </Card>
+
+              <Card>
+                <SectionHeader title="After the event" subtitle={isRecapReady ? "Send the recap when the reveal is open." : recapUnavailableCopy} />
+                {isRecapReady ? (
+                  <>
+                    <ShareLinkCard
+                      title="Recap link"
+                      subtitle="Share the finished memory page with everyone."
+                      url={event.recapLink}
+                      shareLabel="Share recap"
+                      copyLabel="Copy recap link"
+                      onShare={() => shareLink("Recap", event.recapLink, shareAssets.recapMessage, "recap_link_shared")}
+                      onCopy={() => copyLink("Recap link", event.recapLink, "recap_link_copied")}
+                    />
+                    <Button tone="secondary" onPress={() => copyText("Recap message", shareAssets.recapMessage)}>Copy recap message</Button>
+                  </>
+                ) : (
+                  <Body tone="muted">{recapUnavailableCopy}</Body>
+                )}
+              </Card>
+
+              {message ? <SuccessState message={message} /> : null}
+
+              <Card tone="warm">
+                <SectionHeader title="QR code" subtitle={shareAssets.qrPosterHint} action={<Badge>{event.photoCount} photos</Badge>} />
+                <Body>{shareAssets.poster.instruction}. {shareAssets.poster.noDownloadCopy}</Body>
+                {event.qrCodeDataUrl ? (
+                  <View style={{ borderRadius: 28, borderCurve: "continuous", backgroundColor: "#fff", padding: 18, borderWidth: 1, borderColor: colors.border }}>
+                    <Image source={{ uri: event.qrCodeDataUrl }} style={{ width: "100%", aspectRatio: 1, borderRadius: 18 }} />
+                  </View>
+                ) : null}
               </Card>
             </>
           ) : null}
 
           <LinkHealthPanel linkChecks={linkChecks} />
-
-          <Card>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-              <SectionHeader title="QR code" subtitle="Place this where guests naturally pause." />
-              <Badge>{event.photoCount} photos</Badge>
-            </View>
-            {event.qrCodeDataUrl ? (
-              <View style={{ borderRadius: 28, borderCurve: "continuous", backgroundColor: "#fff", padding: 18, borderWidth: 1, borderColor: colors.border }}>
-                <Image source={{ uri: event.qrCodeDataUrl }} style={{ width: "100%", aspectRatio: 1, borderRadius: 18 }} />
-              </View>
-            ) : null}
-          </Card>
-
-          {launchKit ? (
-            <>
-              <Card tone="warm">
-                <SectionHeader title="Invite text" subtitle="Short enough for a group chat or story." />
-                <Body>{launchKit.inviteText}</Body>
-                <Button tone="secondary" onPress={() => copyText("Guest invite", shareAssets?.inviteText || launchKit.inviteText)}>Copy invite text</Button>
-              </Card>
-
-              <Card>
-                <SectionHeader title="Host notes" subtitle="A quick reminder for the event flow." />
-                <Body tone="muted">{launchKit.hostInstructions}</Body>
-                <Body tone="muted">{launchKit.modeInstructions}</Body>
-                <Button tone="secondary" onPress={() => copyText("Host instructions", launchKit.hostInstructions)}>Copy host instructions</Button>
-              </Card>
-
-              <Card>
-                <SectionHeader title="Suggested caption" subtitle="Ready for social or a group message." />
-                <Body>{shareAssets?.socialPostCopy || launchKit.socialCaption}</Body>
-                <Button tone="secondary" onPress={() => copyText("Caption", shareAssets?.socialPostCopy || launchKit.socialCaption)}>Copy caption</Button>
-              </Card>
-            </>
-          ) : null}
         </>
       ) : null}
     </Screen>
@@ -202,6 +214,8 @@ function ShareLinkCard({
   tone,
   onShare,
   onCopy,
+  shareLabel = "Share",
+  copyLabel = "Copy link",
 }: {
   title: string;
   subtitle: string;
@@ -209,15 +223,17 @@ function ShareLinkCard({
   tone?: "accent";
   onShare: () => void;
   onCopy: () => void;
+  shareLabel?: string;
+  copyLabel?: string;
 }) {
   return (
     <LinkBlock label={title} description={subtitle} url={url || "Link unavailable until the event reloads."} tone={tone}>
       <View style={{ flexDirection: "row", gap: 10 }}>
         <View style={{ flex: 1 }}>
-          <Button disabled={!url} onPress={onShare}>Share</Button>
+          <Button disabled={!url} onPress={onShare}>{shareLabel}</Button>
         </View>
         <View style={{ flex: 1 }}>
-          <Button tone="secondary" disabled={!url} onPress={onCopy}>Copy link</Button>
+          <Button tone="secondary" disabled={!url} onPress={onCopy}>{copyLabel}</Button>
         </View>
       </View>
     </LinkBlock>

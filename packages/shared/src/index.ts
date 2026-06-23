@@ -368,6 +368,7 @@ export type HostInvitePoster = {
   modeBadge: string;
   templateBadge?: string;
   challengeInstruction?: string;
+  modeHint: string;
   noDownloadCopy: string;
   brandLine: string;
   inviteText: string;
@@ -381,6 +382,10 @@ export type HostShareAssets = {
   links: HostShareLinkCard[];
   liveWallDisplayLinks: LiveWallDisplayLink[];
   inviteText: string;
+  guestInviteMessage: string;
+  recapMessage: string;
+  liveWallSetupTip: string;
+  qrPosterHint: string;
   socialPostCopy: string;
   liveWallDisplayPrompt: string;
   recapShareText: string;
@@ -1122,7 +1127,7 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "wedding-engagement",
     revealTiming: "Reveal after the reception or the next day.",
     suggestedUploadLimit: 15,
-    inviteCopy: "Share your favorite candid photos from the celebration. No app download needed:",
+    inviteCopy: "Share your favorite candid photos from the celebration. No account needed:",
     liveWallCopy: "Open the Live Wall during the reception so guests can watch the celebration build.",
     recapFraming: "A guest-made celebration story with candids, dance-floor moments, family photos, and details.",
     icon: "favorite",
@@ -1416,6 +1421,14 @@ function eventLinkOrFallback(value: string | undefined | null) {
   return value || "";
 }
 
+function buildPosterModeHint(challenge: Pick<EventChallenge, "type"> | null | undefined) {
+  if (challenge?.type === CHALLENGE_TYPES.COLOR_HUNT) return "Color Hunt: Find your color and upload your best photo.";
+  if (challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) return "Photo Prompts: Pick a prompt and add a matching photo.";
+  if (challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) return "Event Awards: Submit photos for the award categories.";
+  if (challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE) return "Memory Capsule: Add photos now. Everyone sees them after the reveal.";
+  return "Simple Album: Add any photos you want the host to have.";
+}
+
 export const LIVE_WALL_MODES = ["grid", "slideshow", "join", "challenge", "awards"] as const satisfies readonly LiveWallMode[];
 
 export const LIVE_WALL_MODE_LABELS: Record<LiveWallMode, string> = {
@@ -1509,9 +1522,13 @@ export function buildHostShareAssets(
   const recapLink = eventLinkOrFallback(event.recapLink);
   const liveWallDisplayLinks = buildLiveWallDisplayLinks(event);
   const challengeInstruction = event.challenge?.instructions || pack.guestInstructions;
-  const inviteText = template ? `${template.inviteCopy} ${guestLink}` : `Upload your photos from ${event.name} here: ${guestLink}. No app download needed.`;
+  const guestInviteMessage = `Add your photos here during the event: ${guestLink}\nNo account needed.`;
+  const inviteText = template ? `${template.inviteCopy} ${guestLink}` : guestInviteMessage;
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
-  const recapShareText = template ? `${template.recapFraming} View the finished memory page: ${recapLink}` : `See the EventFilm recap for ${event.name}: ${recapLink}`;
+  const recapMessage = `The event recap is ready: ${recapLink}`;
+  const recapShareText = template ? `${template.recapFraming} View the finished memory page: ${recapLink}` : recapMessage;
+  const liveWallSetupTip = "Open the Live Wall on a TV or projector and keep the QR code visible.";
+  const qrPosterHint = "Print this or show it on a phone so guests can scan to add photos.";
   const winnerShareText =
     event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
       ? `The Event Awards winners from ${event.name} are ready. View the finished memory page: ${recapLink}`
@@ -1569,19 +1586,24 @@ export function buildHostShareAssets(
     templateName: template?.name,
     poster: {
       title: event.name,
-      instruction: "Scan to upload your photos",
+      instruction: "Scan to add photos",
       guestLink,
       posterPath: buildPosterPath(event),
       modeBadge: pack.name,
       templateBadge: template?.name,
       challengeInstruction,
-      noDownloadCopy: "No app download needed",
+      modeHint: buildPosterModeHint(event.challenge),
+      noDownloadCopy: "No account needed.",
       brandLine: "EventFilm",
-      inviteText,
+      inviteText: guestInviteMessage,
     },
     links,
     liveWallDisplayLinks,
     inviteText,
+    guestInviteMessage,
+    recapMessage,
+    liveWallSetupTip,
+    qrPosterHint,
     socialPostCopy,
     liveWallDisplayPrompt: template ? template.liveWallCopy : "Open the Live Wall while guests upload photos.",
     recapShareText,
@@ -1598,7 +1620,7 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
   const liveWallLink = event.liveWallLink || "";
   const recapLink = event.recapLink || "";
   const liveWallDisplayLinks = buildLiveWallDisplayLinks(event);
-  const inviteText = template ? `${template.inviteCopy} ${guestLink}` : "Upload your photos from tonight here: " + guestLink + ". No app download needed.";
+  const inviteText = template ? `${template.inviteCopy} ${guestLink}` : "Upload your photos from tonight here: " + guestLink + ". No account needed.";
   const socialCaption = template ? `${template.recapFraming} Add yours: ${guestLink}` : "Drop your favorite photos from " + event.name + " here: " + guestLink;
 
   return {

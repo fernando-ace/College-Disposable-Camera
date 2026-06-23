@@ -1381,93 +1381,6 @@ function HostLaunchKitPanel({ event, qrCodeDataUrl, compact = false }: { event: 
   );
 }
 
-function BetaHandoffPanel({ event, lifecycle }: { event: EventSummary; lifecycle: EventLifecycle | null }) {
-  useEffect(() => {
-    trackAnalytics("beta_handoff_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
-  }, [event.id, event.slug]);
-
-  function trackChecklist(label: string) {
-    trackAnalytics("first_event_checklist_item_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail", label } });
-  }
-
-  function trackPoster() {
-    trackChecklist("open_poster");
-    trackAnalytics("qr_poster_viewed_from_beta_handoff", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
-  }
-
-  function trackLiveWall(label = "open_live_wall") {
-    trackChecklist(label);
-    trackAnalytics("live_wall_opened_from_beta_handoff", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail", label } });
-  }
-
-  function trackRecap() {
-    trackChecklist("open_recap");
-    trackAnalytics("recap_opened_from_beta_handoff", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "event_detail" } });
-  }
-
-  const rows = [
-    {
-      title: "Before",
-      copy: "Create the event, confirm the mode, and send the QR or guest link before people arrive.",
-      action: <Link className="inline-flex min-h-10 items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-900" to={`/dashboard/events/${event.id}/poster`} onClick={trackPoster}>Open QR poster</Link>,
-    },
-    {
-      title: "During",
-      copy: "Keep Live Wall open on the room display and remind guests to upload from Safari or Chrome.",
-      action: event.liveWallLink ? <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-900" href={event.liveWallLink} target="_blank" rel="noreferrer" onClick={() => trackLiveWall()}>Open Live Wall</a> : null,
-    },
-    {
-      title: "After",
-      copy: "Feature favorites, hide anything off-tone, share the Recap, then leave a quick host note.",
-      action: event.recapLink ? <a className="inline-flex min-h-10 items-center justify-center rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-900" href={event.recapLink} target="_blank" rel="noreferrer" onClick={trackRecap}>Open Recap</a> : null,
-    },
-  ];
-
-  return (
-    <Card className="mt-5 border-[#ffd4c7] bg-[#fff3ee] lg:p-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <StatusPill tone="amber">First beta host handoff</StatusPill>
-          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Run this first event without guessing.</h2>
-          <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-700">{lifecycle?.description || "Use these links in order: guest upload before and during the event, Live Wall during, Recap after reveal."}</p>
-        </div>
-        <a className="inline-flex min-h-10 items-center justify-center rounded-full border border-[#e1d4c5] bg-white px-4 py-2 text-sm font-bold text-stone-900" href="#beta-issue-report" onClick={() => trackChecklist("report_beta_issue")}>Report issue</a>
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        {rows.map((row) => (
-          <div className="rounded-[1.35rem] border border-[#ffd4c7] bg-white/70 p-4" key={row.title}>
-            <p className="text-xs font-extrabold uppercase text-[#d94f33]">{row.title}</p>
-            <p className="mt-2 text-sm font-semibold leading-6 text-stone-700">{row.copy}</p>
-            <div className="mt-4">{row.action}</div>
-          </div>
-        ))}
-      </div>
-
-      <div className="mt-6 grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <div className="rounded-[1.35rem] bg-white p-4">
-          <h3 className="font-display text-xl font-bold text-stone-950">What each link is for</h3>
-          <div className="mt-3 grid gap-2 text-sm text-stone-700">
-            <p><strong className="text-stone-950">Guest upload:</strong> send to guests and put behind the QR code.</p>
-            <p><strong className="text-stone-950">Live Wall:</strong> open on the display while people add photos.</p>
-            <p><strong className="text-stone-950">Recap:</strong> share after reveal once favorites are featured.</p>
-            <p><strong className="text-stone-950">Host dashboard:</strong> manage photos, mode, feedback, and exports.</p>
-          </div>
-        </div>
-        <div className="rounded-[1.35rem] bg-white p-4">
-          <h3 className="font-display text-xl font-bold text-stone-950">If uploads get weird</h3>
-          <div className="mt-3 grid gap-2 text-sm text-stone-700">
-            <p>Try Safari on iPhone or Chrome on Android, then retry from the photo library.</p>
-            <p>Switch between Wi-Fi and cellular if the progress hangs.</p>
-            <p>Choose a smaller image if the file is large or the network is slow.</p>
-            <p>Send a beta issue below if guests still cannot upload.</p>
-          </div>
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 function HostBetaIssuePanel({ event }: { event: EventSummary }) {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
@@ -1756,29 +1669,38 @@ function EventPosterPage() {
       {!event && <Card className="text-center"><h1 className="font-display text-3xl font-bold">Loading poster</h1><p className="mt-2 text-stone-600">{error || "Building the host invite poster..."}</p></Card>}
       {event && assets && (
         <div className="poster-page mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1fr_320px]">
-          <section className="poster-sheet overflow-hidden rounded-[2rem] bg-[#fffaf2] p-8 text-stone-950 shadow-[0_28px_90px_rgba(101,62,0,0.14)]">
+          <section className="poster-sheet overflow-hidden rounded-[1.25rem] bg-white p-8 text-stone-950 shadow-[0_28px_90px_rgba(101,62,0,0.14)]">
             <div className="flex items-center justify-between gap-4">
-              <p className="font-display text-2xl font-bold text-[#653e00]">{assets.poster.brandLine}</p>
+              <p className="font-display text-xl font-bold text-stone-900">{assets.poster.brandLine}</p>
               <div className="flex flex-wrap justify-end gap-2">
-                {assets.poster.templateBadge ? <span className="rounded-full bg-[#ffe0b7] px-4 py-2 text-sm font-extrabold text-[#653e00]">{assets.poster.templateBadge}</span> : null}
+                {assets.poster.templateBadge ? <span className="rounded-full border border-stone-300 bg-white px-4 py-2 text-sm font-extrabold text-stone-800">{assets.poster.templateBadge}</span> : null}
                 <span className="rounded-full bg-stone-950 px-4 py-2 text-sm font-extrabold text-white">{assets.poster.modeBadge}</span>
               </div>
             </div>
-            <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_300px] lg:items-center">
+            <div className="mt-8 text-center">
+              <h1 className="font-display text-4xl font-black leading-tight text-stone-950 lg:text-6xl">{assets.poster.title}</h1>
+              <p className="mt-4 font-display text-3xl font-bold text-stone-950">{assets.poster.instruction}</p>
+              <p className="mt-2 text-xl font-bold text-stone-700">{assets.poster.noDownloadCopy}</p>
+            </div>
+            <div className="mx-auto mt-8 grid max-w-4xl gap-8 lg:grid-cols-[1fr_360px] lg:items-center">
               <div>
-                <p className="text-sm font-extrabold uppercase tracking-wide text-[#d94f33]">{assets.poster.noDownloadCopy}</p>
-                <h1 className="mt-4 font-display text-5xl font-black leading-tight text-stone-950 lg:text-7xl">{assets.poster.title}</h1>
-                <p className="mt-6 font-display text-3xl font-bold text-[#653e00]">{assets.poster.instruction}</p>
-                {assets.poster.challengeInstruction ? <p className="mt-5 max-w-2xl text-xl font-semibold leading-8 text-stone-700">{assets.poster.challengeInstruction}</p> : null}
+                <div className="rounded-[1.25rem] border border-stone-200 bg-stone-50 p-5 text-left">
+                  <p className="text-sm font-bold uppercase text-stone-500">Mode hint</p>
+                  <p className="mt-2 text-xl font-bold leading-8 text-stone-900">{assets.poster.modeHint}</p>
+                  {assets.poster.challengeInstruction ? <p className="mt-4 text-base font-semibold leading-7 text-stone-700">{assets.poster.challengeInstruction}</p> : null}
+                </div>
+                <div className="mt-5 rounded-[1.25rem] border border-stone-200 bg-white p-5 text-left">
+                  <p className="text-sm font-bold uppercase text-stone-500">Short link</p>
+                  <p className="mt-2 break-all text-lg font-extrabold text-stone-950">{assets.poster.guestLink}</p>
+                </div>
               </div>
-              <div className="rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_50px_rgba(101,62,0,0.09)]">
-                {event.qrCodeDataUrl ? <img className="aspect-square w-full rounded-[1.25rem] bg-white" src={event.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
-                <p className="mt-4 break-all rounded-[1rem] bg-[#fff3ee] p-3 text-center text-sm font-extrabold text-[#653e00]">{assets.poster.guestLink}</p>
+              <div className="rounded-[1.25rem] border-2 border-stone-950 bg-white p-5">
+                {event.qrCodeDataUrl ? <img className="aspect-square w-full bg-white" src={event.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
               </div>
             </div>
-            <div className="mt-10 rounded-[1.5rem] border border-[#ffd4c7] bg-white/70 p-5">
-              <p className="text-sm font-bold uppercase tracking-wide text-[#d94f33]">Invite copy</p>
-              <p className="mt-2 text-xl font-bold leading-8 text-stone-800">{assets.poster.inviteText}</p>
+            <div className="mt-8 rounded-[1.25rem] border border-stone-200 bg-stone-50 p-5 text-center">
+              <p className="text-sm font-bold uppercase text-stone-500">Invite copy</p>
+              <p className="mt-2 whitespace-pre-line text-xl font-bold leading-8 text-stone-800">{assets.poster.inviteText}</p>
             </div>
           </section>
 
@@ -1786,6 +1708,7 @@ function EventPosterPage() {
             <Card>
               <h2 className="font-display text-2xl font-bold">Poster actions</h2>
               <p className="mt-2 text-sm text-stone-600">Use browser print to save as PDF or send to a printer. Standalone poster image export is intentionally out of scope for this pass.</p>
+              <p className="mt-2 text-sm font-semibold text-stone-700">{assets.qrPosterHint}</p>
               {status && <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-800">{status}</p>}
               <div className="mt-4 grid gap-2">
                 <Button type="button" onClick={printPoster}>Print or save PDF</Button>
@@ -2213,7 +2136,7 @@ function Dashboard() {
     if (lifecycle.phase === "during" && event.liveWallLink) {
       return <a className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a>;
     }
-    return <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" onClick={() => copyEventLink(event)}>Copy guest link</button>;
+    return <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" onClick={() => copyEventLink(event)}>Share guest link</button>;
   }
 
   return (
@@ -3185,6 +3108,7 @@ function ManageEvent() {
   const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
   const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
   const lifecycle = event ? deriveEventLifecycleStatus(event, eventAnalytics || undefined) : null;
+  const shareAssets = event ? buildHostShareAssets(event) : null;
   const savedSettingsForm = event ? eventSettingsFormFromEvent(event) : null;
   const settingsDirty = Boolean(settingsForm && savedSettingsForm && JSON.stringify(settingsForm) !== JSON.stringify(savedSettingsForm));
   const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm)) : null;
@@ -3234,9 +3158,19 @@ function ManageEvent() {
     }
   }
 
+  async function copyDetailText(label: string, text?: string | null) {
+    if (!text) return;
+    try {
+      await copyText(text);
+      setLinkCopyStatus(`${label} copied`);
+    } catch (err) {
+      setLinkCopyStatus((err as Error).message);
+    }
+  }
+
   async function shareHostRecap() {
     if (!event?.recapLink) return;
-    const assets = buildHostShareAssets(event);
+    const assets = shareAssets || buildHostShareAssets(event);
     try {
       await shareOrCopyText({
         title: `${event.name} recap`,
@@ -3254,6 +3188,20 @@ function ManageEvent() {
     }
   }
 
+  const isRecapReady = Boolean(event?.recapLink && lifecycle?.phase === "after");
+  const recapUnavailableCopy = lifecycle?.phase === "after"
+    ? "The recap link is not available yet. Refresh this event before sharing it."
+    : "The recap will be ready after the reveal time.";
+  const detailPrimaryAction = event && lifecycle ? (
+    lifecycle.phase === "during" && event.liveWallLink ? (
+      <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a>
+    ) : lifecycle.phase === "after" && event.recapLink ? (
+      <Button type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</Button>
+    ) : (
+      <Button type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy guest upload link</Button>
+    )
+  ) : null;
+
   return (
     <Shell wide>
       {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
@@ -3261,7 +3209,7 @@ function ManageEvent() {
         <>
           <section className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <StatusPill>Event details</StatusPill>
+              <StatusPill>Event status</StatusPill>
               {lifecycle ? <span className="ml-2"><LifecycleBadge lifecycle={lifecycle} /></span> : null}
               <h1 className="mt-3 font-display text-4xl font-bold text-stone-950">{event.name}</h1>
               <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">Next step: {buildHostNextStep(event, eventAnalytics || undefined)}</p>
@@ -3272,9 +3220,7 @@ function ManageEvent() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              {event.recapLink && lifecycle?.phase === "after" ? <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.recapLink} target="_blank" rel="noreferrer">Share recap</a> : null}
-              {event.liveWallLink && lifecycle?.phase === "during" ? <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a> : null}
-              {lifecycle?.phase === "before" ? <Button type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy guest link</Button> : null}
+              {detailPrimaryAction}
             </div>
           </section>
 
@@ -3296,26 +3242,71 @@ function ManageEvent() {
 
           {activeTab === "share" ? (
           <section className="mt-8">
-            <Card className="lg:p-8">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                <div className="min-w-0 flex-1">
-                  <h2 className="font-display text-3xl font-bold text-stone-950">Share the guest upload link</h2>
-                  <p className="mt-2 text-stone-600">This is the only link guests need before and during the event.</p>
-                  <input className="mt-5 w-full rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={event.eventLink} />
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <Button type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy link</Button>
-                    <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
+            {shareAssets ? (
+              <>
+                <Card className="lg:p-8">
+                  <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <StatusPill>Event status</StatusPill>
+                      <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">{event.name}</h2>
+                      <p className="mt-2 max-w-2xl text-stone-600">Next step: {buildHostNextStep(event, eventAnalytics || undefined)}</p>
+                      {lifecycle ? <div className="mt-4"><LifecycleBadge lifecycle={lifecycle} /></div> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">{detailPrimaryAction}</div>
                   </div>
+                </Card>
+
+                <div className="mt-5 grid gap-5 xl:grid-cols-3">
+                  <Card className="flex h-full flex-col">
+                    <StatusPill tone="stone">Before the event</StatusPill>
+                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Send the guest upload link.</h2>
+                    <p className="mt-2 text-sm font-semibold text-stone-600">Guests can open this from any browser. No account needed.</p>
+                    <input className="mt-5 w-full rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={event.eventLink} aria-label="Guest upload link" />
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <Button type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy link</Button>
+                      <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
+                    </div>
+                    <div className="mt-5 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
+                      <p className="font-extrabold text-stone-950">Invite message</p>
+                      <p className="mt-2 whitespace-pre-line">{shareAssets.guestInviteMessage}</p>
+                      <SecondaryButton type="button" className="mt-4 w-full" onClick={() => copyDetailText("Invite message", shareAssets.guestInviteMessage)}>Copy invite message</SecondaryButton>
+                    </div>
+                  </Card>
+
+                  <Card className="flex h-full flex-col">
+                    <StatusPill tone={lifecycle?.phase === "during" ? "green" : "stone"}>During the event</StatusPill>
+                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Keep the room connected.</h2>
+                    <p className="mt-2 text-sm font-semibold text-stone-600">{shareAssets.liveWallSetupTip}</p>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a> : null}
+                      <SecondaryButton type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy guest upload link</SecondaryButton>
+                      <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
+                    </div>
+                    <div className="mt-5 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
+                      <p className="font-extrabold text-stone-950">Host tip</p>
+                      <p className="mt-2">{shareAssets.liveWallSetupTip}</p>
+                    </div>
+                  </Card>
+
+                  <Card className="flex h-full flex-col">
+                    <StatusPill tone={isRecapReady ? "green" : "plum"}>After the event</StatusPill>
+                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{isRecapReady ? "Share the recap with everyone." : "Recap is not ready yet."}</h2>
+                    <p className="mt-2 text-sm font-semibold text-stone-600">{isRecapReady ? "Send one finished page after reveal." : recapUnavailableCopy}</p>
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      {event.recapLink && isRecapReady ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</SecondaryButton> : null}
+                      {event.recapLink && isRecapReady ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Preview recap</a> : null}
+                      <SecondaryButton onClick={() => downloadZip("visible")}>Download photos</SecondaryButton>
+                    </div>
+                    <div className="mt-5 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
+                      <p className="font-extrabold text-stone-950">Recap message</p>
+                      <p className="mt-2">{isRecapReady ? shareAssets.recapMessage : recapUnavailableCopy}</p>
+                      <SecondaryButton type="button" className="mt-4 w-full" disabled={!isRecapReady} onClick={() => copyDetailText("Recap message", shareAssets.recapMessage)}>Copy recap message</SecondaryButton>
+                    </div>
+                    {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
+                  </Card>
                 </div>
-                {event.qrCodeDataUrl ? (
-                  <div className="rounded-3xl bg-stone-50 p-4">
-                    <img className="mx-auto h-56 w-56 rounded-2xl bg-white" src={event.qrCodeDataUrl} alt="Guest upload QR code" />
-                    <SecondaryButton type="button" className="mt-4 w-full" onClick={() => downloadDataUrl(event.qrCodeDataUrl || "", `${safeFilename(event.name)}-qr.png`)}>Download QR</SecondaryButton>
-                  </div>
-                ) : null}
-              </div>
-            </Card>
-            <BetaHandoffPanel event={event} lifecycle={lifecycle} />
+              </>
+            ) : null}
           </section>
           ) : null}
 

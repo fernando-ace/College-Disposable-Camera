@@ -1066,7 +1066,13 @@ test("host share assets generate poster and share card metadata", () => {
   });
 
   assert.equal(assets.poster.posterPath, "/dashboard/events/event%201/poster");
-  assert.equal(assets.poster.noDownloadCopy, "No app download needed");
+  assert.equal(assets.poster.noDownloadCopy, "No account needed.");
+  assert.equal(assets.poster.instruction, "Scan to add photos");
+  assert.match(assets.poster.modeHint, /Event Awards/);
+  assert.match(assets.guestInviteMessage, /No account needed/);
+  assert.match(assets.recapMessage, /The event recap is ready/);
+  assert.match(assets.liveWallSetupTip, /TV or projector/);
+  assert.match(assets.qrPosterHint, /scan to add photos/);
   assert.match(assets.inviteText, /birthday/i);
   assert.match(assets.socialPostCopy, /birthday recap/i);
   assert.match(assets.winnerShareText, /Event Awards winners/i);
@@ -1094,8 +1100,9 @@ test("host share assets keep fallback copy useful for old events", () => {
     challenge: null,
   });
 
-  assert.match(assets.inviteText, /Legacy Night/);
-  assert.match(assets.inviteText, /No app download needed/);
+  assert.match(assets.inviteText, /legacy-night/);
+  assert.match(assets.inviteText, /No account needed/);
+  assert.match(assets.poster.modeHint, /Simple Album/);
   assert.match(assets.liveWallDisplayPrompt, /Live Wall/);
   assert.match(assets.emptyRecapCopy, /No photos yet/);
 });

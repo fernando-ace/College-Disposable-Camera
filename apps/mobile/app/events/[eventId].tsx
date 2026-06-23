@@ -312,15 +312,18 @@ export default function EventDetailScreen() {
       {event ? (
         <>
           <View style={{ gap: 12 }}>
-            <SectionHeader title="Launch kit" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
+            <SectionHeader title="Share kit" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
             <LinkBlock label="Guest Upload" description="The link and QR code guests need before and during the event." url={event.eventLink} tone="accent">
-              <View style={{ flexDirection: "row", gap: 10 }}>
-                <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 140 }}>
                   <Link href={`/events/${event.id}/share`} asChild>
                     <Button>Share kit</Button>
                   </Link>
                 </View>
-                <View style={{ flex: 1 }}>
+                <View style={{ flex: 1, minWidth: 140 }}>
+                  <Button tone="secondary" onPress={() => copyEventLink("Guest upload link", event.eventLink)}>Copy guest link</Button>
+                </View>
+                <View style={{ flex: 1, minWidth: 140 }}>
                   <Link href={`/upload?eventLink=${encodeURIComponent(event.eventLink)}`} asChild>
                     <Button tone="secondary">Test upload</Button>
                   </Link>
@@ -329,7 +332,7 @@ export default function EventDetailScreen() {
             </LinkBlock>
             {shareAssets ? (
               <Card tone="warm">
-                <SectionHeader title="Invite poster" subtitle="Web-only print page for table signs, group chats, and QR handoffs." />
+                <SectionHeader title="QR code" subtitle="Web-only print page for table signs, group chats, and QR handoffs." />
                 <Body tone="muted">{shareAssets.poster.instruction}. {shareAssets.poster.noDownloadCopy}.</Body>
                 <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open poster page</Button>
               </Card>
@@ -348,7 +351,14 @@ export default function EventDetailScreen() {
               </View>
             </LinkBlock>
             <LinkBlock label="Recap" description="Open the finished memory page with highlights, contributors, challenge moments, and the full album." url={event.recapLink}>
-              <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
+                </View>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button tone="secondary" disabled={!event.recapLink || lifecycle?.phase !== "after"} onPress={() => router.push(`/events/${event.id}/share`)}>Share recap</Button>
+                </View>
+              </View>
             </LinkBlock>
             {liveWallDisplayLinks.length ? (
               <Card tone="warm">
@@ -524,7 +534,7 @@ function FirstEventHandoffPanel({ event }: { event: EventSummary }) {
 
   return (
     <Card tone="accent">
-      <SectionHeader title="First beta host handoff" subtitle="Use Guest Upload before and during the event, Live Wall during, and Recap after reveal." />
+      <SectionHeader title="Host checklist" subtitle="Use Guest Upload before and during the event, Live Wall during, and Recap after reveal." />
       <View style={{ gap: 10 }}>
         <Body tone="muted">Before: confirm the mode and share the QR poster or guest link.</Body>
         <Body tone="muted">During: keep Live Wall open and remind guests to use Safari or Chrome.</Body>

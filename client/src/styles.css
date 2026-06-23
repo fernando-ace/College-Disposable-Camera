@@ -67,7 +67,7 @@ textarea {
   }
 
   body {
-    background: #fffaf2;
+    background: #fff;
   }
 
   body * {
@@ -92,8 +92,10 @@ textarea {
     position: absolute;
     inset: 0;
     width: 100%;
-    min-height: 10.2in;
+    min-height: auto;
+    padding: 0.25in !important;
     border-radius: 0 !important;
     box-shadow: none !important;
+    border: 0 !important;
   }
 }

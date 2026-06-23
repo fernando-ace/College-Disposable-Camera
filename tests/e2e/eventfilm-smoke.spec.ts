@@ -107,7 +107,7 @@ test.describe("EventFilm browser smoke", () => {
     }
   });
 
-  test("seeded host event shows beta handoff and issue-report entry", async ({ page, request }) => {
+  test("seeded host event shows lifecycle share kit and issue-report entry", async ({ page, request }) => {
     const health = await request.get(`${apiUrl}/api/health`);
     test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
 
@@ -136,8 +136,11 @@ test.describe("EventFilm browser smoke", () => {
     }, { token: auth.token, user: auth.user });
 
     await page.goto(`/dashboard/events/${eventId}`);
-    await expect(page.getByText(/First beta host handoff/i)).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Run this first event without guessing/i })).toBeVisible();
+    await expect(page.getByText(/Event status/i).first()).toBeVisible();
+    await expect(page.getByText("Before the event").first()).toBeVisible();
+    await expect(page.getByText("During the event").first()).toBeVisible();
+    await expect(page.getByText("After the event").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy invite message" })).toBeVisible();
     await page.getByRole("button", { name: "Settings" }).click();
     try {
       const updatedName = `${originalSettings.name} Smoke`;
@@ -145,17 +148,28 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByText(/Unsaved changes/i)).toBeVisible();
       await page.getByRole("button", { name: /Save changes/i }).click();
       await expect(page.getByText(/Event settings saved/i)).toBeVisible();
-      await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
+      await expect(page.locator("h1", { hasText: updatedName })).toBeVisible();
 
       await page.getByRole("button", { name: "Share", exact: true }).click();
-      await expect(page.getByRole("heading", { name: /Share the guest upload link/i })).toBeVisible();
-      await expect(page.locator("input[readonly]").first()).toHaveValue(new RegExp(`/e/${seededSlug}`));
+      await expect(page.locator("h1", { hasText: updatedName })).toBeVisible();
+      await expect(page.getByText("Before the event").first()).toBeVisible();
+      await expect(page.getByText("During the event").first()).toBeVisible();
+      await expect(page.getByText("After the event").first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Copy invite message" })).toBeVisible();
+      await expect(page.locator("input[aria-label='Guest upload link']")).toHaveValue(new RegExp(`/e/${seededSlug}`));
+
+      await page.goto(`/dashboard/events/${eventId}/poster`);
+      await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
+      await expect(page.locator("body")).toContainText("Scan to add photos");
+      await expect(page.locator("body")).toContainText("No account needed.");
+      await expect(page.locator("body")).toContainText(new RegExp(`/e/${seededSlug}`));
+      await expect(page.getByAltText("Guest upload QR code")).toBeVisible();
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
       await expect(page.getByRole("heading", { name: /Open this on a TV or projector/i })).toBeVisible();
       await expect(page.getByRole("link", { name: "Open Live Wall" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy Live Wall link" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Copy guest upload link" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Copy guest upload link" }).first()).toBeVisible();
       await expect(page.locator("body")).toContainText("Keep the QR code visible.");
 
       await page.goto(`/e/${seededSlug}`);
@@ -182,6 +196,19 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("button", { name: "Copy recap link" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Download photos" })).toBeVisible();
       await expect(page.locator("body")).toContainText("Before you send it");
+
+      await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
+        headers: { Authorization: `Bearer ${auth.token}` },
+        data: {
+          ...originalSettings,
+          name: updatedName,
+          eventDate: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+          revealAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+        },
+      });
+      await page.goto(`/dashboard/events/${eventId}`);
+      await expect(page.getByRole("button", { name: "Copy recap message" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Copy recap link" }).first()).toBeVisible();
     } finally {
       await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
         headers: { Authorization: `Bearer ${auth.token}` },
