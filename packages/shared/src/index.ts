@@ -1274,14 +1274,14 @@ export const CHALLENGE_PACKS: ChallengePackDefinition[] = [
     mode: "NONE",
     type: null,
     slug: "no-challenge",
-    name: "No Challenge",
-    shortDescription: "A simple shared event album with the fewest decisions for guests.",
-    bestFor: "Weddings, parties, and any event where speed matters most.",
-    badge: "Classic album",
+    name: "Simple Album",
+    shortDescription: "The easiest way to collect everyone's photos.",
+    bestFor: "Hangouts, pregames, birthdays, club events, and anything where speed matters most.",
+    badge: "Easy default",
     icon: "images",
     setupComplexity: "None",
     hostSetupFields: [],
-    guestInstructions: "Add your name, choose a photo, and send it to the private event album.",
+    guestInstructions: "Add photos to the shared album. No extra setup needed.",
     uploadRequirement: "none",
     albumItemKind: null,
   },
@@ -1304,10 +1304,10 @@ export const CHALLENGE_PACKS: ChallengePackDefinition[] = [
     mode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
     type: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
     slug: "photo-scavenger-hunt",
-    name: "Photo Scavenger Hunt",
-    shortDescription: "Guests complete a list of photo prompts throughout the event.",
-    bestFor: "Reunions, retreats, campus events, and long receptions.",
-    badge: "Prompt list",
+    name: "Photo Prompts",
+    shortDescription: "Give the group a few fun photo ideas.",
+    bestFor: "Club events, weekend trips, graduation nights, and groups that want ideas.",
+    badge: "Photo ideas",
     icon: "list-check",
     setupComplexity: "Medium",
     hostSetupFields: ["Photo prompts"],
@@ -1319,8 +1319,8 @@ export const CHALLENGE_PACKS: ChallengePackDefinition[] = [
     mode: CHALLENGE_TYPES.EVENT_AWARDS,
     type: CHALLENGE_TYPES.EVENT_AWARDS,
     slug: "event-awards",
-    name: "Event Awards",
-    shortDescription: "Guests submit photos into award categories like funniest or best group shot.",
+    name: "Awards",
+    shortDescription: "Let the group submit photos for fun categories.",
     bestFor: "Parties, banquets, Greek life events, and teams that love superlatives.",
     badge: "Awards",
     icon: "trophy",
@@ -1425,7 +1425,7 @@ function eventLinkOrFallback(value: string | undefined | null) {
 function buildPosterModeHint(challenge: Pick<EventChallenge, "type"> | null | undefined) {
   if (challenge?.type === CHALLENGE_TYPES.COLOR_HUNT) return "Color Hunt: Find your color and upload your best photo.";
   if (challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) return "Photo Prompts: Pick a prompt and add a matching photo.";
-  if (challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) return "Event Awards: Submit photos for the award categories.";
+  if (challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) return "Awards: Submit photos for the fun categories.";
   if (challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE) return "Memory Capsule: Add photos now. Everyone sees them after the reveal.";
   return "Simple Album: Add any photos you want the host to have.";
 }
@@ -1504,7 +1504,7 @@ export function buildLiveWallDisplayLinks(
       key: "awards",
       label: getLiveWallModeLabel("awards"),
       url: buildLiveWallUrl(liveWallLink, "awards"),
-      purpose: "Use this to celebrate Event Awards leaders and winners.",
+      purpose: "Use this to celebrate Awards leaders and winners.",
       instruction: "Open this after guests have submitted and voted on award categories.",
       analyticsName: "live_wall_awards_leaders_viewed",
     });
@@ -1523,7 +1523,7 @@ export function buildHostShareAssets(
   const recapLink = eventLinkOrFallback(event.recapLink);
   const liveWallDisplayLinks = buildLiveWallDisplayLinks(event);
   const challengeInstruction = event.challenge?.instructions || pack.guestInstructions;
-  const guestInviteMessage = `Add your photos here during the event: ${guestLink}\nNo account needed.`;
+  const guestInviteMessage = `Add your photos here: ${guestLink}\nNo account needed.`;
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : guestInviteMessage;
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
   const recapMessage = `The shared recap is ready: ${recapLink}`;
@@ -1532,7 +1532,7 @@ export function buildHostShareAssets(
   const qrPosterHint = "Print this or show it on a phone so guests can scan to add photos.";
   const winnerShareText =
     event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
-      ? `The Event Awards winners from ${event.name} are ready. View the finished memory page: ${recapLink}`
+      ? `The Awards from ${event.name} are ready. View the Shared Recap: ${recapLink}`
       : recapShareText;
   const memoryCapsuleRevealCopy =
     event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE
@@ -1542,9 +1542,9 @@ export function buildHostShareAssets(
   const links: HostShareLinkCard[] = [
     {
       key: "guest",
-      label: "Guest upload link",
+      label: "Guest link",
       url: guestLink,
-      purpose: "Send this to guests so they can upload photos without an account or app download.",
+      purpose: "Send this to guests so they can add photos without an account or app download.",
       instruction: inviteText,
       audience: "Guests",
       timing: "Before event",
@@ -1630,7 +1630,7 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
     links: [
       {
         key: "guest",
-        label: "Guest upload link",
+        label: "Guest link",
         url: guestLink,
         purpose: "Share this with guests so they can upload photos without an account or app download.",
         instruction: inviteText,
@@ -1862,7 +1862,7 @@ export function validateChallengeDraft(draft: ChallengeDraft) {
   }
 
   if (draft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
-    if (draft.prompts.length < 3) return "Add at least 3 prompts to start Photo Scavenger Hunt.";
+    if (draft.prompts.length < 3) return "Add at least 3 prompts to start Photo Prompts.";
     if (draft.prompts.some((prompt) => !prompt.text.trim())) return "Prompts cannot be empty.";
     if (hasDuplicatePrompts(draft.prompts)) return "Remove duplicate prompts before saving.";
     return "";
@@ -2048,7 +2048,7 @@ export function buildHostNextStep(
 ) {
   const lifecycle = deriveEventLifecycleStatus(event, counts, now);
   if (lifecycle.status === "draft_or_upcoming") return "Share the guest link before people arrive.";
-  if (lifecycle.status === "live_or_happening_soon") return "Share the guest upload link.";
+  if (lifecycle.status === "live_or_happening_soon") return "Share the guest link.";
   if (lifecycle.status === "collecting_photos") return "Open the Photo Wall.";
   if (lifecycle.status === "reveal_locked") return "Keep collecting photos until reveal time.";
   if (lifecycle.status === "recap_ready") return "Share the recap.";
@@ -2499,7 +2499,7 @@ function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSumma
   addSection("featured", "Favorite moments", "Photos the host marked as favorites for everyone to see first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
 
   const winnerIds = (awardVoting?.categories || []).flatMap((category) => category.leaderPhotoIds);
-  addSection("award-winners", "Award winners", "Winning and tied Event Awards photos from the recap vote.", "award_winner", photosByIds(sortedPhotos, winnerIds));
+  addSection("award-winners", "Award winners", "Winning and tied Awards photos from the recap vote.", "award_winner", photosByIds(sortedPhotos, winnerIds));
 
   const votedIds = (awardVoting?.categories || [])
     .flatMap((category) => category.voteTotals)

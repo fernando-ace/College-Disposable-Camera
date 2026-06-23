@@ -86,10 +86,10 @@ type DemoPhoto = {
 
 const BETA_ISSUE_AREAS = [
   ["guest_upload", "Guest upload"],
-  ["live_wall", "Live Wall"],
-  ["recap", "Recap"],
+  ["live_wall", "Photo Wall"],
+  ["recap", "Shared Recap"],
   ["qr_poster", "QR or poster"],
-  ["moderation", "Moderation"],
+  ["moderation", "Review photos"],
   ["analytics", "Analytics"],
   ["other", "Other"],
 ] as const;
@@ -667,11 +667,11 @@ function PhotoDetailModal({
 }
 
 const TEMPLATE_DISPLAY_NAMES: Partial<Record<EventTemplateSlug, string>> = {
-  "birthday-party": "Birthday",
+  "birthday-party": "Birthday dinner",
   "wedding-engagement": "Wedding",
   "greek-life-event": "Greek life",
-  "graduation-party": "Graduation",
-  "student-org-event": "Club or team event",
+  "graduation-party": "Graduation night",
+  "student-org-event": "Club picnic",
   "open-custom-event": "Custom",
 };
 
@@ -690,9 +690,9 @@ function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; o
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="font-display text-2xl font-bold text-stone-950">What are you hosting?</h2>
-          <p className="mt-2 max-w-2xl text-sm text-stone-600">Choose the closest starting point. EventFilm will suggest the mode and prompts.</p>
+          <p className="mt-2 max-w-2xl text-sm text-stone-600">Choose the closest starting point, or keep it simple with a shared album.</p>
         </div>
-        <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={onSkip}>Start custom</SecondaryButton>
+        <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={onSkip}>Use Simple Album</SecondaryButton>
       </div>
       <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {templates.map((template) => {
@@ -702,7 +702,7 @@ function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; o
             <article className={cx("rounded-[1.25rem] border p-4 transition", selected ? "border-[#e85d3f] bg-[#fff3ee] shadow-[0_18px_44px_rgba(232,93,63,0.14)]" : "border-[#eadfce] bg-[#fffaf6] hover:border-[#ffd4c7]")} key={template.slug}>
               <h3 className="font-display text-xl font-bold text-stone-950">{templateDisplayName(template)}</h3>
               <p className="mt-2 text-sm leading-6 text-stone-600">{template.shortDescription}</p>
-              <p className="mt-4 rounded-[1rem] bg-white px-3 py-2 text-xs font-extrabold text-[#653e00]">Best mode: {plainModeLabel(mode.mode)}</p>
+              <p className="mt-4 rounded-[1rem] bg-white px-3 py-2 text-xs font-extrabold text-[#653e00]">{plainModeLabel(mode.mode)}</p>
               <button type="button" className={cx("mt-4 min-h-10 w-full rounded-[1rem] px-4 py-2 text-sm font-extrabold", selected ? "bg-stone-950 text-white" : "bg-[#e85d3f] text-white hover:bg-[#d94f33]")} onClick={() => onSelect(template.slug)}>
                 {selected ? "Selected" : "Start with this"}
               </button>
@@ -719,8 +719,9 @@ function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; o
   );
 }
 
-function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void; promptLibraryInitiallyOpen?: boolean }) {
+function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, compactForCreate = false }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void; promptLibraryInitiallyOpen?: boolean; compactForCreate?: boolean }) {
   const [isPromptLibraryOpen, setIsPromptLibraryOpen] = useState(promptLibraryInitiallyOpen);
+  const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState(!compactForCreate);
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [isAwardEditorOpen, setIsAwardEditorOpen] = useState(false);
   const selectedPack = getChallengePack(draft.type);
@@ -883,14 +884,28 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }:
         </div>
       </div>
 
+      {compactForCreate && (
+        <div className="mt-5 rounded-3xl bg-white p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Current setup</p>
+              <h3 className="mt-1 font-display text-lg font-bold">{plainModeLabel(draft.type)}</h3>
+              <p className="mt-1 text-sm text-stone-600">{draft.type === "NONE" ? "The easiest way to collect everyone's photos." : "You can customize the details now or after creating the event."}</p>
+            </div>
+            <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setIsMoreOptionsOpen((current) => !current)}>{isMoreOptionsOpen ? "Hide options" : "More options"}</SecondaryButton>
+          </div>
+        </div>
+      )}
+
+      {isMoreOptionsOpen ? (
       <div className="mt-5 rounded-3xl bg-white p-5">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-sm font-bold uppercase tracking-wide text-stone-500">Photo prompts</p>
-            <h3 className="mt-1 font-display text-lg font-bold">Prompt set selected: {selectedPromptPack.name}</h3>
-            <p className="mt-1 text-sm text-stone-600">Includes {selectedPromptPack.items.length} prompts. You can edit them after creating the event.</p>
+            <h3 className="mt-1 font-display text-lg font-bold">Selected: {selectedPromptPack.name}</h3>
+            <p className="mt-1 text-sm text-stone-600">Includes {selectedPromptPack.items.length} ideas. You can change these later.</p>
           </div>
-          <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setIsPromptLibraryOpen((current) => !current)}>{isPromptLibraryOpen ? "Hide prompts" : "Edit prompts"}</SecondaryButton>
+          <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setIsPromptLibraryOpen((current) => !current)}>{isPromptLibraryOpen ? "Hide prompts" : "Customize prompts"}</SecondaryButton>
         </div>
         {isPromptLibraryOpen ? (
           <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -910,16 +925,17 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }:
           </div>
         ) : null}
       </div>
+      ) : null}
 
-      {draft.type === "NONE" && (
+      {draft.type === "NONE" && !compactForCreate && (
         <div className="mt-5 rounded-3xl bg-white p-5">
-          <StatusPill>Classic album</StatusPill>
+          <StatusPill>Simple Album</StatusPill>
           <h3 className="mt-3 font-display text-lg font-bold">No extra setup needed</h3>
           <p className="mt-2 text-sm text-stone-600">{selectedPack.guestInstructions}</p>
         </div>
       )}
 
-      {draft.type === CHALLENGE_TYPES.COLOR_HUNT && (
+      {draft.type === CHALLENGE_TYPES.COLOR_HUNT && isMoreOptionsOpen && (
         <div className="mt-5 grid gap-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -954,11 +970,11 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }:
         </div>
       )}
 
-      {draft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (
+      {draft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && isMoreOptionsOpen && (
         <div className="mt-5 grid gap-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h3 className="font-display text-lg font-bold">Set up Photo Scavenger Hunt</h3>
+              <h3 className="font-display text-lg font-bold">Set up Photo Prompts</h3>
               <p className="text-sm text-stone-600">Add prompts guests can complete by uploading photos.</p>
               <p className="mt-2 text-sm font-bold text-stone-800">{validPromptCount} prompts added</p>
             </div>
@@ -989,7 +1005,7 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }:
           </div>
 
           {draft.prompts.length < 3 && (
-            <p className="rounded-2xl bg-amber-100 p-3 text-sm font-bold text-amber-900">Add at least 3 prompts to start Photo Scavenger Hunt.</p>
+            <p className="rounded-2xl bg-amber-100 p-3 text-sm font-bold text-amber-900">Add at least 3 prompts to start Photo Prompts.</p>
           )}
           {draft.prompts.some((prompt) => !prompt.text.trim()) && (
             <p className="rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">Prompts cannot be empty.</p>
@@ -1000,11 +1016,11 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }:
         </div>
       )}
 
-      {draft.type === CHALLENGE_TYPES.EVENT_AWARDS && (
+      {draft.type === CHALLENGE_TYPES.EVENT_AWARDS && isMoreOptionsOpen && (
         <div className="mt-5 grid gap-4">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h3 className="font-display text-lg font-bold">Set up Event Awards</h3>
+              <h3 className="font-display text-lg font-bold">Set up Awards</h3>
               <p className="text-sm text-stone-600">Guests submit photos into award categories now. Voting can be added later without changing the upload idea.</p>
               <p className="mt-2 text-sm font-bold text-stone-800">{validCategoryCount} categories ready</p>
             </div>
@@ -1040,7 +1056,7 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false }:
         </div>
       )}
 
-      {draft.type === CHALLENGE_TYPES.MEMORY_CAPSULE && (
+      {draft.type === CHALLENGE_TYPES.MEMORY_CAPSULE && isMoreOptionsOpen && (
         <div className="mt-5 grid gap-4">
           <div>
             <h3 className="font-display text-lg font-bold">Frame the reveal</h3>
@@ -1584,7 +1600,7 @@ function Landing() {
             Stop chasing photos after the event.
           </h1>
           <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-stone-600 sm:text-lg lg:mx-0">
-            Create a QR upload link, let guests add photos, show a Live Wall, and share a recap when it is over.
+            Create an event, share one link, let guests add photos, and send everyone the Shared Recap when it is over.
           </p>
           <div className="mt-7 flex flex-col justify-center gap-3 sm:flex-row lg:justify-start">
             <Link className="inline-flex min-h-13 items-center justify-center gap-2 rounded-[1.15rem] bg-[#e85d3f] px-7 py-4 text-sm font-extrabold text-white shadow-[0_16px_34px_rgba(232,93,63,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d94f33]" to="/signup" onClick={() => trackCta("Create your first event")}>
@@ -1666,11 +1682,11 @@ function Landing() {
       <section className="grid gap-6 py-14 lg:grid-cols-2">
         <div className="rounded-[2rem] bg-stone-950 p-6 text-white sm:p-8">
           <LiveDemoPill />
-          <h2 className="mt-5 font-display text-4xl font-bold">Live Wall for the room.</h2>
+          <h2 className="mt-5 font-display text-4xl font-bold">Photo Wall for the room.</h2>
           <p className="mt-3 text-stone-200">Open EventFilm on a TV, projector, laptop, or iPad so guests can scan the code and watch the newest moments appear.</p>
           <div className="mt-6 grid grid-cols-2 gap-3">
             {DEFAULT_DEMO_PHOTOS.map((photo) => (
-              <img className="aspect-square rounded-3xl object-cover" src={photo.dataUrl} alt={`Live Wall preview ${photo.name}`} key={photo.id} />
+              <img className="aspect-square rounded-3xl object-cover" src={photo.dataUrl} alt={`Photo Wall preview ${photo.name}`} key={photo.id} />
             ))}
           </div>
         </div>
@@ -1715,8 +1731,8 @@ function Landing() {
         <div className="grid gap-3 sm:grid-cols-3">
           {[
             ["Guest Upload", "The QR/link guests use without an account."],
-            ["Live Wall", "A display-ready view for the room."],
-            ["Recap", "A polished memory page after reveal."],
+            ["Photo Wall", "Photos coming in during the event."],
+            ["Shared Recap", "Photos from the event, all in one place."],
           ].map(([label, body]) => (
             <div className="rounded-[1.35rem] bg-white/85 p-5 shadow-[0_12px_30px_rgba(101,62,0,0.05)]" key={label}>
               <p className="text-sm font-extrabold uppercase tracking-wide text-[#d94f33]">{label}</p>
@@ -1733,8 +1749,8 @@ function Landing() {
         <div className="mx-auto grid max-w-4xl gap-4">
           {[
             ["Do guests need an account?", "No. Guests can upload from the event link in a browser without creating an account."],
-            ["Can I show photos during the event?", "Yes. Use the Live Wall link on a laptop, TV, projector, or iPad."],
-            ["What happens after the event?", "Share the Recap link so everyone can view the final album and highlights."],
+            ["Can I show photos during the event?", "Yes. Use the Photo Wall link on a laptop, TV, projector, or iPad."],
+            ["What happens after the event?", "Share the Shared Recap link so everyone can view the final album."],
             ["How does privacy work?", "EventFilm is built for private event sharing. Guests upload through your event link, and you control when the album is shared."],
           ].map(([question, answer]) => (
             <div className="rounded-3xl bg-white p-5 shadow-sm" key={question}>
@@ -1752,7 +1768,7 @@ function Landing() {
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
           <Link className="inline-flex min-h-14 items-center justify-center rounded-2xl bg-[#e85d3f] px-7 py-4 text-sm font-bold text-white shadow-lg transition hover:-translate-y-0.5 hover:bg-[#d94f33]" to="/signup" onClick={() => trackCta("Create your first event bottom")}>Create your first event</Link>
-          <p className="rounded-2xl bg-white/60 p-4 text-sm text-stone-600">Guests can upload without an account. Hosts get the QR, Live Wall, and Recap from one event hub.</p>
+          <p className="rounded-2xl bg-white/60 p-4 text-sm text-stone-600">Guests can add photos without an account. Hosts get the QR code, Photo Wall, and Shared Recap from one event.</p>
         </div>
       </section>
 
@@ -1794,11 +1810,11 @@ function TrustPage({ kind }: { kind: "privacy" | "terms" | "support" }) {
     },
     support: {
       title: "Contact and Support",
-      intro: "Need help with an event, upload link, Live Wall, or Recap? Use the placeholder contact details below until Fernando adds final support channels.",
+      intro: "Need help with an event, guest link, Photo Wall, or Shared Recap? Use the placeholder contact details below until Fernando adds final support channels.",
       sections: [
         ["Contact", "Placeholder: Fernando should add a final support email, phone number, or contact form link here."],
-        ["Running an event", "Create your event, choose a mode, copy the guest link or QR code, open the Live Wall during the event, and share the Recap afterward."],
-        ["Guests do not need an account", "If a guest is confused, send them the guest upload link directly. It opens in the browser."],
+        ["Running an event", "Create your event, choose a mode, copy the guest link or QR code, open the Photo Wall during the event, and share the Shared Recap afterward."],
+        ["Guests do not need an account", "If a guest is confused, send them the guest link directly. It opens in the browser."],
         ["Photo safety", "If a photo should not be in an album, the host can remove it from the event dashboard."],
       ],
     },
@@ -1989,7 +2005,6 @@ function Dashboard() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#d94f33]" to="/dashboard/events/new">Create event</Link>
-            <button type="button" className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-sm" onClick={() => setActiveTab("recap")}>View recaps</button>
           </div>
         </div>
         {canViewFounder ? (
@@ -2042,11 +2057,11 @@ function Dashboard() {
                 {lifecycle.status === "draft_or_upcoming" ? <p className="mt-1 text-sm font-semibold text-[#653e00]">Share this before people arrive.</p> : null}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {primaryAction(event, lifecycle)}
-                  {lifecycle.phase === "during" ? <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[1rem] border border-[#eadfce] bg-white px-4 py-2 text-sm font-extrabold text-stone-900" onClick={() => copyEventLink(event)}>Share guest link</button> : null}
-                  <Link className="inline-flex min-h-10 items-center justify-center rounded-[1rem] border border-[#eadfce] bg-white px-4 py-2 text-sm font-extrabold text-stone-900" to={`/dashboard/events/${event.id}`}>View event</Link>
                   <details className="relative">
                     <summary className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-2 text-sm font-extrabold text-stone-700">More</summary>
                     <div className="absolute right-0 z-20 mt-2 grid w-44 gap-1 rounded-[1rem] border border-[#eadfce] bg-white p-2 text-sm font-bold shadow-xl">
+                      <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to={`/dashboard/events/${event.id}`}>View event</Link>
+                      <button type="button" className="rounded-lg px-3 py-2 text-left text-stone-700 hover:bg-[#fffaf6]" onClick={() => copyEventLink(event)}>Copy guest link</button>
                       <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to="/dashboard/events/new">Create similar</Link>
                       <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to={`/dashboard/events/${event.id}?tab=recap`}>Download photos</Link>
                       <Link className="rounded-lg px-3 py-2 text-red-700 hover:bg-red-50" to={`/dashboard/events/${event.id}?tab=settings`}>Delete event</Link>
@@ -2065,9 +2080,8 @@ function Dashboard() {
         ) : null}
         {!events.length && (
           <Card className="bg-[#fffaf3] text-center">
-            <StatusPill>First event</StatusPill>
-            <h3 className="mt-4 font-display text-2xl font-bold">Create your first EventFilm album</h3>
-            <p className="mx-auto mt-2 max-w-xl text-stone-600">Start with the event name and reveal time. EventFilm will give you a guest link and QR code right after setup.</p>
+            <h3 className="font-display text-2xl font-bold">Create your first event</h3>
+            <p className="mx-auto mt-2 max-w-xl text-stone-600">Make a shared album for your next hangout, party, or club event.</p>
             <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" to="/dashboard/events/new">Create event</Link>
           </Card>
         )}
@@ -2621,8 +2635,8 @@ function CreateEvent() {
   }
 
   const selectedTemplate = getEventTemplate(challengeDraft.eventTemplateSlug);
-  const createSteps = ["What are you hosting?", "Choose the event mode", "Confirm details"];
-  const stepCanContinue = createStep === 0 ? Boolean(challengeDraft.eventTemplateSlug) : true;
+  const createSteps = ["What are you making?", "Choose the photo collection", "Name it and create it"];
+  const stepCanContinue = true;
 
   function goNextCreateStep() {
     if (!stepCanContinue) {
@@ -2675,7 +2689,8 @@ function CreateEvent() {
     <Shell>
       <div className="mx-auto max-w-3xl text-center">
         <h1 className="font-display text-4xl font-bold text-stone-950">Create your first event</h1>
-        <p className="mt-3 text-lg text-stone-600">Choose a starting point, confirm the mode, then get one guest link to share.</p>
+        <p className="mt-3 text-lg text-stone-600">Make a shared album for a birthday dinner, Friday pregame, club picnic, graduation night, or weekend trip.</p>
+        <p className="mt-2 text-sm font-semibold text-stone-500">You can change the details later.</p>
       </div>
       <form className="mx-auto mt-8 grid max-w-4xl gap-5" onSubmit={submit}>
         <div className="grid gap-3 rounded-[1.35rem] border border-[#eadfce] bg-white p-3 shadow-sm sm:grid-cols-3">
@@ -2698,8 +2713,10 @@ function CreateEvent() {
           <Card className="lg:p-8">
             {selectedTemplate ? (
               <p className="mb-4 rounded-[1rem] bg-[#fff3ee] px-4 py-3 text-sm font-extrabold text-[#653e00]">Recommended for {templateDisplayName(selectedTemplate)}: {plainModeLabel(selectedTemplate.recommendedMode)}</p>
-            ) : null}
-            <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} />
+            ) : (
+              <p className="mb-4 rounded-[1rem] bg-[#fff3ee] px-4 py-3 text-sm font-extrabold text-[#653e00]">Default: Simple Album. The easiest way to collect everyone's photos.</p>
+            )}
+            <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} compactForCreate />
           </Card>
         ) : null}
 
@@ -2735,7 +2752,8 @@ function CreateEvent() {
               <div className="rounded-[1.25rem] bg-[#fffaf6] p-4 text-sm text-stone-700">
                 <p><strong className="text-stone-950">Template:</strong> {selectedTemplate ? templateDisplayName(selectedTemplate) : "Custom"}</p>
                 <p className="mt-1"><strong className="text-stone-950">Mode:</strong> {plainModeLabel(challengeDraft.type)}</p>
-                <p className="mt-1"><strong className="text-stone-950">Photo prompts:</strong> {getPromptPack(challengeDraft.promptPackSlug).name}</p>
+                {challengeDraft.type !== "NONE" ? <p className="mt-1"><strong className="text-stone-950">Photo prompts:</strong> {getPromptPack(challengeDraft.promptPackSlug).name}</p> : null}
+                <p className="mt-3 font-semibold text-stone-600">You can change the details later.</p>
               </div>
             </div>
           </Card>
@@ -2770,12 +2788,12 @@ function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss
             <StatusPill tone="green">Event dashboard</StatusPill>
             <h2 className="mt-3 font-display text-4xl font-bold text-stone-950">Your event is ready.</h2>
             <p className="mt-2 font-display text-2xl font-bold text-[#653e00]">{event.name}</p>
-            <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-stone-600">Start by sharing the guest upload link. Guests can add photos without an account.</p>
+            <p className="mt-3 max-w-2xl text-base font-semibold leading-7 text-stone-600">Start by sharing the guest link. Guests can add photos without an account.</p>
           </div>
           <button type="button" className="self-start rounded-full border border-[#eadfce] bg-[#fffaf6] px-4 py-2 text-sm font-extrabold text-stone-700 hover:bg-white" onClick={onDismiss}>Dismiss</button>
         </div>
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Button type="button" onClick={onCopyGuestLink}>Copy guest upload link</Button>
+          <Button type="button" onClick={onCopyGuestLink}>Copy guest link</Button>
           <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={shareAssets.poster.posterPath}>Download QR poster</Link>
           <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/e/${event.slug}`}>Preview guest page</Link>
         </div>
@@ -2980,12 +2998,13 @@ function ManageEvent() {
   };
   const canSaveSettings = Boolean(settingsDirty && !settingsSaving && liveSettingsValidation?.ok);
   const showCreatedHandoff = searchParams.get("created") === "1";
-  const activeTab = searchParams.get("tab") || "share";
+  const defaultDetailTab = lifecycle?.phase === "during" ? "live-wall" : lifecycle?.phase === "after" ? "recap" : "share";
+  const activeTab = searchParams.get("tab") || defaultDetailTab;
   const tabItems = [
     ["share", "Share"],
     ["live-wall", "Photo Wall"],
-    ["recap", "Shared Recap"],
-    ["uploads", "Uploads"],
+    ["recap", "Recap"],
+    ["uploads", "Photos"],
     ["settings", "Settings"],
   ];
   const liveWallStatus = event?.photoCount
@@ -3045,9 +3064,9 @@ function ManageEvent() {
     lifecycle.phase === "during" && event.liveWallLink ? (
       <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a>
     ) : lifecycle.phase === "after" && event.recapLink ? (
-      <Button type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</Button>
+      <Button type="button" onClick={() => copyDetailLink("Shared Recap link", event.recapLink)}>Share recap</Button>
     ) : (
-      <Button type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy guest upload link</Button>
+      <Button type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Share guest link</Button>
     )
   ) : null;
 
@@ -3060,7 +3079,7 @@ function ManageEvent() {
             <EventReadyHandoffPanel
               event={event}
               shareAssets={shareAssets}
-              onCopyGuestLink={() => copyDetailLink("Guest upload link", event.eventLink)}
+              onCopyGuestLink={() => copyDetailLink("Guest link", event.eventLink)}
               onDismiss={dismissCreatedHandoff}
             />
           ) : null}
@@ -3087,7 +3106,7 @@ function ManageEvent() {
                 <button
                   type="button"
                   className={cx("rounded-[1rem] px-4 py-3 text-sm font-extrabold transition", activeTab === key ? "bg-stone-950 text-white" : "text-stone-700 hover:bg-[#fffaf6]")}
-                  onClick={() => setSearchParams(key === "share" ? {} : { tab: key })}
+                  onClick={() => setSearchParams(key === defaultDetailTab ? {} : { tab: key })}
                   key={key}
                 >
                   {label}
@@ -3116,11 +3135,11 @@ function ManageEvent() {
                 <div className="mt-5 grid gap-5 xl:grid-cols-3">
                   <Card className="flex h-full flex-col">
                     <StatusPill tone="stone">Before the event</StatusPill>
-                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Send the guest upload link.</h2>
+                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Send the guest link.</h2>
                     <p className="mt-2 text-sm font-semibold text-stone-600">Guests can open this from any browser. No account needed.</p>
-                    <input className="mt-5 w-full rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={event.eventLink} aria-label="Guest upload link" />
+                    <input className="mt-5 w-full rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={event.eventLink} aria-label="Guest link" />
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <Button type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy link</Button>
+                      <Button type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy link</Button>
                       <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
                     </div>
                     <div className="mt-5 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
@@ -3136,7 +3155,7 @@ function ManageEvent() {
                     <p className="mt-2 text-sm font-semibold text-stone-600">{shareAssets.liveWallSetupTip}</p>
                     <div className="mt-5 flex flex-wrap gap-2">
                       {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a> : null}
-                      <SecondaryButton type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy guest upload link</SecondaryButton>
+                      <SecondaryButton type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy guest link</SecondaryButton>
                       <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
                     </div>
                     <div className="mt-5 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
@@ -3249,7 +3268,7 @@ function ManageEvent() {
                 {[
                   ["Guest joins", eventAnalytics.guestJoins],
                   ["Uploads", eventAnalytics.uploads],
-                  ["Live Wall opens", eventAnalytics.liveWallOpens],
+                  ["Photo Wall opens", eventAnalytics.liveWallOpens],
                   ["Recap views", eventAnalytics.recapOpens],
                   ["Visible photos", eventAnalytics.visiblePhotos],
                   ["Hidden photos", eventAnalytics.hiddenPhotos],
@@ -3325,7 +3344,7 @@ function ManageEvent() {
                   </label>
                   <div className="grid gap-3 rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700 sm:grid-cols-2">
                     <p><strong className="block text-stone-950">Event mode</strong>{plainModeLabel(challengeDraft.type)}</p>
-                    <p><strong className="block text-stone-950">Prompt pack</strong>{getPromptPack(challengeDraft.promptPackSlug).name}</p>
+                    <p><strong className="block text-stone-950">Photo prompts</strong>{getPromptPack(challengeDraft.promptPackSlug).name}</p>
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -3338,20 +3357,32 @@ function ManageEvent() {
                   </div>
                 </form>
               ) : null}
-              <p className="mt-5 rounded-[1rem] bg-red-50 p-4 text-sm font-semibold text-red-800">Delete event stays available from this settings area. Permanent deletion is not changed in this pass.</p>
             </Card>
-            <Card className="lg:p-8">
-              <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} promptLibraryInitiallyOpen />
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-sm font-bold text-stone-800">{event.challenge ? `${challengeLabel(event.challenge)} is active for this event.` : "Normal EventFilm albums still work without a challenge."}</p>
-                  {challengeStatus && <p className="mt-1 text-sm font-semibold text-amber-700">{challengeStatus}</p>}
+            <details className="rounded-[1.45rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
+              <summary className="cursor-pointer list-none font-display text-2xl font-bold text-stone-950">More options</summary>
+              <p className="mt-2 text-sm font-semibold text-stone-600">Change modes, photo prompts, and categories when this event needs more than a simple album.</p>
+              <div className="mt-5">
+                <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} promptLibraryInitiallyOpen />
+                <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-sm font-bold text-stone-800">{event.challenge ? `${challengeLabel(event.challenge)} is active for this event.` : "Simple Album is active for this event."}</p>
+                    {challengeStatus && <p className="mt-1 text-sm font-semibold text-amber-700">{challengeStatus}</p>}
+                  </div>
+                  <Button onClick={saveChallenge}>Save mode</Button>
                 </div>
-                <Button onClick={saveChallenge}>Save challenge</Button>
               </div>
-            </Card>
-            <HostBetaIssuePanel event={event} />
-            {lifecycle ? <div className="mt-5"><RepeatEventActions event={event} lifecycle={lifecycle} /></div> : null}
+            </details>
+            <details className="mt-5 rounded-[1.45rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
+              <summary className="cursor-pointer list-none font-display text-2xl font-bold text-stone-950">Help and repeat event</summary>
+              <div className="mt-5 grid gap-5">
+                <HostBetaIssuePanel event={event} />
+                {lifecycle ? <RepeatEventActions event={event} lifecycle={lifecycle} /> : null}
+              </div>
+            </details>
+            <div className="mt-5 rounded-[1rem] bg-red-50 p-4 text-sm font-semibold text-red-800">
+              <p className="font-extrabold">Danger zone</p>
+              <p className="mt-1">Delete event stays separated here. Permanent deletion is not changed in this pass.</p>
+            </div>
           </section>
           ) : null}
 
@@ -3359,8 +3390,8 @@ function ManageEvent() {
           <section className="mt-10">
             <div className="mb-5 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <h2 className="font-display text-3xl font-bold">Uploads</h2>
-                <p className="text-stone-600">{event.photos.length ? "Review photos and keep public views clean." : "No photos yet. Share the QR code to start collecting uploads."}</p>
+                <h2 className="font-display text-3xl font-bold">Photos</h2>
+                <p className="text-stone-600">{event.photos.length ? "Review photos and keep public views clean." : "No photos yet. Share the QR code or guest link to start collecting photos."}</p>
               </div>
             </div>
             <div className="mb-5 grid gap-3 rounded-[1.45rem] border border-[#eadfce] bg-white p-4 shadow-[0_12px_34px_rgba(101,62,0,0.055)]">
@@ -3444,7 +3475,7 @@ function ManageEvent() {
                 </div>
               ))}
             </div>
-            {!filteredPhotos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet</h3><p className="mt-2 font-semibold text-stone-600">Share the QR code to start collecting uploads.</p></Card>}
+            {!filteredPhotos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet</h3><p className="mt-2 font-semibold text-stone-600">Share the QR code or guest link to start collecting photos.</p></Card>}
           </section>
           ) : null}
           <PhotoDetailModal photo={selectedPhoto} mode="host" onClose={() => setSelectedPhoto(null)} onHostAction={handleHostPhotoAction} />
@@ -3490,7 +3521,7 @@ function AwardLeadersPanel({ awardVoting, photos, dark = false }: { awardVoting?
 
   return (
     <section className={cx("rounded-[2rem] p-5", dark ? "bg-white/10 text-white" : "border border-[#eadfce] bg-white shadow-[0_24px_70px_rgba(101,62,0,0.08)]")}>
-      <p className={cx("text-sm font-bold uppercase tracking-wide", dark ? "text-amber-200" : "text-[#653e00]")}>Event Awards</p>
+      <p className={cx("text-sm font-bold uppercase tracking-wide", dark ? "text-amber-200" : "text-[#653e00]")}>Awards</p>
       <h2 className={cx("mt-2 font-display text-2xl font-bold", dark ? "text-white" : "text-stone-950")}>Current leaders</h2>
       <p className={cx("mt-2 text-sm", dark ? "text-stone-200" : "text-stone-600")}>Voting is lightweight and based on each guest browser.</p>
       <div className="mt-5 grid gap-3">
@@ -3572,7 +3603,7 @@ function AwardVotingPanel({
     <section className="rounded-[2rem] border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)] sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <StatusPill>Event Awards</StatusPill>
+          <StatusPill>Awards</StatusPill>
           <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Vote for winners</h2>
           <p className="mt-2 max-w-2xl text-sm text-stone-600">Pick one photo per category from this browser. It is lightweight voting, not a fraud-proof ballot.</p>
         </div>
@@ -3661,7 +3692,7 @@ function HostAwardVotingSummary({
     <section className="mt-6 rounded-[1.65rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <StatusPill>Event Awards</StatusPill>
+          <StatusPill>Awards</StatusPill>
           <h3 className="mt-3 font-display text-2xl font-bold text-stone-950">Voting summary</h3>
           <p className="mt-2 max-w-2xl text-sm text-stone-600">Guests get one lightweight browser/session vote per category. Hide or delete a photo to remove it from public winners.</p>
         </div>
@@ -3734,7 +3765,7 @@ function LiveWall() {
         setError("");
         setLastUpdated(new Date());
       } catch (err) {
-        if (isMounted) setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment."));
+        if (isMounted) setError(publicRouteErrorMessage(err, "Photo Wall is not available right now. Check the event link or refresh in a moment."));
       }
     }
     loadIfMounted();
@@ -3808,7 +3839,7 @@ function LiveWall() {
     if (!data?.eventLink) return;
     try {
       await copyText(data.eventLink);
-      setCopyStatus("Guest upload link copied");
+      setCopyStatus("Guest link copied");
     } catch (err) {
       setCopyStatus((err as Error).message);
     }
@@ -3884,7 +3915,7 @@ function LiveWall() {
             onToggleQr={toggleQr}
             onToggleSlideshow={toggleSlideshow}
             onFullscreen={enterFullscreen}
-            onRefresh={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment.")))}
+            onRefresh={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Photo Wall is not available right now. Check the event link or refresh in a moment.")))}
             onCopyJoinLink={copyJoinLink}
             onUploadLinkClick={() => trackUploadLinkClick("controls")}
           />
@@ -4024,7 +4055,7 @@ function LiveWallContextPanel({ event, photos }: { event: PublicEvent; photos: P
     copy = "Pick a prompt and add a matching photo.";
     icon = "checklist";
   } else if (challengeType === CHALLENGE_TYPES.EVENT_AWARDS) {
-    title = "Event Awards";
+    title = "Awards";
     copy = "Add photos now. Vote later.";
     icon = "trophy";
   } else if (challengeType === CHALLENGE_TYPES.MEMORY_CAPSULE) {
@@ -4054,7 +4085,7 @@ function LiveWallChallengeMode({ summary, awardVoting, photos }: { summary: Retu
   return (
     <section className="grid h-full min-h-[30rem] gap-4 rounded-[1.35rem] border border-white/15 bg-[#151311] p-4 shadow-[0_26px_80px_rgba(0,0,0,0.28)] xl:grid-cols-[minmax(0,1fr)_340px]">
       <div className="rounded-[1rem] bg-[#fff8ee] p-6 text-amber-950">
-        <p className="text-sm font-extrabold uppercase tracking-wide text-[#7c3f00]">{summary.modeLabel === "Photo Scavenger Hunt" ? "Photo Prompts" : summary.modeLabel}</p>
+        <p className="text-sm font-extrabold uppercase tracking-wide text-[#7c3f00]">{summary.modeLabel}</p>
         <h2 className="mt-3 font-display text-4xl font-bold md:text-5xl">{summary.headline}</h2>
         <p className="mt-4 text-lg font-semibold">{summary.note}</p>
         <div className="mt-6 grid gap-3">
@@ -4075,7 +4106,7 @@ function LiveWallAwardsMode({ awardVoting, photos }: { awardVoting?: AwardVoting
     <section className="h-full min-h-[30rem] rounded-[1.35rem] border border-white/15 bg-[#fff8ee] p-4 text-amber-950 shadow-[0_26px_80px_rgba(0,0,0,0.24)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-sm font-extrabold uppercase tracking-wide text-[#7c3f00]">Event Awards</p>
+          <p className="text-sm font-extrabold uppercase tracking-wide text-[#7c3f00]">Awards</p>
           <h2 className="mt-2 font-display text-4xl font-bold md:text-5xl">Leaders and winners</h2>
         </div>
         <StatusPill tone="amber">{awardVoting.categories.length} categories</StatusPill>
@@ -4818,8 +4849,8 @@ function GuestEvent() {
     }
     if (!file) return setError("Choose a photo first");
     if (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Select your Color Hunt name first");
-    if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a Photo Scavenger Hunt prompt first");
-    if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an Event Awards category first");
+    if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a Photo Prompts idea first");
+    if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an Awards category first");
     if (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim() && !nameChoiceTrackedRef.current) {
       nameChoiceTrackedRef.current = true;
       trackAnalytics("guest_continued_anonymous", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
@@ -4974,9 +5005,9 @@ function GuestEvent() {
 
           {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
             <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
-              <StatusPill>Event Awards</StatusPill>
+              <StatusPill>Awards</StatusPill>
               <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Choose an award category.</h2>
-              <p className="mt-2 text-stone-700">Pick the category that fits the photo. Voting stays on the Recap.</p>
+              <p className="mt-2 text-stone-700">Pick the category that fits the photo. Voting stays on the Shared Recap.</p>
               <div className="mt-5 grid gap-2">
                 {compactAwardItems.map((category, index) => {
                   const categoryId = category.id || `award-${category.order ?? index}`;
@@ -5133,7 +5164,7 @@ function GuestEvent() {
               <div>
                 <StatusPill>My Uploads</StatusPill>
                 <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Your uploads on this device</h2>
-                <p className="mt-2 text-sm font-semibold text-stone-600">Photos you add from this browser will appear here.</p>
+                <p className="mt-2 text-sm font-semibold text-stone-600">Photos you add from this browser on this device will appear here.</p>
               </div>
               <span className="rounded-full bg-stone-100 px-4 py-2 text-sm font-extrabold text-stone-700">{myUploads.length} visible here</span>
             </div>

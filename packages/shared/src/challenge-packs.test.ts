@@ -413,7 +413,7 @@ test("host next step copy follows the simplified lifecycle hierarchy", () => {
   } satisfies EventSummary;
 
   assert.equal(buildHostNextStep(base, {}, now), "Share the guest link before people arrive.");
-  assert.equal(buildHostNextStep({ ...base, eventDate: "2026-06-22T11:00:00.000Z" }, {}, now), "Share the guest upload link.");
+  assert.equal(buildHostNextStep({ ...base, eventDate: "2026-06-22T11:00:00.000Z" }, {}, now), "Share the guest link.");
   assert.equal(buildHostNextStep(base, { totalPhotos: 3 }, now), "Open the Photo Wall.");
   assert.equal(buildHostNextStep({ ...base, revealAt: "2026-06-22T11:00:00.000Z" }, { visiblePhotos: 3 }, now), "Share the recap.");
 });
@@ -874,7 +874,7 @@ test("recap metadata counts contributors and highlights recent photos", () => {
     photo({ id: "same", guestNickname: "mia", createdAt: "2026-01-01T00:30:00.000Z" }),
   ]);
 
-  assert.equal(metadata.modeLabel, "No Challenge");
+  assert.equal(metadata.modeLabel, "Simple Album");
   assert.equal(metadata.totalPhotos, 3);
   assert.equal(metadata.contributorCount, 2);
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["new", "same", "old"]);
@@ -1068,14 +1068,14 @@ test("host share assets generate poster and share card metadata", () => {
   assert.equal(assets.poster.posterPath, "/dashboard/events/event%201/poster");
   assert.equal(assets.poster.noDownloadCopy, "No account needed.");
   assert.equal(assets.poster.instruction, "Scan to add photos");
-  assert.match(assets.poster.modeHint, /Event Awards/);
+  assert.match(assets.poster.modeHint, /Awards/);
   assert.match(assets.guestInviteMessage, /No account needed/);
   assert.match(assets.recapMessage, /The shared recap is ready/);
   assert.match(assets.liveWallSetupTip, /Photo Wall/);
   assert.match(assets.qrPosterHint, /scan to add photos/);
   assert.match(assets.inviteText, /birthday/i);
   assert.match(assets.socialPostCopy, /birthday recap/i);
-  assert.match(assets.winnerShareText, /Event Awards winners/i);
+  assert.match(assets.winnerShareText, /Awards/i);
   assert.deepEqual(assets.links.map((link) => [link.key, link.audience, link.timing]), [
     ["guest", "Guests", "Before event"],
     ["live-wall", "Host display", "During event"],

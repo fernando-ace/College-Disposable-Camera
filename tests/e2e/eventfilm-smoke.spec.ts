@@ -233,8 +233,10 @@ test.describe("EventFilm browser smoke", () => {
 
       await page.getByRole("link", { name: "Create event" }).first().click();
       await expect(page.getByRole("heading", { name: "Create your first event" })).toBeVisible();
+      await expect(page.locator("body")).toContainText("Friday pregame");
       await page.getByRole("button", { name: "Start with this" }).last().click();
       await page.getByRole("button", { name: "Continue" }).click();
+      await expect(page.locator("body")).toContainText(/Simple Album|Photo Prompts|More options/);
       await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.getByRole("heading", { name: "Confirm details" })).toBeVisible();
 
@@ -249,7 +251,7 @@ test.describe("EventFilm browser smoke", () => {
 
       const createdHandoff = page.locator("[aria-label='Event creation success']");
       await expect(createdHandoff).toContainText("Guests can add photos without an account.");
-      await expect(createdHandoff.getByRole("button", { name: "Copy guest upload link" })).toBeVisible();
+      await expect(createdHandoff.getByRole("button", { name: "Copy guest link" })).toBeVisible();
       await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toBeVisible();
       await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toBeVisible();
     } finally {
@@ -345,7 +347,7 @@ test.describe("EventFilm browser smoke", () => {
     const createdHandoff = page.getByLabel("Event creation success");
     await expect(page.getByRole("heading", { name: "Your event is ready." })).toBeVisible();
     await expect(createdHandoff).toContainText("Guests can add photos without an account.");
-    await expect(createdHandoff.getByRole("button", { name: "Copy guest upload link" })).toBeVisible();
+    await expect(createdHandoff.getByRole("button", { name: "Copy guest link" })).toBeVisible();
     await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
     await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
     await expect(createdHandoff).toContainText("Open the Photo Wall during the event");
@@ -375,7 +377,7 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByText("During the event").first()).toBeVisible();
       await expect(page.getByText("After the event").first()).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy invite message" })).toBeVisible();
-      await expect(page.locator("input[aria-label='Guest upload link']")).toHaveValue(new RegExp(`/e/${seededSlug}`));
+      await expect(page.locator("input[aria-label='Guest link']")).toHaveValue(new RegExp(`/e/${seededSlug}`));
 
       await page.goto(`/dashboard/events/${eventId}/poster`);
       await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
@@ -393,7 +395,7 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.locator("body")).toContainText("Keep the QR code visible when people are adding photos.");
 
       await page.goto(`/dashboard/events/${eventId}?tab=uploads`);
-      await expect(page.getByRole("heading", { name: "Uploads" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Photos", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: /All photos/i })).toBeVisible();
 
       await page.goto(`/e/${seededSlug}`);
@@ -411,7 +413,9 @@ test.describe("EventFilm browser smoke", () => {
       });
       await page.goto("/dashboard");
       await expect(page.getByRole("link", { name: "Open Photo Wall" }).first()).toBeVisible();
-      await expect(page.getByRole("button", { name: "Share guest link" }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Share guest link" })).toHaveCount(0);
+      await page.getByText("More").first().click();
+      await expect(page.getByRole("button", { name: "Copy guest link" }).first()).toBeVisible();
 
       await page.goto(`/dashboard/events/${eventId}?tab=recap`);
       await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
@@ -431,7 +435,7 @@ test.describe("EventFilm browser smoke", () => {
         },
       });
       await page.goto(`/dashboard/events/${eventId}`);
-      await expect(page.getByRole("button", { name: "Copy recap message" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Share recap" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy recap link" }).first()).toBeVisible();
     } finally {
       await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
@@ -441,6 +445,7 @@ test.describe("EventFilm browser smoke", () => {
     }
 
     await page.goto(`/dashboard/events/${eventId}?tab=settings`);
+    await page.getByText("Help and repeat event").click();
     await expect(page.getByRole("heading", { name: /Something off during the event/i })).toBeVisible();
     await page.getByRole("button", { name: /Report issue/i }).click();
     await expect(page.getByPlaceholder(/What happened/i)).toBeVisible();
