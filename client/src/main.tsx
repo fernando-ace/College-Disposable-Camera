@@ -1351,7 +1351,7 @@ function RepeatEventActions({ event, lifecycle, compact = false, onDuplicated }:
         title: `${event.name} recap`,
         text: assets.recapShareText,
         url: event.recapLink,
-        fallbackLabel: "Recap",
+        fallbackLabel: "Shared recap",
         analyticsName: "recap_shared_after_event",
         eventId: event.id,
         eventSlug: event.slug,
@@ -1973,7 +1973,7 @@ function Dashboard() {
       return <a className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Share recap</a>;
     }
     if (lifecycle.phase === "during" && event.liveWallLink) {
-      return <a className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a>;
+      return <a className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a>;
     }
     return <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[1rem] bg-[#e85d3f] px-4 py-2 text-sm font-extrabold text-white" onClick={() => copyEventLink(event)}>Share guest link</button>;
   }
@@ -2758,8 +2758,8 @@ function CreateEvent() {
 function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss }: { event: EventSummary; shareAssets: HostShareAssets; onCopyGuestLink: () => void; onDismiss: () => void }) {
   const steps = [
     ["Share the guest link", "Send this before people arrive. Guests can add photos without an account."],
-    ["Open the Live Wall during the event", "Keep it on a TV, projector, or laptop during the event."],
-    ["Share the recap after the event", "Send the recap after reveal so everyone has one finished page."],
+    ["Open the Photo Wall during the event", "Put it on a TV, laptop, or iPad during the event."],
+    ["Share the Shared Recap after the event", "Send the recap after reveal so everyone has one finished page."],
   ];
 
   return (
@@ -2983,8 +2983,8 @@ function ManageEvent() {
   const activeTab = searchParams.get("tab") || "share";
   const tabItems = [
     ["share", "Share"],
-    ["live-wall", "Live Wall"],
-    ["recap", "Recap"],
+    ["live-wall", "Photo Wall"],
+    ["recap", "Shared Recap"],
     ["uploads", "Uploads"],
     ["settings", "Settings"],
   ];
@@ -2992,7 +2992,7 @@ function ManageEvent() {
     ? { label: "Photos are coming in", tone: "green" as const, copy: `${event.photoCount} ${event.photoCount === 1 ? "photo has" : "photos have"} been added.` }
     : lifecycle?.phase === "during"
       ? { label: "Waiting for photos", tone: "amber" as const, copy: "No photos yet. Ask guests to scan the QR code." }
-      : { label: "Live Wall is ready", tone: "stone" as const, copy: "Open this on a TV or projector when guests start arriving." };
+      : { label: "Photo Wall is ready", tone: "stone" as const, copy: "Use this during the event so guests know where to add photos and can see pictures appear live." };
 
   useEffect(() => {
     if (!event || !lifecycle) return;
@@ -3031,26 +3031,6 @@ function ManageEvent() {
     }
   }
 
-  async function shareHostRecap() {
-    if (!event?.recapLink) return;
-    const assets = shareAssets || buildHostShareAssets(event);
-    try {
-      await shareOrCopyText({
-        title: `${event.name} recap`,
-        text: event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? assets.winnerShareText : assets.recapShareText,
-        url: event.recapLink,
-        fallbackLabel: "Recap",
-        analyticsName: "recap_shared_after_event",
-        eventId: event.id,
-        eventSlug: event.slug,
-        surface: "event_detail",
-        onStatus: setLinkCopyStatus,
-      });
-    } catch (err) {
-      setLinkCopyStatus((err as Error).message);
-    }
-  }
-
   function dismissCreatedHandoff() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("created");
@@ -3063,7 +3043,7 @@ function ManageEvent() {
     : "The recap will be ready after the reveal time.";
   const detailPrimaryAction = event && lifecycle ? (
     lifecycle.phase === "during" && event.liveWallLink ? (
-      <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a>
+      <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a>
     ) : lifecycle.phase === "after" && event.recapLink ? (
       <Button type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</Button>
     ) : (
@@ -3151,11 +3131,11 @@ function ManageEvent() {
                   </Card>
 
                   <Card className="flex h-full flex-col">
-                    <StatusPill tone={lifecycle?.phase === "during" ? "green" : "stone"}>During the event</StatusPill>
-                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Keep the room connected.</h2>
+                  <StatusPill tone={lifecycle?.phase === "during" ? "green" : "stone"}>During the event</StatusPill>
+                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Open the Photo Wall.</h2>
                     <p className="mt-2 text-sm font-semibold text-stone-600">{shareAssets.liveWallSetupTip}</p>
                     <div className="mt-5 flex flex-wrap gap-2">
-                      {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a> : null}
+                      {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a> : null}
                       <SecondaryButton type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy guest upload link</SecondaryButton>
                       <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
                     </div>
@@ -3167,7 +3147,7 @@ function ManageEvent() {
 
                   <Card className="flex h-full flex-col">
                     <StatusPill tone={isRecapReady ? "green" : "plum"}>After the event</StatusPill>
-                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{isRecapReady ? "Share the recap with everyone." : "Recap is not ready yet."}</h2>
+                    <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{isRecapReady ? "Share the Shared Recap with everyone." : "Shared Recap is not ready yet."}</h2>
                     <p className="mt-2 text-sm font-semibold text-stone-600">{isRecapReady ? "Send one finished page after reveal." : recapUnavailableCopy}</p>
                     <div className="mt-5 flex flex-wrap gap-2">
                       {event.recapLink && isRecapReady ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</SecondaryButton> : null}
@@ -3193,8 +3173,8 @@ function ManageEvent() {
               <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
                 <div>
                   <StatusPill tone={liveWallStatus.tone}>{liveWallStatus.label}</StatusPill>
-                  <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Open this on a TV or projector.</h2>
-                  <p className="mt-2 max-w-2xl text-stone-600">{liveWallStatus.copy}</p>
+                  <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Photo Wall</h2>
+                  <p className="mt-2 max-w-2xl text-stone-600">Use this during the event so guests know where to add photos and can see pictures appear live.</p>
                 </div>
                 <div className="rounded-[1.15rem] bg-[#fff3ee] px-5 py-4 text-center">
                   <p className="font-display text-3xl font-bold text-[#d94f33]">{event.photoCount}</p>
@@ -3202,16 +3182,15 @@ function ManageEvent() {
                 </div>
               </div>
               <div className="mt-6 flex flex-wrap gap-2">
-                {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a> : null}
-                <SecondaryButton type="button" onClick={() => copyDetailLink("Live Wall link", event.liveWallLink)}>Copy Live Wall link</SecondaryButton>
-                <SecondaryButton type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy guest upload link</SecondaryButton>
+                {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a> : null}
+                <SecondaryButton type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy guest link</SecondaryButton>
                 <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
               </div>
               <div className="mt-6 grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
                 <p className="font-extrabold text-stone-950">Simple setup</p>
-                <p>Open Live Wall on a TV or projector.</p>
-                <p>Keep the QR code visible.</p>
-                <p>Ask guests to scan and upload.</p>
+                <p>Put this on a TV, laptop, or iPad during the event.</p>
+                <p>For small hangouts, you can also just share the guest link.</p>
+                <p>Keep the QR code visible when people are adding photos.</p>
               </div>
               <details className="mt-6 rounded-[1.15rem] border border-[#eadfce] bg-white p-4">
                 <summary className="cursor-pointer list-none font-display text-xl font-bold text-stone-950">Advanced display modes</summary>
@@ -3231,9 +3210,9 @@ function ManageEvent() {
             <Card className="lg:p-8">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <StatusPill tone={lifecycle?.phase === "after" ? "green" : "plum"}>{lifecycle?.phase === "after" ? "Recap ready" : "Recap building"}</StatusPill>
-                  <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Your recap is almost the send-to-everyone page.</h2>
-                  <p className="mt-2 max-w-2xl text-stone-600">{event.photoCount ? "Preview it, feature a few favorites, then share the recap link with guests." : "No photos yet. Share the QR code to start collecting uploads."}</p>
+                  <StatusPill tone={lifecycle?.phase === "after" ? "green" : "plum"}>{lifecycle?.phase === "after" ? "Shared Recap ready" : "Shared Recap building"}</StatusPill>
+                  <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Shared Recap</h2>
+                  <p className="mt-2 max-w-2xl text-stone-600">Send this after the event so everyone can see the photos in one place.</p>
                 </div>
                 <div className="grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-bold text-stone-700">
                   <span>{visiblePhotos.length} visible photos</span>
@@ -3243,15 +3222,14 @@ function ManageEvent() {
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 {event.recapLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Preview recap</a> : null}
-                {event.recapLink ? <SecondaryButton type="button" onClick={shareHostRecap}>Share recap</SecondaryButton> : null}
                 {event.recapLink ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</SecondaryButton> : null}
                 <SecondaryButton onClick={() => downloadZip("visible")}>Download photos</SecondaryButton>
               </div>
               <div className="mt-6 grid gap-2 rounded-[1.15rem] bg-white p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
                 <p className="font-extrabold text-stone-950">Before you send it</p>
-                <p>Review uploads</p>
-                <p>Feature favorite photos</p>
-                <p>Share recap link</p>
+                <p>Review photos</p>
+                <p>Feature favorites</p>
+                <p>Send recap link</p>
               </div>
               {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
             </Card>
@@ -3265,7 +3243,7 @@ function ManageEvent() {
 
           {activeTab === "recap" && eventAnalytics && (
             <details className="mt-8 rounded-[1.45rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
-              <summary className="cursor-pointer list-none font-display text-2xl font-bold text-stone-950">Recap activity</summary>
+              <summary className="cursor-pointer list-none font-display text-2xl font-bold text-stone-950">Activity and analytics</summary>
               <p className="mt-2 text-sm text-stone-600">Secondary recap and upload details for host review.</p>
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
                 {[
@@ -3481,8 +3459,8 @@ function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; 
     return (
       <div className={cx("grid min-h-72 place-items-center rounded-[2rem] p-8 text-center", dark ? "bg-white/10 text-stone-200" : "border border-[#eadfce] bg-white text-stone-600")}>
         <div>
-          <p className={cx("font-display text-2xl font-bold", dark ? "text-white" : "text-stone-950")}>No uploads yet</p>
-          <p className="mt-2 text-sm">Once guests start adding photos, the newest moments will appear here.</p>
+          <p className={cx("font-display text-2xl font-bold", dark ? "text-white" : "text-stone-950")}>No photos yet</p>
+          <p className="mt-2 text-sm">Share the guest link so people can add theirs.</p>
         </div>
       </div>
     );
@@ -3855,7 +3833,7 @@ function LiveWall() {
         <div className="relative grid min-h-screen place-items-center p-8">
           <div className="max-w-xl text-center">
             <Icon className="mx-auto h-16 w-16 text-[#ff856d]">photo_camera</Icon>
-            <h1 className="mt-5 font-display text-5xl font-bold">Preparing Live Wall</h1>
+            <h1 className="mt-5 font-display text-5xl font-bold">Preparing Photo Wall</h1>
             <p className="mt-3 text-stone-300">{error || "Loading the latest event photos..."}</p>
           </div>
         </div>
@@ -3887,7 +3865,7 @@ function LiveWall() {
                   contributors={contributors?.contributorCount || 0}
                   onUploadLinkClick={() => trackUploadLinkClick("qr_panel")}
                 />
-                <LiveWallContextPanel event={event} summary={challengeSummary} awardVoting={data.awardVoting} photos={data.photos} />
+                <LiveWallContextPanel event={event} photos={data.photos} />
                 {error ? <p className="rounded-[1rem] border border-red-300/30 bg-red-950/70 p-3 text-sm font-bold text-red-100">{error}</p> : null}
                 {copyStatus ? <p className="rounded-[1rem] border border-emerald-300/30 bg-emerald-950/70 p-3 text-sm font-bold text-emerald-100">{copyStatus}</p> : null}
               </aside>
@@ -3919,18 +3897,16 @@ function LiveWall() {
 function LiveWallHero({ event, mode, lastUpdated }: { event: PublicEvent; mode: LiveWallMode; lastUpdated: Date | null }) {
   return (
     <header className="mx-auto w-full max-w-7xl">
-      <div className="flex items-center justify-center gap-5 text-center">
-        <span className="hidden h-px w-28 bg-[#ff856d]/70 sm:block" />
-        <Icon className="h-12 w-12 text-[#ff856d]">photo_camera</Icon>
+      <div className="flex flex-col items-center justify-center gap-3 text-center">
+        <Icon className="h-10 w-10 text-[#ff856d]">photo_camera</Icon>
         <div>
           <h1 className="mx-auto max-w-5xl font-display text-3xl font-bold leading-tight text-white md:text-4xl xl:text-5xl">{event.name}</h1>
-          <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-xs font-extrabold uppercase tracking-wide text-stone-400">
+          <p className="mt-2 text-base font-semibold text-stone-200 md:text-lg">Add photos to the shared album.</p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2 text-xs font-extrabold uppercase tracking-wide text-stone-400">
             <span>{getLiveWallModeLabel(mode)}</span>
-            {event.challenge ? <span>{challengeLabel(event.challenge)}</span> : null}
             {lastUpdated ? <span>Updated {lastUpdated.toLocaleTimeString()}</span> : null}
           </div>
         </div>
-        <span className="hidden h-px w-28 bg-[#ff856d]/70 sm:block" />
       </div>
     </header>
   );
@@ -3949,7 +3925,7 @@ function LiveWallLockedState({ title, note }: { title: string; note: string }) {
 }
 
 function LiveWallGridMode({ photos, event }: { photos: Photo[]; event: PublicEvent }) {
-  if (!photos.length) return <LiveWallEmptyState event={event} title="Waiting for photos." note="Scan the QR code to add the first photo." />;
+  if (!photos.length) return <LiveWallEmptyState event={event} title="Waiting for photos." note="Scan the QR code or open the link to add the first one." />;
   const displayPhotos = photos.slice(0, 14);
   return (
     <div className="grid h-full min-h-[30rem] auto-rows-fr grid-cols-2 gap-3 rounded-[1.35rem] border border-white/15 bg-[#111] p-3 shadow-[0_26px_80px_rgba(0,0,0,0.28)] md:grid-cols-4 xl:grid-cols-5">
@@ -3975,7 +3951,7 @@ function LiveWallGridMode({ photos, event }: { photos: Photo[]; event: PublicEve
 }
 
 function LiveWallSlideshow({ photos, slideIndex, event, paused }: { photos: Photo[]; slideIndex: number; event: PublicEvent; paused: boolean }) {
-  if (!photos.length) return <LiveWallEmptyState event={event} title="Waiting for photos." note="Scan the QR code to add the first photo." />;
+  if (!photos.length) return <LiveWallEmptyState event={event} title="Waiting for photos." note="Scan the QR code or open the link to add the first one." />;
   const photo = photos[slideIndex % photos.length] || photos[0];
   return (
     <section className="relative h-full min-h-[30rem] overflow-hidden rounded-[1.35rem] border border-white/15 bg-black shadow-[0_26px_80px_rgba(0,0,0,0.28)]">
@@ -4033,28 +4009,27 @@ function LiveWallQrPanel({ data, photoCount, contributors, onUploadLinkClick }: 
   );
 }
 
-function LiveWallContextPanel({ event, summary, awardVoting, photos }: { event: PublicEvent; summary: ReturnType<typeof buildLiveWallChallengeDisplaySummary> | null; awardVoting?: AwardVotingSummary | null; photos: Photo[] }) {
+function LiveWallContextPanel({ event, photos }: { event: PublicEvent; photos: Photo[] }) {
   const challengeType = event.challenge?.type;
-  let title = "Share a memory.";
-  let copy = "Photos appear here as guests upload.";
+  let title = "Add photos together.";
+  let copy = "Photos show up here as people add them.";
   let icon = "auto_awesome";
 
   if (challengeType === CHALLENGE_TYPES.COLOR_HUNT) {
-    title = "Color Hunt is live.";
-    copy = "Find your color and upload your best photo.";
+    title = "Color Hunt";
+    copy = "Find your color and upload a photo.";
     icon = "palette";
   } else if (challengeType === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
-    title = "Photo prompts are live.";
+    title = "Photo Prompts";
     copy = "Pick a prompt and add a matching photo.";
     icon = "checklist";
   } else if (challengeType === CHALLENGE_TYPES.EVENT_AWARDS) {
-    const categories = awardVoting?.categories.length || categoriesFromChallenge(event.challenge).length;
-    title = "Awards are live.";
-    copy = categories ? `Submit or vote on favorites across ${categories} categories.` : "Submit or vote on your favorites.";
+    title = "Event Awards";
+    copy = "Add photos now. Vote later.";
     icon = "trophy";
   } else if (challengeType === CHALLENGE_TYPES.MEMORY_CAPSULE) {
-    title = "Photos are being saved for the reveal.";
-    copy = memoryCapsuleFromChallenge(event.challenge).revealNote;
+    title = "Memory Capsule";
+    copy = "Add photos now. They unlock after the reveal.";
     icon = "lock";
   } else if (photos.length) {
     title = "Photos are coming in.";
@@ -4068,7 +4043,6 @@ function LiveWallContextPanel({ event, summary, awardVoting, photos }: { event: 
         <div className="max-w-2xl">
           <h2 className="text-lg font-extrabold">{title}</h2>
           <p className="mt-1 text-sm font-semibold leading-6 text-stone-300">{copy}</p>
-          {summary?.rows.length ? <p className="mt-2 text-xs font-bold uppercase tracking-wide text-stone-400">{summary.rows.filter((row) => row.count > 0).length}/{summary.rows.length} active</p> : null}
         </div>
       </div>
     </section>
@@ -4142,7 +4116,7 @@ function LiveWallEmptyState({ title, note, event }: { title: string; note: strin
         <Icon className="mx-auto h-20 w-20 text-[#ff856d]">photo_camera</Icon>
         <h2 className="mt-6 font-display text-5xl font-bold text-white md:text-7xl">{title}</h2>
         <p className="mt-5 text-lg font-semibold text-stone-200 md:text-2xl">{note}</p>
-        {event ? <p className="mt-5 text-sm font-bold uppercase tracking-wide text-stone-400">Photos appear here as guests upload.</p> : null}
+        {event ? <p className="mt-5 text-sm font-bold uppercase tracking-wide text-stone-400">Photos show up here as people add them.</p> : null}
       </div>
     </section>
   );
@@ -4205,7 +4179,7 @@ function LiveWallControls({
 }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 px-4 py-3 shadow-[0_-18px_52px_rgba(0,0,0,0.36)] backdrop-blur">
-      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="mx-auto grid max-w-5xl grid-cols-2 gap-2 sm:grid-cols-4">
         <button className="inline-flex min-h-14 items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" type="button" onClick={onFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
           <Icon>{isFullscreen ? "fullscreen_exit" : "fullscreen"}</Icon>
           {isFullscreen ? "Exit full" : "Fullscreen"}
@@ -4218,12 +4192,17 @@ function LiveWallControls({
           <Icon>qr_code_2</Icon>
           {showQr ? "Hide QR" : "Show QR"}
         </button>
-        <details className="relative">
-          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" aria-label="Choose Live Wall mode">
-            <Icon>grid_view</Icon>
-            Mode
+        <details className="relative col-span-2 sm:col-span-1">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" aria-label="Open more Photo Wall controls">
+            <Icon>more_horiz</Icon>
+            More
           </summary>
-          <div className="absolute bottom-full left-0 mb-3 grid w-56 gap-1 rounded-[1rem] border border-white/15 bg-[#151515] p-2 shadow-2xl">
+          <div className="absolute bottom-full right-0 mb-3 grid w-64 gap-1 rounded-[1rem] border border-white/15 bg-[#151515] p-2 text-sm font-bold shadow-2xl">
+            <button className="rounded-[0.75rem] px-3 py-3 text-left text-white hover:bg-white/10" type="button" onClick={onRefresh}>Refresh</button>
+            <button className="rounded-[0.75rem] px-3 py-3 text-left text-white hover:bg-white/10" type="button" onClick={onCopyJoinLink}>Copy upload link</button>
+            <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={eventLink} target="_blank" rel="noreferrer" onClick={onUploadLinkClick}>Open upload page</a>
+            {recapLink ? <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={recapLink} target="_blank" rel="noreferrer">Open Shared Recap</a> : null}
+            <p className="mt-1 border-t border-white/10 px-3 pb-1 pt-3 text-xs font-extrabold uppercase tracking-wide text-stone-400">Advanced display modes</p>
             {availableModes.map((item) => (
               <button
                 className={cx("rounded-[0.75rem] px-3 py-3 text-left text-sm font-extrabold transition", mode === item ? "bg-[#ff856d] text-black" : "text-white hover:bg-white/10")}
@@ -4235,18 +4214,6 @@ function LiveWallControls({
                 {getLiveWallModeLabel(item)}
               </button>
             ))}
-          </div>
-        </details>
-        <details className="relative col-span-2 sm:col-span-1">
-          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" aria-label="Open more Live Wall controls">
-            <Icon>more_horiz</Icon>
-            More
-          </summary>
-          <div className="absolute bottom-full right-0 mb-3 grid w-64 gap-1 rounded-[1rem] border border-white/15 bg-[#151515] p-2 text-sm font-bold shadow-2xl">
-            <button className="rounded-[0.75rem] px-3 py-3 text-left text-white hover:bg-white/10" type="button" onClick={onRefresh}>Refresh</button>
-            <button className="rounded-[0.75rem] px-3 py-3 text-left text-white hover:bg-white/10" type="button" onClick={onCopyJoinLink}>Copy join link</button>
-            <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={eventLink} target="_blank" rel="noreferrer" onClick={onUploadLinkClick}>Open upload page</a>
-            {recapLink ? <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={recapLink} target="_blank" rel="noreferrer">Open recap</a> : null}
             {displayLinks.filter((link) => link.key !== mode).map((link) => (
               <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={link.url} target="_blank" rel="noreferrer" key={link.key}>Open {link.label}</a>
             ))}
@@ -4267,16 +4234,6 @@ function RecapSharePanel({ event, data, assets, hasWinners }: { event: PublicEve
       await copyText(data.recapLink);
       trackAnalytics("recap_link_copied", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap" } });
       setStatus("Recap link copied");
-    } catch (err) {
-      setStatus((err as Error).message);
-    }
-  }
-
-  async function copyShareText() {
-    try {
-      await copyText(primaryText);
-      trackAnalytics("recap_share_clicked", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", method: "copy_text" } });
-      setStatus("Recap share text copied");
     } catch (err) {
       setStatus((err as Error).message);
     }
@@ -4310,7 +4267,6 @@ function RecapSharePanel({ event, data, assets, hasWinners }: { event: PublicEve
       <div className="mt-4 grid gap-2">
         <button className="min-h-12 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" type="button" onClick={shareRecap}>Share recap</button>
         <button className="min-h-12 rounded-[1.15rem] bg-white px-5 py-3 text-sm font-bold text-stone-950" type="button" onClick={copyRecapLink}>Copy recap link</button>
-        <button className="min-h-12 rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-bold text-white" type="button" onClick={copyShareText}>Copy share text</button>
       </div>
     </div>
   );
@@ -4428,10 +4384,10 @@ function RecapContributorCelebration({ story }: { story: EventRecapStory }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <StatusPill tone="green">People who uploaded</StatusPill>
-          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">People who helped capture the event</h2>
+          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">People who added photos</h2>
           <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-600">
             {contributors.contributorCount
-              ? `${contributors.contributorCount} named ${contributors.contributorCount === 1 ? "person" : "people"} added photos to this recap.`
+                ? `${contributors.contributorCount} named ${contributors.contributorCount === 1 ? "person" : "people"} added photos to this shared recap.`
               : contributors.totalPhotos
                 ? "Guests added photos without display names, so the recap celebrates the group instead."
                 : "People will appear here once guests add photos."}
@@ -4498,6 +4454,7 @@ function EventRecap() {
   const [error, setError] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
+  const [recapLinkStatus, setRecapLinkStatus] = useState("");
   const [activeAlbumFilter, setActiveAlbumFilter] = useState("all");
   const trackedStoryRef = useRef("");
 
@@ -4516,7 +4473,6 @@ function EventRecap() {
 
   const event = data?.event;
   const story = event ? buildEventRecapStory(event, data.photos, { awardVoting: data.awardVoting }) : null;
-  const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
   const shareAssets = event
     ? buildHostShareAssets({
         ...event,
@@ -4528,21 +4484,17 @@ function EventRecap() {
   const hasAwardWinners = Boolean(data?.awardVoting?.categories.some((category) => category.leaderPhotoIds.length > 0));
   const awardWinnerCount = data?.awardVoting?.categories.filter((category) => category.leaderPhotoIds.length > 0).length || 0;
   const completedChallengeCount = story?.challengeMoments.filter((moment) => moment.isComplete).length || 0;
-  const recapStatusLabel = data?.isLocked ? "Album still locked" : story?.totalPhotos ? "Recap ready" : "Photos still coming in";
+  const recapStatusLabel = "Shared recap";
   const recapHeroSentence = data?.isLocked
-    ? `Photos are still private until ${event ? formatDateTime(event.revealAt) : "the reveal time"}.`
+    ? `Photos are saved for the reveal. The recap unlocks after ${event ? formatDateTime(event.revealAt) : "the reveal time"}.`
     : story?.totalPhotos
-      ? "The event album is ready to share."
-      : "Photos will appear here once guests start uploading.";
-  const primaryHeroCta = data?.isLocked || !story?.totalPhotos
-    ? { label: "Add photos", href: `/e/${slug}`, kind: "link" as const }
-    : data?.awardVoting?.votingEnabled
-      ? { label: "Vote on awards", href: "#recap-challenge-moments", kind: "anchor" as const }
-      : { label: "View photos", href: "#recap-photos", kind: "anchor" as const };
+      ? "Photos from the event, all in one place."
+      : "No photos yet. Share the guest link so people can add theirs.";
+  const primaryHeroCta = { label: "Add photos", href: `/e/${slug}` };
   const heroStats = [
     { label: "Photos", value: story?.totalPhotos ?? 0 },
-    { label: "Contributors", value: story?.contributorCount || "Guests" },
-    ...(awardWinnerCount ? [{ label: "Award winners", value: awardWinnerCount }] : completedChallengeCount ? [{ label: "Prompts complete", value: completedChallengeCount }] : []),
+    { label: "People who uploaded", value: story?.contributorCount || "Guests" },
+    ...(awardWinnerCount ? [{ label: "Awards", value: awardWinnerCount }] : completedChallengeCount ? [{ label: "Prompts", value: completedChallengeCount }] : []),
   ].slice(0, 3);
   const selectedFilter = story?.albumFilters.find((filter) => filter.key === activeAlbumFilter) || story?.albumFilters[0] || null;
   const albumPhotoIds = new Set(selectedFilter?.photoIds || []);
@@ -4580,6 +4532,17 @@ function EventRecap() {
     trackAnalytics("recap_album_filter_used", { eventId: event?.id, eventSlug: event?.slug, metadata: { filter: filter.key, count: filter.count } });
   }
 
+  async function copyHeroRecapLink() {
+    if (!data?.recapLink || !event) return;
+    try {
+      await copyText(data.recapLink);
+      trackAnalytics("recap_link_copied", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_hero" } });
+      setRecapLinkStatus("Recap link copied");
+    } catch (err) {
+      setRecapLinkStatus((err as Error).message);
+    }
+  }
+
   return (
     <main className="min-h-screen bg-[#fff8ed] text-stone-950">
       <div className="mx-auto w-full max-w-7xl px-4 py-4 sm:px-5 sm:py-10">
@@ -4598,13 +4561,10 @@ function EventRecap() {
                   <h1 className="mt-5 font-display text-4xl font-bold leading-none sm:text-6xl lg:text-7xl">{event.name}</h1>
                   <p className="mt-4 max-w-2xl text-base font-semibold leading-7 text-stone-200 sm:text-lg">{recapHeroSentence}</p>
                   <div className="mt-6 flex flex-wrap gap-3">
-                    {primaryHeroCta.kind === "link" ? (
-                      <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" to={primaryHeroCta.href} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>{primaryHeroCta.label}</Link>
-                    ) : (
-                      <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" href={primaryHeroCta.href}>{primaryHeroCta.label}</a>
-                    )}
-                    <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" href="#recap-share">Share recap</a>
+                    <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_14px_32px_rgba(232,93,63,0.24)]" to={primaryHeroCta.href} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>{primaryHeroCta.label}</Link>
+                    <button className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" type="button" onClick={copyHeroRecapLink}>Copy recap link</button>
                   </div>
+                  {recapLinkStatus ? <p className="mt-3 text-sm font-bold text-amber-200">{recapLinkStatus}</p> : null}
                   <RecapMiniStrip photos={story.highlightPhotos} onPhotoClick={openPublicPhoto} />
                 </div>
                 <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
@@ -4617,8 +4577,8 @@ function EventRecap() {
               <>
                 <section className="mt-8 rounded-[1.65rem] border border-amber-200 bg-amber-50 p-6 text-center sm:p-8">
                   <Icon className="mx-auto h-12 w-12 text-[#653e00]">lock</Icon>
-                  <h2 className="mt-4 font-display text-3xl font-bold text-[#653e00] sm:text-4xl">{event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Photos are saved for the reveal." : story.lockedTitle}</h2>
-                  <p className="mx-auto mt-3 max-w-2xl text-amber-900">{capsuleCopy?.revealNote || story.lockedCopy}</p>
+                  <h2 className="mt-4 font-display text-3xl font-bold text-[#653e00] sm:text-4xl">Photos are saved for the reveal.</h2>
+                  <p className="mx-auto mt-3 max-w-2xl text-amber-900">The recap unlocks after {formatDateTime(event.revealAt)}.</p>
                   <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-white px-5 py-3 text-sm font-extrabold text-stone-950 shadow-sm" to={`/e/${slug}`}>Add photos before reveal</Link>
                 </section>
                 {shareAssets ? (
@@ -4633,23 +4593,22 @@ function EventRecap() {
               </>
             ) : (
               <>
-                <RecapHighlightReel story={story} onPhotoClick={openPublicPhoto} />
-
                 <section className="mt-8" id="recap-photos">
                   <div className="mb-4">
-                    <h2 className="font-display text-3xl font-bold">Photos from the event</h2>
-                    <p className="text-stone-600">Every revealed photo from the event, with simple filters for the moments that matter.</p>
+                    <h2 className="font-display text-3xl font-bold">Photos</h2>
+                    <p className="text-stone-600">{albumPhotos.length ? "Photos from the event, all in one place." : "No photos yet. Share the guest link so people can add theirs."}</p>
                   </div>
                   <RecapAlbumFilterTabs filters={story.albumFilters} activeFilter={selectedFilter?.key || "all"} onChange={chooseAlbumFilter} />
                   <PhotoMosaic photos={albumPhotos} onPhotoClick={openPublicPhoto} />
                 </section>
+                {story.totalPhotos ? <RecapHighlightReel story={story} onPhotoClick={openPublicPhoto} /> : null}
                 <RecapContributorCelebration story={story} />
                 {event.challenge ? <RecapChallengeMoments story={story} awardVoting={data.awardVoting} event={event} photos={data.photos} clientId={session.clientId} onVoteComplete={loadRecap} onPhotoClick={openPublicPhoto} /> : null}
                 {shareAssets ? (
                   <section className="mt-8 rounded-[1.65rem] bg-stone-950 p-5 text-white shadow-[0_24px_70px_rgba(101,62,0,0.15)] sm:p-7" id="recap-share">
                     <div className="mb-4">
-                      <h2 className="font-display text-3xl font-bold">Share or add photos</h2>
-                      <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-200">Send the recap to everyone, or keep adding photos from the same event link.</p>
+                      <h2 className="font-display text-3xl font-bold">Share this recap</h2>
+                      <p className="mt-2 max-w-2xl text-sm font-semibold text-stone-200">Send this after the event so everyone can see the photos in one place.</p>
                     </div>
                     <RecapSharePanel event={event} data={data} assets={shareAssets} hasWinners={hasAwardWinners} />
                     <Link className="mt-4 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-white/20 px-5 py-3 text-sm font-extrabold text-white" to={`/e/${slug}`} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_add_photos_cta" } })}>Add photos</Link>
@@ -4658,7 +4617,6 @@ function EventRecap() {
                 <RecapCreateEventCta story={story} event={event} />
               </>
             )}
-            <a className="fixed inset-x-4 bottom-4 z-30 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_18px_44px_rgba(232,93,63,0.32)] sm:hidden" href="#recap-share">Share recap</a>
             <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
           </>
         )}

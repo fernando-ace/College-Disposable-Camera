@@ -257,7 +257,7 @@ test.describe("EventFilm browser smoke", () => {
     }
   });
 
-  test("seeded guest, Live Wall, and Recap routes render", async ({ page, request }) => {
+  test("seeded guest, Photo Wall, and Shared Recap routes render", async ({ page, request }) => {
     const health = await request.get(`${apiUrl}/api/health`);
     test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
 
@@ -275,14 +275,18 @@ test.describe("EventFilm browser smoke", () => {
 
     await page.goto(`/wall/${seededSlug}`);
     await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
+    await expect(page.locator("body")).toContainText("Add photos to the shared album.");
     await expect(page.locator("body")).toContainText("Scan to add photos");
     await expect(page.locator("body")).toContainText("No account needed.");
     await expect(page.getByRole("link", { name: "Open upload link" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
+    await expect(page.getByText("Advanced display modes")).toBeHidden();
+    await page.getByLabel("Open more Photo Wall controls").click();
+    await expect(page.getByText("Advanced display modes")).toBeVisible();
 
     for (const mode of ["grid", "slideshow", "join", "challenge"]) {
       await page.goto(`/wall/${seededSlug}?mode=${mode}`);
       await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
-      await expect(page.locator("body")).toContainText(/Photo Grid|Slideshow|Join Screen|Prompts|Scan to add photos|Photos are being saved/i);
+      await expect(page.locator("body")).toContainText(/Photo Wall|Slideshow|Join screen|Prompts|Scan to add photos|Photos are being saved/i);
     }
 
     const awardsResponse = await request.get(`${apiUrl}/api/events/eventfilm-beta-demo-event-awards/live-wall`);
@@ -294,14 +298,14 @@ test.describe("EventFilm browser smoke", () => {
     }
 
     await page.goto(`/recap/${seededSlug}`);
-    await expect(page.locator("body")).toContainText(new RegExp(`Recap|${escapeRegExp(eventName)}|locked`, "i"));
+    await expect(page.locator("body")).toContainText(new RegExp(`Shared recap|${escapeRegExp(eventName)}|locked|Photos are saved for the reveal`, "i"));
 
     const revealedRecapResponse = await request.get(`${apiUrl}/api/events/${revealedSeededSlug}/recap`);
     if (revealedRecapResponse.ok()) {
       const revealedRecap = await revealedRecapResponse.json();
       await page.goto(`/recap/${revealedSeededSlug}`);
       await expect(page.getByRole("heading", { name: revealedRecap.event.name })).toBeVisible();
-      await expect(page.locator("body")).toContainText(/Recap ready|Photos still coming in|Photos/i);
+      await expect(page.locator("body")).toContainText(/Shared recap|Photos from the event, all in one place|No photos yet/i);
       await expect(page.getByRole("link", { name: /Add photos/i }).first()).toBeVisible();
       if ((revealedRecap.photos || []).length > 0) {
         await expect(page.locator("#recap-photos img").first()).toBeVisible();
@@ -344,8 +348,8 @@ test.describe("EventFilm browser smoke", () => {
     await expect(createdHandoff.getByRole("button", { name: "Copy guest upload link" })).toBeVisible();
     await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
     await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
-    await expect(createdHandoff).toContainText("Open the Live Wall during the event");
-    await expect(createdHandoff).toContainText("Share the recap after the event");
+    await expect(createdHandoff).toContainText("Open the Photo Wall during the event");
+    await expect(createdHandoff).toContainText("Share the Shared Recap after the event");
     await page.getByRole("button", { name: "Dismiss" }).click();
     await expect(page.getByRole("heading", { name: "Your event is ready." })).toHaveCount(0);
     await expect(page).not.toHaveURL(/created=1/);
@@ -381,11 +385,12 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByAltText("Guest upload QR code")).toBeVisible();
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
-      await expect(page.getByRole("heading", { name: /Open this on a TV or projector/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Photo Wall" })).toBeVisible();
+      await expect(page.locator("body")).toContainText("Use this during the event so guests know where to add photos and can see pictures appear live.");
       await expect(page.locator(`a[href$="/wall/${seededSlug}"]`).first()).toBeVisible();
-      await expect(page.getByRole("button", { name: "Copy Live Wall link" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Copy guest upload link" }).first()).toBeVisible();
-      await expect(page.locator("body")).toContainText("Keep the QR code visible.");
+      await expect(page.getByRole("link", { name: "Open Photo Wall" })).toBeVisible();
+      await expect(page.getByRole("button", { name: "Copy guest link" }).first()).toBeVisible();
+      await expect(page.locator("body")).toContainText("Keep the QR code visible when people are adding photos.");
 
       await page.goto(`/dashboard/events/${eventId}?tab=uploads`);
       await expect(page.getByRole("heading", { name: "Uploads" })).toBeVisible();
@@ -405,13 +410,13 @@ test.describe("EventFilm browser smoke", () => {
         },
       });
       await page.goto("/dashboard");
-      await expect(page.getByRole("link", { name: "Open Live Wall" }).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: "Open Photo Wall" }).first()).toBeVisible();
       await expect(page.getByRole("button", { name: "Share guest link" }).first()).toBeVisible();
 
       await page.goto(`/dashboard/events/${eventId}?tab=recap`);
-      await expect(page.getByRole("heading", { name: /send-to-everyone page/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
+      await expect(page.locator("body")).toContainText("Send this after the event so everyone can see the photos in one place.");
       await expect(page.getByRole("link", { name: "Preview recap" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Share recap" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy recap link" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Download photos" })).toBeVisible();
       await expect(page.locator("body")).toContainText("Before you send it");

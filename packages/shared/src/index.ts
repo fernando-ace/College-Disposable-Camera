@@ -1129,7 +1129,7 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     revealTiming: "Reveal after the reception or the next day.",
     suggestedUploadLimit: 15,
     inviteCopy: "Share your favorite candid photos from the celebration. No account needed:",
-    liveWallCopy: "Open the Live Wall during the reception so guests can watch the celebration build.",
+    liveWallCopy: "Open the Photo Wall during the reception so guests can watch the celebration build.",
     recapFraming: "A guest-made celebration story with candids, dance-floor moments, family photos, and details.",
     icon: "favorite",
     badge: "Polished",
@@ -1159,7 +1159,7 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     revealTiming: "Reveal after the event wrap-up.",
     suggestedUploadLimit: 8,
     inviteCopy: "Help document the event. Upload team photos, speaker moments, and behind-the-scenes shots here:",
-    liveWallCopy: "Use the Live Wall to make the event feel active and shared.",
+    liveWallCopy: "Use the Photo Wall to make the event feel active and shared.",
     recapFraming: "A campus-event recap with the people, activities, and behind-the-scenes details that mattered.",
     icon: "school",
     badge: "Campus",
@@ -1204,7 +1204,7 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     revealTiming: "Reveal at the closing session or after checkout.",
     suggestedUploadLimit: 15,
     inviteCopy: "Capture retreat moments as they happen. Upload photos for the final recap here:",
-    liveWallCopy: "Use the Live Wall between sessions to show the retreat taking shape.",
+    liveWallCopy: "Use the Photo Wall between sessions to show the retreat taking shape.",
     recapFraming: "A retreat recap with teams, activities, nature moments, and the final group story.",
     icon: "forest",
     badge: "Group weekend",
@@ -1249,7 +1249,7 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     revealTiming: "Choose the reveal timing that fits the event.",
     suggestedUploadLimit: 10,
     inviteCopy: "Upload your favorite photos from the event here:",
-    liveWallCopy: "Open the Live Wall while guests upload photos.",
+    liveWallCopy: "Open the Photo Wall while guests upload photos.",
     recapFraming: "A shared recap from the people who were there.",
     icon: "auto_awesome",
     badge: "Fully editable",
@@ -1433,9 +1433,9 @@ function buildPosterModeHint(challenge: Pick<EventChallenge, "type"> | null | un
 export const LIVE_WALL_MODES = ["grid", "slideshow", "join", "challenge", "awards"] as const satisfies readonly LiveWallMode[];
 
 export const LIVE_WALL_MODE_LABELS: Record<LiveWallMode, string> = {
-  grid: "Photo Grid",
+  grid: "Photo Wall",
   slideshow: "Slideshow",
-  join: "Join Screen",
+  join: "Join screen",
   challenge: "Prompts",
   awards: "Awards",
 };
@@ -1466,7 +1466,7 @@ export function buildLiveWallDisplayLinks(
       key: "grid",
       label: getLiveWallModeLabel("grid"),
       url: buildLiveWallUrl(liveWallLink, "grid"),
-      purpose: "Use this as the default room display with photos, QR code, and a simple live count.",
+      purpose: "Use this during the event so guests know where to add photos and can see pictures appear live.",
       instruction: "Open this on a TV or projector while guests upload.",
       analyticsName: "live_wall_mode_viewed",
     },
@@ -1526,9 +1526,9 @@ export function buildHostShareAssets(
   const guestInviteMessage = `Add your photos here during the event: ${guestLink}\nNo account needed.`;
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : guestInviteMessage;
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
-  const recapMessage = `The event recap is ready: ${recapLink}`;
-  const recapShareText = template ? `${template.recapFraming} View the finished memory page: ${recapLink}` : recapMessage;
-  const liveWallSetupTip = "Open the Live Wall on a TV or projector and keep the QR code visible.";
+  const recapMessage = `The shared recap is ready: ${recapLink}`;
+  const recapShareText = template ? `${template.recapFraming} View the shared recap: ${recapLink}` : recapMessage;
+  const liveWallSetupTip = "Put the Photo Wall on a TV, laptop, or iPad during the event. For small hangouts, you can also just share the guest link.";
   const qrPosterHint = "Print this or show it on a phone so guests can scan to add photos.";
   const winnerShareText =
     event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
@@ -1555,23 +1555,23 @@ export function buildHostShareAssets(
     },
     {
       key: "live-wall",
-      label: "Live Wall link",
+      label: "Photo Wall link",
       url: liveWallLink,
-      purpose: "Use this on a TV, projector, or laptop while guests are uploading.",
-      instruction: template ? template.liveWallCopy : "Open this on a room display while guests upload photos.",
+      purpose: "Use this during the event so guests know where to add photos and can see pictures appear live.",
+      instruction: template ? template.liveWallCopy : "Open this on a TV, laptop, or iPad during the event.",
       audience: "Host display",
       timing: "During event",
       copyText: liveWallLink,
-      shareText: `Open the ${event.name} Live Wall during the event: ${liveWallLink}`,
+      shareText: `Open the ${event.name} Photo Wall during the event: ${liveWallLink}`,
       copyAnalyticsName: "live_wall_link_copied",
       shareAnalyticsName: "live_wall_link_shared",
     },
     {
       key: "recap",
-      label: "Recap link",
+      label: "Shared Recap link",
       url: recapLink,
-      purpose: "Share this after reveal so everyone can view the finished album story.",
-      instruction: template ? `${template.recapFraming} Send this as the finished memory page after reveal.` : "Share this after the event as the finished memory page with highlights, contributors, challenge moments, and the full album.",
+      purpose: "Share this after the event so everyone can see the photos in one place.",
+      instruction: template ? `${template.recapFraming} Send this after the event.` : "Share this after the event so everyone can see the photos in one place.",
       audience: "Everyone",
       timing: "After reveal",
       copyText: recapShareText,
@@ -1606,11 +1606,11 @@ export function buildHostShareAssets(
     liveWallSetupTip,
     qrPosterHint,
     socialPostCopy,
-    liveWallDisplayPrompt: template ? template.liveWallCopy : "Open the Live Wall while guests upload photos.",
+    liveWallDisplayPrompt: template ? template.liveWallCopy : "Open the Photo Wall while guests upload photos.",
     recapShareText,
     winnerShareText,
     memoryCapsuleRevealCopy,
-    emptyRecapCopy: "No photos yet. Share the guest upload link so the finished memory page has moments to show.",
+    emptyRecapCopy: "No photos yet. Share the guest link so people can add theirs.",
   };
 }
 
@@ -1637,14 +1637,14 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
       },
       {
         key: "live-wall",
-        label: "Live Wall link",
+        label: "Photo Wall link",
         url: liveWallLink,
         purpose: "Open this during the event so the room can see photos appear.",
         instruction: template ? template.liveWallCopy : "Open this on a laptop, TV, projector, or iPad during the event so guests can scan the QR code and watch photos appear.",
       },
       {
         key: "recap",
-        label: "Recap link",
+        label: "Shared Recap link",
         url: recapLink,
         purpose: "Share this after the reveal so everyone can view the finished memory page.",
         instruction: template ? `${template.recapFraming} Send this as the finished memory page after reveal.` : "Share this after the event as the finished memory page with highlights, contributors, challenge moments, and the full album.",
@@ -1652,8 +1652,8 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
     ],
     inviteText,
     hostInstructions: template
-      ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, open the Live Wall during the event, then share the finished Recap memory page afterward.`
-      : "Create the event, confirm the photo mode, copy the guest link or QR code, open the Live Wall during the event, then share the finished Recap memory page afterward.",
+      ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, open the Photo Wall during the event, then share the Shared Recap afterward.`
+      : "Create the event, confirm the photo mode, copy the guest link or QR code, open the Photo Wall during the event, then share the Shared Recap afterward.",
     socialCaption,
     modeInstructions: pack.guestInstructions,
     liveWallDisplayLinks,
@@ -1661,8 +1661,8 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
       { key: "create-event", label: "Create event", complete: true },
       { key: "choose-mode", label: "Choose event mode", complete: true },
       { key: "copy-guest-link", label: "Copy guest link or QR code", complete: false },
-      { key: "open-live-wall", label: "Open Live Wall", complete: false },
-      { key: "share-recap", label: "Share Recap after event", complete: false },
+      { key: "open-live-wall", label: "Open Photo Wall", complete: false },
+      { key: "share-recap", label: "Share Shared Recap after event", complete: false },
     ],
   };
 }
@@ -2010,7 +2010,7 @@ export function deriveEventLifecycleStatus(
     return {
       status: "collecting_photos",
       label: "Collecting photos",
-      description: "Guests have started uploading. Keep the Live Wall and moderation close.",
+      description: "Guests have started uploading. Keep the Photo Wall and moderation close.",
       phase: "during",
       tone: "green",
       shouldShowRepeatCta: false,
@@ -2022,7 +2022,7 @@ export function deriveEventLifecycleStatus(
     return {
       status: "live_or_happening_soon",
       label: eventAt.getTime() <= now.getTime() ? "Happening now" : "Happening soon",
-      description: "Share the guest link, keep the QR handy, and open the Live Wall when guests arrive.",
+      description: "Share the guest link, keep the QR handy, and open the Photo Wall when guests arrive.",
       phase: "during",
       tone: "green",
       shouldShowRepeatCta: false,
@@ -2049,7 +2049,7 @@ export function buildHostNextStep(
   const lifecycle = deriveEventLifecycleStatus(event, counts, now);
   if (lifecycle.status === "draft_or_upcoming") return "Share the guest link before people arrive.";
   if (lifecycle.status === "live_or_happening_soon") return "Share the guest upload link.";
-  if (lifecycle.status === "collecting_photos") return "Open the Live Wall.";
+  if (lifecycle.status === "collecting_photos") return "Open the Photo Wall.";
   if (lifecycle.status === "reveal_locked") return "Keep collecting photos until reveal time.";
   if (lifecycle.status === "recap_ready") return "Share the recap.";
   return "Your recap is ready to share again.";
@@ -2496,7 +2496,7 @@ function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSumma
     sections.push({ key, title, description, kind, photos: selected });
   };
 
-  addSection("featured", "Best moments", "Photos the host marked as favorites for everyone to see first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
+  addSection("featured", "Favorite moments", "Photos the host marked as favorites for everyone to see first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
 
   const winnerIds = (awardVoting?.categories || []).flatMap((category) => category.leaderPhotoIds);
   addSection("award-winners", "Award winners", "Winning and tied Event Awards photos from the recap vote.", "award_winner", photosByIds(sortedPhotos, winnerIds));
@@ -2505,17 +2505,17 @@ function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSumma
     .flatMap((category) => category.voteTotals)
     .sort((a, b) => b.voteCount - a.voteCount)
     .map((vote) => vote.photoId);
-  addSection("most-voted", "Guest picks", "Photos guests voted for, ranked before the rest of the album.", "voted", photosByIds(sortedPhotos, votedIds));
+  addSection("most-voted", "Guest favorites", "Photos guests voted for, kept below the main album.", "voted", photosByIds(sortedPhotos, votedIds));
 
   addSection(
     "challenge-moments",
-    "Photo prompts",
+    "Prompts",
     "Photos tied to teams, prompts, award categories, or event-specific moments.",
     "challenge",
     sortedPhotos.filter((photo) => Boolean(photo.challengeItemId || photo.challengePromptId || photo.challengeParticipantId || photo.challengeColorName)),
   );
 
-  addSection("recent", "Recent moments", "Recent photos keep the event story moving when there are no curated picks yet.", "recent", sortedPhotos);
+  addSection("recent", "Photos", "Recent photos from the shared album.", "recent", sortedPhotos);
 
   return sections;
 }
@@ -2584,9 +2584,9 @@ function buildRecapAlbumFilters(challenge: EventChallenge | null | undefined, ph
     { key: "all", label: "Photos from the event", count: sortedPhotos.length, photoIds: photoIds(sortedPhotos) },
   ];
   const featured = sortedPhotos.filter((photo) => Boolean(photo.isFeatured));
-  if (featured.length) filters.push({ key: "featured", label: "Best moments", count: featured.length, photoIds: photoIds(featured) });
+  if (featured.length) filters.push({ key: "featured", label: "Favorite moments", count: featured.length, photoIds: photoIds(featured) });
   const recent = sortedPhotos.slice(0, Math.min(12, sortedPhotos.length));
-  if (recent.length && recent.length !== sortedPhotos.length) filters.push({ key: "recent", label: "Recent moments", count: recent.length, photoIds: photoIds(recent) });
+  if (recent.length && recent.length !== sortedPhotos.length) filters.push({ key: "recent", label: "Recent photos", count: recent.length, photoIds: photoIds(recent) });
 
   for (const row of buildChallengeProgressSummary(challenge, sortedPhotos).rows) {
     const rowPhotos = photosForChallengeMoment(sortedPhotos, row);
@@ -2631,8 +2631,8 @@ export function buildEventRecapStory(
   return {
     modeLabel,
     templateName: template?.name,
-    recapTitle: "Best moments",
-    recapSubtitle: "Favorite photos and standout moments from the event.",
+    recapTitle: "Favorite moments",
+    recapSubtitle: "Photos the host picked to show first.",
     totalPhotos: sortedPhotos.length,
     contributorCount: contributors.contributorCount,
     highlightPhotos: highlightPhotos.length ? highlightPhotos : sortedPhotos.slice(0, 8),
@@ -2641,7 +2641,7 @@ export function buildEventRecapStory(
     lockedTitle: capsuleCopy?.revealTitle || "Photos are saved for the reveal",
     lockedCopy: capsuleCopy?.revealNote || "Photos are still private until the reveal time.",
     emptyTitle: "No photos yet",
-    emptyCopy: "The host can feature photos as they review the album.",
+    emptyCopy: "No photos yet. Share the guest link so people can add theirs.",
     highlightReel: highlights,
     challengeHeadline,
     challengeCopy,

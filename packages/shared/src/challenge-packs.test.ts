@@ -184,7 +184,7 @@ test("live wall mode helpers parse and build stable display links", () => {
   assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "grid"), "https://eventfilm.test/wall/spring");
   assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "join"), "https://eventfilm.test/wall/spring?mode=join");
   assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring?presenter=1", "challenge"), "https://eventfilm.test/wall/spring?presenter=1&mode=challenge");
-  assert.deepEqual(["grid", "slideshow", "join", "challenge", "awards"].map((mode) => getLiveWallModeLabel(mode as Parameters<typeof getLiveWallModeLabel>[0])), ["Photo Grid", "Slideshow", "Join Screen", "Prompts", "Awards"]);
+  assert.deepEqual(["grid", "slideshow", "join", "challenge", "awards"].map((mode) => getLiveWallModeLabel(mode as Parameters<typeof getLiveWallModeLabel>[0])), ["Photo Wall", "Slideshow", "Join screen", "Prompts", "Awards"]);
 
   const event = {
     liveWallLink: "https://eventfilm.test/wall/spring",
@@ -199,7 +199,7 @@ test("live wall mode helpers parse and build stable display links", () => {
   } satisfies Pick<EventSummary, "liveWallLink" | "challenge">;
 
   assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.key), ["grid", "join", "slideshow", "challenge", "awards"]);
-  assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.label), ["Photo Grid", "Join Screen", "Slideshow", "Prompts", "Awards"]);
+  assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.label), ["Photo Wall", "Join screen", "Slideshow", "Prompts", "Awards"]);
   assert.equal(buildHostShareAssets({ ...event, id: "event", name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
   assert.equal(buildHostLaunchKit({ ...event, name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
 });
@@ -369,8 +369,8 @@ test("unknown templates and old events use safe fallbacks", () => {
     [],
   );
   assert.equal(metadata.templateName, undefined);
-  assert.equal(metadata.recapTitle, "Best moments");
-  assert.equal(metadata.recapSubtitle, "Favorite photos and standout moments from the event.");
+  assert.equal(metadata.recapTitle, "Favorite moments");
+  assert.equal(metadata.recapSubtitle, "Photos the host picked to show first.");
 });
 
 test("event lifecycle status is derived from dates, photo state, and reveal state", () => {
@@ -414,7 +414,7 @@ test("host next step copy follows the simplified lifecycle hierarchy", () => {
 
   assert.equal(buildHostNextStep(base, {}, now), "Share the guest link before people arrive.");
   assert.equal(buildHostNextStep({ ...base, eventDate: "2026-06-22T11:00:00.000Z" }, {}, now), "Share the guest upload link.");
-  assert.equal(buildHostNextStep(base, { totalPhotos: 3 }, now), "Open the Live Wall.");
+  assert.equal(buildHostNextStep(base, { totalPhotos: 3 }, now), "Open the Photo Wall.");
   assert.equal(buildHostNextStep({ ...base, revealAt: "2026-06-22T11:00:00.000Z" }, { visiblePhotos: 3 }, now), "Share the recap.");
 });
 
@@ -943,7 +943,7 @@ test("recap story prioritizes featured, winners, voted, challenge, and recent ph
   );
 
   assert.deepEqual(story.highlightReel.map((section) => section.key), ["featured", "award-winners", "most-voted", "challenge-moments", "recent"]);
-  assert.deepEqual(story.highlightReel.map((section) => section.title), ["Best moments", "Award winners", "Guest picks", "Photo prompts", "Recent moments"]);
+  assert.deepEqual(story.highlightReel.map((section) => section.title), ["Favorite moments", "Award winners", "Guest favorites", "Prompts", "Photos"]);
   assert.deepEqual(story.highlightReel.map((section) => section.photos.map((item) => item.id)), [["featured"], ["winner"], ["voted"], ["challenge"], ["recent"]]);
   assert.equal(new Set(story.highlightReel.flatMap((section) => section.photos.map((item) => item.id))).size, 5);
   assert.equal(story.challengeMoments[0]?.voteCount, 3);
@@ -1022,7 +1022,7 @@ test("recap story handles old events, templates, and memory capsule locked copy"
   assert.equal(lockedStory.lockedTitle, "Opens tonight");
   assert.equal(lockedStory.heroCopy, "Come back after dinner.");
   assert.equal(lockedStory.lockedCopy, "Come back after dinner.");
-  assert.equal(oldStory.emptyCopy, "The host can feature photos as they review the album.");
+  assert.equal(oldStory.emptyCopy, "No photos yet. Share the guest link so people can add theirs.");
 });
 
 test("host launch kit separates guest, live wall, and recap jobs", () => {
@@ -1070,8 +1070,8 @@ test("host share assets generate poster and share card metadata", () => {
   assert.equal(assets.poster.instruction, "Scan to add photos");
   assert.match(assets.poster.modeHint, /Event Awards/);
   assert.match(assets.guestInviteMessage, /No account needed/);
-  assert.match(assets.recapMessage, /The event recap is ready/);
-  assert.match(assets.liveWallSetupTip, /TV or projector/);
+  assert.match(assets.recapMessage, /The shared recap is ready/);
+  assert.match(assets.liveWallSetupTip, /Photo Wall/);
   assert.match(assets.qrPosterHint, /scan to add photos/);
   assert.match(assets.inviteText, /birthday/i);
   assert.match(assets.socialPostCopy, /birthday recap/i);
@@ -1103,7 +1103,7 @@ test("host share assets keep fallback copy useful for old events", () => {
   assert.match(assets.inviteText, /legacy-night/);
   assert.match(assets.inviteText, /No account needed/);
   assert.match(assets.poster.modeHint, /Simple Album/);
-  assert.match(assets.liveWallDisplayPrompt, /Live Wall/);
+  assert.match(assets.liveWallDisplayPrompt, /Photo Wall/);
   assert.match(assets.emptyRecapCopy, /No photos yet/);
 });
 
