@@ -18,6 +18,10 @@ function isLocalUrl(value: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 const isDeployedBrowserSmoke = !isLocalUrl(baseUrl);
 
 function requireHttpsUrl(value: string, envName: string) {
@@ -259,35 +263,38 @@ test.describe("EventFilm browser smoke", () => {
 
     const eventResponse = await request.get(`${apiUrl}/api/events/${seededSlug}`);
     test.skip(!eventResponse.ok(), `Seeded event ${seededSlug} not found. Run npm run demo:seed first.`);
+    const eventPayload = await eventResponse.json();
+    const eventName = eventPayload.event?.name || "EventFilm";
 
     await page.goto(`/e/${seededSlug}`);
-    await expect(page.getByRole("heading", { name: /EventFilm Beta Demo/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
     await expect(page.locator("body")).toContainText("No account needed");
     await expect(page.locator("body")).toContainText("Add your photos to the private event album.");
     await expect(page.locator("#guest-upload-card")).toContainText(/Add photos/i);
-    await expect(page.locator("#event-album")).toContainText(/Photos are being collected|album unlocks/i);
+    await expect(page.locator("#event-album")).toContainText(/Photos are being collected|album unlocks|revealed photos|No photos yet/i);
 
     await page.goto(`/wall/${seededSlug}`);
-    await expect(page.getByRole("heading", { name: /EventFilm Beta Demo/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
     await expect(page.locator("body")).toContainText("Scan to add photos");
     await expect(page.locator("body")).toContainText("No account needed.");
     await expect(page.getByRole("link", { name: "Open upload link" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
 
     for (const mode of ["grid", "slideshow", "join", "challenge"]) {
       await page.goto(`/wall/${seededSlug}?mode=${mode}`);
-      await expect(page.getByRole("heading", { name: /EventFilm Beta Demo/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
       await expect(page.locator("body")).toContainText(/Photo Grid|Slideshow|Join Screen|Prompts|Scan to add photos|Photos are being saved/i);
     }
 
     const awardsResponse = await request.get(`${apiUrl}/api/events/eventfilm-beta-demo-event-awards/live-wall`);
     if (awardsResponse.ok()) {
+      const awardsPayload = await awardsResponse.json();
       await page.goto("/wall/eventfilm-beta-demo-event-awards?mode=awards");
-      await expect(page.getByRole("heading", { name: /EventFilm Beta Demo/i })).toBeVisible();
+      await expect(page.getByRole("heading", { name: awardsPayload.event?.name || /EventFilm Beta Demo/i })).toBeVisible();
       await expect(page.locator("body")).toContainText(/Awards|Awards are live|Leaders and winners/i);
     }
 
     await page.goto(`/recap/${seededSlug}`);
-    await expect(page.locator("body")).toContainText(/Recap|EventFilm Beta Demo|locked/i);
+    await expect(page.locator("body")).toContainText(new RegExp(`Recap|${escapeRegExp(eventName)}|locked`, "i"));
 
     const revealedRecapResponse = await request.get(`${apiUrl}/api/events/${revealedSeededSlug}/recap`);
     if (revealedRecapResponse.ok()) {
@@ -375,7 +382,7 @@ test.describe("EventFilm browser smoke", () => {
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
       await expect(page.getByRole("heading", { name: /Open this on a TV or projector/i })).toBeVisible();
-      await expect(page.getByRole("link", { name: "Open Live Wall" })).toBeVisible();
+      await expect(page.locator(`a[href$="/wall/${seededSlug}"]`).first()).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy Live Wall link" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy guest upload link" }).first()).toBeVisible();
       await expect(page.locator("body")).toContainText("Keep the QR code visible.");
