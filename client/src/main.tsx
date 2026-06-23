@@ -36,6 +36,7 @@ import {
   getEventTemplate,
   getHostVisibleEventTemplates,
   getChallengePack,
+  getLiveWallModeLabel,
   getPromptPack,
   plainModeLabel,
   hasDuplicateCategories,
@@ -2278,6 +2279,7 @@ function Dashboard() {
                 <p className="mt-3 text-sm font-semibold text-stone-600">{buildHostNextStep(event)}</p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   {primaryAction(event, lifecycle)}
+                  {lifecycle.phase === "during" ? <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-[1rem] border border-[#eadfce] bg-white px-4 py-2 text-sm font-extrabold text-stone-900" onClick={() => copyEventLink(event)}>Share guest link</button> : null}
                   <Link className="inline-flex min-h-10 items-center justify-center rounded-[1rem] border border-[#eadfce] bg-white px-4 py-2 text-sm font-extrabold text-stone-900" to={`/dashboard/events/${event.id}`}>View event</Link>
                   <details className="relative">
                     <summary className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-2 text-sm font-extrabold text-stone-700">More</summary>
@@ -3199,6 +3201,11 @@ function ManageEvent() {
     ["uploads", "Uploads"],
     ["settings", "Settings"],
   ];
+  const liveWallStatus = event?.photoCount
+    ? { label: "Photos are coming in", tone: "green" as const, copy: `${event.photoCount} ${event.photoCount === 1 ? "photo has" : "photos have"} been added.` }
+    : lifecycle?.phase === "during"
+      ? { label: "Waiting for photos", tone: "amber" as const, copy: "No photos yet. Ask guests to scan the QR code." }
+      : { label: "Live Wall is ready", tone: "stone" as const, copy: "Open this on a TV or projector when guests start arriving." };
 
   useEffect(() => {
     if (!event || !lifecycle) return;
@@ -3315,16 +3322,38 @@ function ManageEvent() {
           {activeTab === "live-wall" ? (
           <section className="mt-8">
             <Card className="lg:p-8">
-              <h2 className="font-display text-3xl font-bold text-stone-950">Live Wall</h2>
-              <p className="mt-2 text-stone-600">Open this on a room display while guests upload.</p>
-              <input className="mt-5 w-full rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-3 text-sm font-semibold text-stone-700" readOnly value={event.liveWallLink || ""} />
-              <div className="mt-4 flex flex-wrap gap-2">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <StatusPill tone={liveWallStatus.tone}>{liveWallStatus.label}</StatusPill>
+                  <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Open this on a TV or projector.</h2>
+                  <p className="mt-2 max-w-2xl text-stone-600">{liveWallStatus.copy}</p>
+                </div>
+                <div className="rounded-[1.15rem] bg-[#fff3ee] px-5 py-4 text-center">
+                  <p className="font-display text-3xl font-bold text-[#d94f33]">{event.photoCount}</p>
+                  <p className="text-xs font-bold uppercase tracking-wide text-stone-500">photos added</p>
+                </div>
+              </div>
+              <div className="mt-6 flex flex-wrap gap-2">
                 {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Live Wall</a> : null}
                 <SecondaryButton type="button" onClick={() => copyDetailLink("Live Wall link", event.liveWallLink)}>Copy Live Wall link</SecondaryButton>
+                <SecondaryButton type="button" onClick={() => copyDetailLink("Guest upload link", event.eventLink)}>Copy guest upload link</SecondaryButton>
+                <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
               </div>
-              <div className="mt-6 grid gap-3 lg:grid-cols-2">
-                {buildHostShareAssets(event).liveWallDisplayLinks.map((link) => <LiveWallDisplayLinkCard key={link.key} link={link} event={event} />)}
+              <div className="mt-6 grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
+                <p className="font-extrabold text-stone-950">Simple setup</p>
+                <p>Open Live Wall on a TV or projector.</p>
+                <p>Keep the QR code visible.</p>
+                <p>Ask guests to scan and upload.</p>
               </div>
+              <details className="mt-6 rounded-[1.15rem] border border-[#eadfce] bg-white p-4">
+                <summary className="cursor-pointer list-none font-display text-xl font-bold text-stone-950">Advanced display modes</summary>
+                <p className="mt-2 text-sm font-semibold text-stone-600">Use these only when the room needs a specific display.</p>
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  {buildHostShareAssets(event).liveWallDisplayLinks
+                    .filter((link) => link.key !== "grid")
+                    .map((link) => <LiveWallDisplayLinkCard key={link.key} link={link} event={event} />)}
+                </div>
+              </details>
             </Card>
           </section>
           ) : null}
@@ -3831,6 +3860,7 @@ function LiveWall() {
   const initialMode = parseLiveWallMode(searchParams.get("mode"));
   const [data, setData] = useState<LiveWallResponse | null>(null);
   const [error, setError] = useState("");
+  const [copyStatus, setCopyStatus] = useState("");
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [mode, setMode] = useState<LiveWallMode>(initialMode);
   const [showQr, setShowQr] = useState(true);
@@ -3847,6 +3877,7 @@ function LiveWall() {
 
   useEffect(() => {
     trackAnalytics("live_wall_opened", { eventSlug: slug, path: `/wall/${slug}` });
+    trackAnalytics("live_wall_viewed", { eventSlug: slug, path: `/wall/${slug}`, metadata: { mode } });
     trackAnalytics("live_wall_mode_viewed", { eventSlug: slug, path: `/wall/${slug}`, metadata: { mode } });
     let isMounted = true;
     async function loadIfMounted() {
@@ -3903,6 +3934,13 @@ function LiveWall() {
     setSlideIndex(0);
     setSearchParams(nextMode === "grid" ? {} : { mode: nextMode });
     trackAnalytics("live_wall_mode_switched", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { from: mode, to: nextMode } });
+    trackAnalytics("live_wall_mode_changed", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { from: mode, to: nextMode } });
+  }
+
+  function toggleQr() {
+    const nextShowQr = !showQr;
+    setShowQr(nextShowQr);
+    trackAnalytics("live_wall_qr_toggled", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { visible: nextShowQr, mode } });
   }
 
   function toggleSlideshow() {
@@ -3920,6 +3958,20 @@ function LiveWall() {
     trackAnalytics("live_wall_fullscreen_clicked", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { mode } });
   }
 
+  async function copyJoinLink() {
+    if (!data?.eventLink) return;
+    try {
+      await copyText(data.eventLink);
+      setCopyStatus("Guest upload link copied");
+    } catch (err) {
+      setCopyStatus((err as Error).message);
+    }
+  }
+
+  function trackUploadLinkClick(label: string) {
+    trackAnalytics("live_wall_upload_link_clicked", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { mode, label } });
+  }
+
   const event = data?.event;
   const challengeSummary = event ? buildLiveWallChallengeDisplaySummary(event.challenge, data.photos, data.awardVoting) : null;
   const contributors = data ? buildContributorSummary(data.photos) : null;
@@ -3929,56 +3981,66 @@ function LiveWall() {
   const activeMode = availableModes.includes(mode) ? mode : "grid";
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#12100d] text-white">
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_22%_12%,rgba(232,93,63,0.24),transparent_32%),linear-gradient(135deg,rgba(255,240,216,0.08),transparent_45%)]" />
+    <main className="relative min-h-screen overflow-hidden bg-[#080808] pb-56 text-white sm:pb-28">
+      <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.045),transparent_30%),radial-gradient(circle_at_50%_0%,rgba(232,93,63,0.16),transparent_34%)]" />
       {!event && (
         <div className="relative grid min-h-screen place-items-center p-8">
           <div className="max-w-xl text-center">
-            <LiveDemoPill />
+            <Icon className="mx-auto h-16 w-16 text-[#ff856d]">photo_camera</Icon>
             <h1 className="mt-5 font-display text-5xl font-bold">Preparing Live Wall</h1>
             <p className="mt-3 text-stone-300">{error || "Loading the latest event photos..."}</p>
           </div>
         </div>
       )}
       {event && (
-        <div className="relative grid min-h-screen gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_340px] lg:p-6 xl:grid-cols-[minmax(0,1fr)_380px]">
-          <section className="flex min-h-0 flex-col gap-5">
-            <LiveWallHero event={event} mode={activeMode} lastUpdated={lastUpdated} />
-            <LiveWallControls
-              mode={activeMode}
-              availableModes={availableModes}
-              showQr={showQr}
-              paused={slideshowPaused}
-              isFullscreen={isFullscreen}
-              onModeChange={switchMode}
-              onToggleQr={() => setShowQr((value) => !value)}
-              onToggleSlideshow={toggleSlideshow}
-              onFullscreen={enterFullscreen}
-            />
-            <section className="min-h-0 flex-1">
+        <div className="relative flex min-h-[calc(100vh-14rem)] flex-col gap-5 p-4 sm:min-h-[calc(100vh-7rem)] sm:p-6 lg:p-8">
+          <LiveWallHero event={event} mode={activeMode} lastUpdated={lastUpdated} />
+          <div className={cx("grid flex-1 gap-5", showQr ? "xl:grid-cols-[minmax(0,1fr)_360px]" : "xl:grid-cols-1")}>
+            <section className="min-h-[30rem]">
               {data.isLocked ? (
-                <LiveWallLockedState title={capsuleCopy?.revealTitle || "The album is locked"} note={capsuleCopy?.revealNote || "Photos are hidden until the reveal time."} />
+                <LiveWallLockedState title={capsuleCopy?.revealTitle || "Photos are being saved for the reveal."} note={capsuleCopy?.revealNote || "Photos are hidden until the reveal time."} />
               ) : activeMode === "slideshow" ? (
                 <LiveWallSlideshow photos={data.photos} slideIndex={slideIndex} event={event} paused={slideshowPaused} />
               ) : activeMode === "join" ? (
-                <LiveWallJoinMode data={data} photoCount={data.photos.length} contributors={contributors?.contributorCount || 0} />
+                <LiveWallJoinMode data={data} photoCount={data.photos.length} />
               ) : activeMode === "challenge" ? (
                 <LiveWallChallengeMode summary={challengeSummary} awardVoting={data.awardVoting} photos={data.photos} />
               ) : activeMode === "awards" ? (
                 <LiveWallAwardsMode awardVoting={data.awardVoting} photos={data.photos} />
               ) : (
-                <LiveWallGridMode photos={data.photos} />
+                <LiveWallGridMode photos={data.photos} event={event} />
               )}
             </section>
-          </section>
-
-          <LiveWallSideRail
-            data={data}
-            summary={challengeSummary}
-            contributors={contributors?.contributorCount || 0}
+            {showQr ? (
+              <aside className="grid content-start gap-4">
+                <LiveWallQrPanel
+                  data={data}
+                  photoCount={data.photos.length}
+                  contributors={contributors?.contributorCount || 0}
+                  onUploadLinkClick={() => trackUploadLinkClick("qr_panel")}
+                />
+                <LiveWallContextPanel event={event} summary={challengeSummary} awardVoting={data.awardVoting} photos={data.photos} />
+                {error ? <p className="rounded-[1rem] border border-red-300/30 bg-red-950/70 p-3 text-sm font-bold text-red-100">{error}</p> : null}
+                {copyStatus ? <p className="rounded-[1rem] border border-emerald-300/30 bg-emerald-950/70 p-3 text-sm font-bold text-emerald-100">{copyStatus}</p> : null}
+              </aside>
+            ) : null}
+          </div>
+          <LiveWallControls
+            mode={activeMode}
+            availableModes={availableModes}
+            displayLinks={displayLinks}
             showQr={showQr}
-            error={error}
+            paused={slideshowPaused}
+            isFullscreen={isFullscreen}
+            eventLink={data.eventLink}
+            recapLink={data.recapLink}
+            onModeChange={switchMode}
+            onToggleQr={toggleQr}
+            onToggleSlideshow={toggleSlideshow}
+            onFullscreen={enterFullscreen}
             onRefresh={() => load().catch((err) => setError(publicRouteErrorMessage(err, "Live Wall is not available right now. Check the event link or refresh in a moment.")))}
+            onCopyJoinLink={copyJoinLink}
+            onUploadLinkClick={() => trackUploadLinkClick("controls")}
           />
         </div>
       )}
@@ -3987,31 +4049,20 @@ function LiveWall() {
 }
 
 function LiveWallHero({ event, mode, lastUpdated }: { event: PublicEvent; mode: LiveWallMode; lastUpdated: Date | null }) {
-  const modeLabels: Record<LiveWallMode, string> = {
-    grid: "Live Wall",
-    slideshow: "Slideshow",
-    join: "QR Join Display",
-    challenge: "Challenge Display",
-    awards: "Event Awards",
-  };
-
   return (
-    <header className="rounded-[1.45rem] border border-white/10 bg-white/[0.08] p-4 shadow-[0_26px_80px_rgba(0,0,0,0.24)] backdrop-blur">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <header className="mx-auto w-full max-w-7xl">
+      <div className="flex items-center justify-center gap-5 text-center">
+        <span className="hidden h-px w-28 bg-[#ff856d]/70 sm:block" />
+        <Icon className="h-12 w-12 text-[#ff856d]">photo_camera</Icon>
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <LiveDemoPill />
-            <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide text-amber-100 ring-1 ring-white/10">{modeLabels[mode]}</span>
-            {event.challenge ? <span className="rounded-full bg-[#fff0d8] px-3 py-1 text-[11px] font-extrabold uppercase tracking-wide text-[#7c3f00]">{challengeLabel(event.challenge)}</span> : null}
+          <h1 className="mx-auto max-w-5xl font-display text-3xl font-bold leading-tight text-white md:text-4xl xl:text-5xl">{event.name}</h1>
+          <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-xs font-extrabold uppercase tracking-wide text-stone-400">
+            <span>{getLiveWallModeLabel(mode)}</span>
+            {event.challenge ? <span>{challengeLabel(event.challenge)}</span> : null}
+            {lastUpdated ? <span>Updated {lastUpdated.toLocaleTimeString()}</span> : null}
           </div>
-          <h1 className="mt-3 font-display text-4xl font-bold leading-tight text-white md:text-5xl xl:text-6xl">{event.name}</h1>
-          <p className="mt-3 max-w-4xl text-base font-semibold text-stone-200 md:text-lg">{event.description || "Scan, upload, and watch the event story grow in real time."}</p>
         </div>
-        <div className="grid gap-1 text-xs font-extrabold uppercase tracking-wide text-stone-300 sm:grid-cols-3 xl:grid-cols-1 xl:text-right">
-          <span>Event {formatDateTime(event.eventDate)}</span>
-          <span>Reveal {formatDateTime(event.revealAt)}</span>
-          {lastUpdated ? <span>Updated {lastUpdated.toLocaleTimeString()}</span> : null}
-        </div>
+        <span className="hidden h-px w-28 bg-[#ff856d]/70 sm:block" />
       </div>
     </header>
   );
@@ -4019,25 +4070,25 @@ function LiveWallHero({ event, mode, lastUpdated }: { event: PublicEvent; mode: 
 
 function LiveWallLockedState({ title, note }: { title: string; note: string }) {
   return (
-    <section className="grid h-full min-h-[22rem] place-items-center rounded-[1.45rem] border border-amber-200/20 bg-[#fff0d8] p-6 text-center text-amber-950 shadow-[0_26px_80px_rgba(0,0,0,0.22)]">
+    <section className="grid h-full min-h-[30rem] place-items-center rounded-[1.35rem] border border-white/15 bg-[#151311] p-8 text-center shadow-[0_26px_80px_rgba(0,0,0,0.28)]">
       <div className="max-w-3xl">
-        <Icon className="mx-auto h-16 w-16">lock</Icon>
-        <h2 className="mt-5 font-display text-4xl font-bold md:text-5xl">{title}</h2>
-        <p className="mt-4 text-lg font-semibold md:text-xl">{note}</p>
+        <Icon className="mx-auto h-16 w-16 text-[#ff856d]">lock</Icon>
+        <h2 className="mt-5 font-display text-4xl font-bold text-white md:text-6xl">{title}</h2>
+        <p className="mt-4 text-lg font-semibold text-stone-200 md:text-xl">{note}</p>
       </div>
     </section>
   );
 }
 
-function LiveWallGridMode({ photos }: { photos: Photo[] }) {
-  if (!photos.length) return <LiveWallEmptyState title="No uploads yet" note="Keep the QR display open so guests can add the first photos." />;
+function LiveWallGridMode({ photos, event }: { photos: Photo[]; event: PublicEvent }) {
+  if (!photos.length) return <LiveWallEmptyState event={event} title="Waiting for photos." note="Scan the QR code to add the first photo." />;
   const displayPhotos = photos.slice(0, 14);
   return (
-    <div className="grid h-full min-h-[22rem] auto-rows-fr grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-5">
+    <div className="grid h-full min-h-[30rem] auto-rows-fr grid-cols-2 gap-3 rounded-[1.35rem] border border-white/15 bg-[#111] p-3 shadow-[0_26px_80px_rgba(0,0,0,0.28)] md:grid-cols-4 xl:grid-cols-5">
       {displayPhotos.map((photo, index) => (
         <figure
           className={cx(
-            "relative min-h-40 overflow-hidden rounded-[1.15rem] border border-white/10 bg-white/10 shadow-[0_18px_52px_rgba(0,0,0,0.26)]",
+            "relative min-h-40 overflow-hidden rounded-[0.9rem] border border-white/10 bg-white/10 shadow-[0_18px_52px_rgba(0,0,0,0.26)]",
             index === 0 && "col-span-2 row-span-2",
             index === 5 && "md:col-span-2",
             index === 8 && "xl:row-span-2",
@@ -4046,7 +4097,7 @@ function LiveWallGridMode({ photos }: { photos: Photo[] }) {
         >
           <img className="h-full min-h-40 w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
           <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/78 to-transparent p-4">
-            <p className="truncate text-sm font-extrabold text-white">{photo.guestNickname || "Guest photo"}</p>
+            <p className="truncate text-sm font-bold text-white/90">{photo.guestNickname || "Guest photo"}</p>
             {photoChallengeLabel(photo) ? <p className="mt-1 truncate text-xs font-bold text-amber-100">{photoChallengeLabel(photo)}</p> : null}
           </figcaption>
         </figure>
@@ -4056,10 +4107,10 @@ function LiveWallGridMode({ photos }: { photos: Photo[] }) {
 }
 
 function LiveWallSlideshow({ photos, slideIndex, event, paused }: { photos: Photo[]; slideIndex: number; event: PublicEvent; paused: boolean }) {
-  if (!photos.length) return <LiveWallEmptyState title="Slideshow waiting" note="Once guests upload visible photos, this screen will rotate through the newest moments." />;
+  if (!photos.length) return <LiveWallEmptyState event={event} title="Waiting for photos." note="Scan the QR code to add the first photo." />;
   const photo = photos[slideIndex % photos.length] || photos[0];
   return (
-    <section className="relative h-full min-h-[22rem] overflow-hidden rounded-[1.45rem] border border-white/10 bg-black shadow-[0_26px_80px_rgba(0,0,0,0.28)]">
+    <section className="relative h-full min-h-[30rem] overflow-hidden rounded-[1.35rem] border border-white/15 bg-black shadow-[0_26px_80px_rgba(0,0,0,0.28)]">
       <img className="absolute inset-0 h-full w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
       <div className="absolute inset-0 bg-gradient-to-t from-black/82 via-black/10 to-black/42" />
       <div className="absolute left-6 right-6 top-6 flex items-center justify-between gap-4">
@@ -4078,22 +4129,78 @@ function LiveWallSlideshow({ photos, slideIndex, event, paused }: { photos: Phot
   );
 }
 
-function LiveWallJoinMode({ data, photoCount, contributors }: { data: LiveWallResponse; photoCount: number; contributors: number }) {
+function LiveWallJoinMode({ data, photoCount }: { data: LiveWallResponse; photoCount: number }) {
   return (
-    <section className="grid h-full min-h-[22rem] gap-4 rounded-[1.45rem] border border-white/10 bg-white/[0.08] p-4 shadow-[0_26px_80px_rgba(0,0,0,0.24)] lg:grid-cols-[minmax(0,1fr)_300px]">
-      <div className="grid place-items-center rounded-[1.35rem] bg-[#fff0d8] p-8 text-center text-amber-950">
-        <div className="max-w-2xl">
-          <Icon className="mx-auto h-16 w-16">qr_code_2</Icon>
-          <h2 className="mt-5 font-display text-4xl font-bold md:text-5xl">Scan to upload</h2>
-          <p className="mt-4 text-lg font-semibold md:text-xl">No account. No app download. Add your photos from any browser.</p>
-          <p className="mt-6 break-all rounded-[1rem] bg-white/75 px-5 py-4 text-base font-extrabold text-stone-800">{data.eventLink}</p>
-        </div>
+    <section className="grid h-full min-h-[30rem] place-items-center rounded-[1.35rem] border border-white/15 bg-[#151311] p-8 text-center shadow-[0_26px_80px_rgba(0,0,0,0.28)]">
+      <div className="max-w-3xl">
+        <Icon className="mx-auto h-20 w-20 text-[#ff856d]">qr_code_2</Icon>
+        <h2 className="mt-5 font-display text-5xl font-bold text-white md:text-7xl">Scan to add photos</h2>
+        <p className="mt-4 text-xl font-semibold text-stone-200">No account needed.</p>
+        <p className="mx-auto mt-6 max-w-2xl break-all rounded-[1rem] border border-white/10 bg-white/10 px-5 py-4 text-base font-extrabold text-stone-100">{data.eventLink}</p>
+        <p className="mt-6 text-lg font-bold text-stone-300">{formatLiveWallPhotoCount(photoCount)}</p>
       </div>
-      <div className="grid content-center gap-4">
-        {data.qrCodeDataUrl ? <img className="aspect-square w-full rounded-[1.35rem] bg-white p-3 shadow-[0_24px_70px_rgba(0,0,0,0.22)]" src={data.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
-        <div className="grid grid-cols-2 gap-3">
-          <LiveWallMetric label="Photos live" value={photoCount} />
-          <LiveWallMetric label="Contributors" value={contributors || "Guest"} />
+    </section>
+  );
+}
+
+function LiveWallQrPanel({ data, photoCount, contributors, onUploadLinkClick }: { data: LiveWallResponse; photoCount: number; contributors: number; onUploadLinkClick: () => void }) {
+  return (
+    <section className="rounded-[1.35rem] border border-white/15 bg-[#141414] p-5 text-center shadow-[0_24px_70px_rgba(0,0,0,0.2)]">
+      <Icon className="mx-auto h-10 w-10 text-[#ff856d]">phone_iphone</Icon>
+      <h2 className="mt-3 text-2xl font-extrabold text-white">Scan to add photos</h2>
+      <p className="mt-2 text-base font-semibold text-stone-300">No account needed.</p>
+      {data.qrCodeDataUrl ? <img className="mx-auto mt-5 aspect-square w-full max-w-[15.5rem] rounded-[1rem] bg-white p-3" src={data.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
+      <a
+        className="mt-4 inline-flex min-h-11 items-center justify-center rounded-[0.9rem] border border-white/10 bg-white/[0.06] px-4 py-2 text-sm font-bold text-stone-200 hover:bg-white/[0.1]"
+        href={data.eventLink}
+        target="_blank"
+        rel="noreferrer"
+        onClick={onUploadLinkClick}
+      >
+        Open upload link
+      </a>
+      <p className="mt-5 text-lg font-bold text-stone-200"><Icon className="mr-2 inline h-5 w-5 text-[#ff856d]">photo_camera</Icon>{formatLiveWallPhotoCount(photoCount)}</p>
+      {contributors ? <p className="mt-1 text-sm font-semibold text-stone-400">{contributors} {contributors === 1 ? "person has" : "people have"} added photos</p> : null}
+    </section>
+  );
+}
+
+function LiveWallContextPanel({ event, summary, awardVoting, photos }: { event: PublicEvent; summary: ReturnType<typeof buildLiveWallChallengeDisplaySummary> | null; awardVoting?: AwardVotingSummary | null; photos: Photo[] }) {
+  const challengeType = event.challenge?.type;
+  let title = "Share a memory.";
+  let copy = "Photos appear here as guests upload.";
+  let icon = "auto_awesome";
+
+  if (challengeType === CHALLENGE_TYPES.COLOR_HUNT) {
+    title = "Color Hunt is live.";
+    copy = "Find your color and upload your best photo.";
+    icon = "palette";
+  } else if (challengeType === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
+    title = "Photo prompts are live.";
+    copy = "Pick a prompt and add a matching photo.";
+    icon = "checklist";
+  } else if (challengeType === CHALLENGE_TYPES.EVENT_AWARDS) {
+    const categories = awardVoting?.categories.length || categoriesFromChallenge(event.challenge).length;
+    title = "Awards are live.";
+    copy = categories ? `Submit or vote on favorites across ${categories} categories.` : "Submit or vote on your favorites.";
+    icon = "trophy";
+  } else if (challengeType === CHALLENGE_TYPES.MEMORY_CAPSULE) {
+    title = "Photos are being saved for the reveal.";
+    copy = memoryCapsuleFromChallenge(event.challenge).revealNote;
+    icon = "lock";
+  } else if (photos.length) {
+    title = "Photos are coming in.";
+    copy = "Keep the QR code visible so guests can add theirs.";
+  }
+
+  return (
+    <section className="rounded-[1rem] border border-white/15 bg-white/[0.06] p-5 text-white">
+      <div className="flex gap-3">
+        <Icon className="mt-1 h-8 w-8 shrink-0 text-[#ff856d]">{icon}</Icon>
+        <div className="max-w-2xl">
+          <h2 className="text-lg font-extrabold">{title}</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-stone-300">{copy}</p>
+          {summary?.rows.length ? <p className="mt-2 text-xs font-bold uppercase tracking-wide text-stone-400">{summary.rows.filter((row) => row.count > 0).length}/{summary.rows.length} active</p> : null}
         </div>
       </div>
     </section>
@@ -4101,11 +4208,11 @@ function LiveWallJoinMode({ data, photoCount, contributors }: { data: LiveWallRe
 }
 
 function LiveWallChallengeMode({ summary, awardVoting, photos }: { summary: ReturnType<typeof buildLiveWallChallengeDisplaySummary> | null; awardVoting?: AwardVotingSummary | null; photos: Photo[] }) {
-  if (!summary) return <LiveWallEmptyState title="Challenge display" note="Challenge progress will appear here once the event is ready." />;
+  if (!summary) return <LiveWallEmptyState title="Prompts are live." note="Pick a prompt and add a matching photo." />;
   return (
-    <section className="grid h-full min-h-[22rem] gap-4 rounded-[1.45rem] border border-white/10 bg-white/[0.08] p-4 shadow-[0_26px_80px_rgba(0,0,0,0.24)] xl:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="rounded-[1.35rem] bg-[#fff0d8] p-6 text-amber-950">
-        <p className="text-sm font-extrabold uppercase tracking-wide text-[#7c3f00]">{summary.modeLabel}</p>
+    <section className="grid h-full min-h-[30rem] gap-4 rounded-[1.35rem] border border-white/15 bg-[#151311] p-4 shadow-[0_26px_80px_rgba(0,0,0,0.28)] xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="rounded-[1rem] bg-[#fff8ee] p-6 text-amber-950">
+        <p className="text-sm font-extrabold uppercase tracking-wide text-[#7c3f00]">{summary.modeLabel === "Photo Scavenger Hunt" ? "Photo Prompts" : summary.modeLabel}</p>
         <h2 className="mt-3 font-display text-4xl font-bold md:text-5xl">{summary.headline}</h2>
         <p className="mt-4 text-lg font-semibold">{summary.note}</p>
         <div className="mt-6 grid gap-3">
@@ -4120,10 +4227,10 @@ function LiveWallChallengeMode({ summary, awardVoting, photos }: { summary: Retu
 }
 
 function LiveWallAwardsMode({ awardVoting, photos }: { awardVoting?: AwardVotingSummary | null; photos: Photo[] }) {
-  if (!awardVoting?.categories.length) return <LiveWallEmptyState title="Awards waiting" note="Event Awards leaders will appear once there are categories, submissions, or votes." />;
+  if (!awardVoting?.categories.length) return <LiveWallEmptyState title="Awards are live." note="Submit or vote on your favorites." />;
   const photosById = new Map(photos.map((photo) => [photo.id, photo]));
   return (
-    <section className="h-full min-h-[22rem] rounded-[1.45rem] border border-white/10 bg-[#fff0d8] p-4 text-amber-950 shadow-[0_26px_80px_rgba(0,0,0,0.24)]">
+    <section className="h-full min-h-[30rem] rounded-[1.35rem] border border-white/15 bg-[#fff8ee] p-4 text-amber-950 shadow-[0_26px_80px_rgba(0,0,0,0.24)]">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <p className="text-sm font-extrabold uppercase tracking-wide text-[#7c3f00]">Event Awards</p>
@@ -4154,60 +4261,27 @@ function LiveWallAwardsMode({ awardVoting, photos }: { awardVoting?: AwardVoting
   );
 }
 
-function LiveWallEmptyState({ title, note }: { title: string; note: string }) {
+function LiveWallEmptyState({ title, note, event }: { title: string; note: string; event?: PublicEvent }) {
   return (
-    <section className="grid h-full min-h-[22rem] place-items-center rounded-[1.45rem] border border-white/10 bg-white/[0.08] p-6 text-center shadow-[0_26px_80px_rgba(0,0,0,0.24)]">
-      <div className="max-w-2xl">
-        <Icon className="mx-auto h-16 w-16 text-amber-200">photo_library</Icon>
-        <h2 className="mt-5 font-display text-4xl font-bold text-white md:text-5xl">{title}</h2>
-        <p className="mt-4 text-lg font-semibold text-stone-200">{note}</p>
+    <section className="relative grid h-full min-h-[30rem] place-items-center overflow-hidden rounded-[1.35rem] border border-white/15 bg-[#111] p-8 text-center shadow-[0_26px_80px_rgba(0,0,0,0.28)]">
+      <div className="absolute inset-0 grid grid-cols-3 opacity-20 md:grid-cols-5">
+        {DEFAULT_DEMO_PHOTOS.concat(DEFAULT_DEMO_PHOTOS, DEFAULT_DEMO_PHOTOS).map((photo, index) => (
+          <img className="h-full min-h-40 w-full object-cover grayscale" src={photo.dataUrl} alt="" key={`${photo.id}-${index}`} />
+        ))}
+      </div>
+      <div className="absolute inset-0 bg-black/68" />
+      <div className="relative max-w-3xl">
+        <Icon className="mx-auto h-20 w-20 text-[#ff856d]">photo_camera</Icon>
+        <h2 className="mt-6 font-display text-5xl font-bold text-white md:text-7xl">{title}</h2>
+        <p className="mt-5 text-lg font-semibold text-stone-200 md:text-2xl">{note}</p>
+        {event ? <p className="mt-5 text-sm font-bold uppercase tracking-wide text-stone-400">Photos appear here as guests upload.</p> : null}
       </div>
     </section>
   );
 }
 
-function LiveWallSideRail({ data, summary, contributors, showQr, error, onRefresh }: { data: LiveWallResponse; summary: ReturnType<typeof buildLiveWallChallengeDisplaySummary> | null; contributors: number; showQr: boolean; error: string; onRefresh: () => void }) {
-  return (
-    <aside className="grid content-start gap-4">
-      {showQr ? (
-        <section className="rounded-[1.45rem] bg-white p-5 text-stone-950 shadow-[0_24px_70px_rgba(0,0,0,0.2)]">
-          <p className="text-sm font-extrabold uppercase tracking-wide text-[#653e00]">Scan to upload</p>
-          {data.qrCodeDataUrl ? <img className="mt-4 aspect-square w-full rounded-[1.1rem] bg-white p-2" src={data.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
-          <p className="mt-4 break-all rounded-[1rem] bg-stone-50 p-3 text-sm font-semibold text-stone-700">{data.eventLink}</p>
-        </section>
-      ) : null}
-      <section className="rounded-[1.45rem] bg-[#e85d3f] p-5 text-white shadow-[0_24px_70px_rgba(232,93,63,0.18)]">
-        <p className="text-sm font-extrabold uppercase tracking-wide">Live count</p>
-        <p className="mt-2 font-display text-6xl font-bold tabular-nums">{data.photos.length}</p>
-        <p className="text-sm font-bold">photos uploaded</p>
-        <p className="mt-2 text-sm font-bold">{contributors || "Guest"} {contributors === 1 ? "contributor" : "contributors"}</p>
-        {error ? <p className="mt-4 rounded-[1rem] bg-red-100 p-3 text-sm font-bold text-red-800">{error}</p> : null}
-        <button className="mt-4 inline-flex min-h-10 w-full items-center justify-center rounded-[0.85rem] bg-white px-4 py-2 text-sm font-bold text-[#d94f33]" type="button" onClick={onRefresh}>Refresh now</button>
-      </section>
-      {summary ? (
-        <section className="rounded-[1.45rem] bg-white/10 p-5 text-white">
-          <p className="text-sm font-extrabold uppercase tracking-wide text-amber-200">{summary.modeLabel}</p>
-          <h2 className="mt-2 font-display text-2xl font-bold">{summary.headline}</h2>
-          <p className="mt-2 text-sm font-semibold text-stone-200">{summary.note}</p>
-          {summary.rows.length ? (
-            <div className="mt-4 grid gap-2">
-              {summary.rows.slice(0, 4).map((row) => <LiveWallProgressRow key={row.id} row={row} compact />)}
-            </div>
-          ) : null}
-        </section>
-      ) : null}
-      <AwardLeadersPanel awardVoting={data.awardVoting} photos={data.photos} dark />
-    </aside>
-  );
-}
-
-function LiveWallMetric({ label, value }: { label: string; value: React.ReactNode }) {
-  return (
-    <div className="rounded-[1rem] bg-white/10 p-4 text-white">
-      <p className="text-xs font-extrabold uppercase tracking-wide text-amber-100">{label}</p>
-      <p className="mt-2 font-display text-3xl font-bold">{value}</p>
-    </div>
-  );
+function formatLiveWallPhotoCount(count: number) {
+  return `${count} ${count === 1 ? "photo" : "photos"} added`;
 }
 
 function LiveWallProgressRow({ row, compact = false }: { row: ReturnType<typeof buildChallengeProgressSummary>["rows"][number]; compact?: boolean }) {
@@ -4231,47 +4305,86 @@ function LiveWallProgressRow({ row, compact = false }: { row: ReturnType<typeof 
 function LiveWallControls({
   mode,
   availableModes,
+  displayLinks,
   showQr,
   paused,
   isFullscreen,
+  eventLink,
+  recapLink,
   onModeChange,
   onToggleQr,
   onToggleSlideshow,
   onFullscreen,
+  onRefresh,
+  onCopyJoinLink,
+  onUploadLinkClick,
 }: {
   mode: LiveWallMode;
   availableModes: LiveWallMode[];
+  displayLinks: LiveWallDisplayLink[];
   showQr: boolean;
   paused: boolean;
   isFullscreen: boolean;
+  eventLink: string;
+  recapLink?: string;
   onModeChange: (mode: LiveWallMode) => void;
   onToggleQr: () => void;
   onToggleSlideshow: () => void;
   onFullscreen: () => void;
+  onRefresh: () => void;
+  onCopyJoinLink: () => void;
+  onUploadLinkClick: () => void;
 }) {
-  const labels: Record<LiveWallMode, string> = {
-    grid: "Grid",
-    slideshow: "Slideshow",
-    join: "Join",
-    challenge: "Challenge",
-    awards: "Awards",
-  };
-
   return (
-    <div className="flex w-full flex-wrap items-center justify-center gap-2 rounded-[1rem] border border-white/10 bg-black/55 p-2 shadow-[0_18px_52px_rgba(0,0,0,0.32)] backdrop-blur">
-      {availableModes.map((item) => (
-        <button
-          className={cx("min-h-10 rounded-[0.75rem] px-3 py-2 text-xs font-extrabold uppercase tracking-wide transition", mode === item ? "bg-[#fff0d8] text-[#653e00]" : "bg-white/10 text-white hover:bg-white/15")}
-          type="button"
-          onClick={() => onModeChange(item)}
-          key={item}
-        >
-          {labels[item]}
+    <div className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-black/85 px-4 py-3 shadow-[0_-18px_52px_rgba(0,0,0,0.36)] backdrop-blur">
+      <div className="mx-auto grid max-w-6xl grid-cols-2 gap-2 sm:grid-cols-5">
+        <button className="inline-flex min-h-14 items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" type="button" onClick={onFullscreen} aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}>
+          <Icon>{isFullscreen ? "fullscreen_exit" : "fullscreen"}</Icon>
+          {isFullscreen ? "Exit full" : "Fullscreen"}
         </button>
-      ))}
-      <button className="min-h-10 rounded-[0.75rem] bg-white/10 px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-white hover:bg-white/15" type="button" onClick={onToggleQr}>{showQr ? "Hide QR" : "Show QR"}</button>
-      <button className="min-h-10 rounded-[0.75rem] bg-white/10 px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-white hover:bg-white/15" type="button" onClick={onToggleSlideshow}>{paused ? "Resume" : "Pause"}</button>
-      <button className="min-h-10 rounded-[0.75rem] bg-white/10 px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-white hover:bg-white/15" type="button" onClick={onFullscreen}>{isFullscreen ? "Exit full" : "Fullscreen"}</button>
+        <button className="inline-flex min-h-14 items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" type="button" onClick={onToggleSlideshow} aria-label={paused ? "Resume slideshow" : "Pause slideshow"}>
+          <Icon className="text-[#ff856d]">{paused ? "play_arrow" : "pause"}</Icon>
+          {paused ? "Resume" : "Pause"}
+        </button>
+        <button className="inline-flex min-h-14 items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" type="button" onClick={onToggleQr} aria-label={showQr ? "Hide QR code" : "Show QR code"}>
+          <Icon>qr_code_2</Icon>
+          {showQr ? "Hide QR" : "Show QR"}
+        </button>
+        <details className="relative">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" aria-label="Choose Live Wall mode">
+            <Icon>grid_view</Icon>
+            Mode
+          </summary>
+          <div className="absolute bottom-full left-0 mb-3 grid w-56 gap-1 rounded-[1rem] border border-white/15 bg-[#151515] p-2 shadow-2xl">
+            {availableModes.map((item) => (
+              <button
+                className={cx("rounded-[0.75rem] px-3 py-3 text-left text-sm font-extrabold transition", mode === item ? "bg-[#ff856d] text-black" : "text-white hover:bg-white/10")}
+                type="button"
+                onClick={() => onModeChange(item)}
+                aria-pressed={mode === item}
+                key={item}
+              >
+                {getLiveWallModeLabel(item)}
+              </button>
+            ))}
+          </div>
+        </details>
+        <details className="relative col-span-2 sm:col-span-1">
+          <summary className="flex min-h-14 cursor-pointer list-none items-center justify-center gap-3 rounded-[0.9rem] px-4 py-2 text-sm font-extrabold text-white hover:bg-white/10" aria-label="Open more Live Wall controls">
+            <Icon>more_horiz</Icon>
+            More
+          </summary>
+          <div className="absolute bottom-full right-0 mb-3 grid w-64 gap-1 rounded-[1rem] border border-white/15 bg-[#151515] p-2 text-sm font-bold shadow-2xl">
+            <button className="rounded-[0.75rem] px-3 py-3 text-left text-white hover:bg-white/10" type="button" onClick={onRefresh}>Refresh</button>
+            <button className="rounded-[0.75rem] px-3 py-3 text-left text-white hover:bg-white/10" type="button" onClick={onCopyJoinLink}>Copy join link</button>
+            <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={eventLink} target="_blank" rel="noreferrer" onClick={onUploadLinkClick}>Open upload page</a>
+            {recapLink ? <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={recapLink} target="_blank" rel="noreferrer">Open recap</a> : null}
+            {displayLinks.filter((link) => link.key !== mode).map((link) => (
+              <a className="rounded-[0.75rem] px-3 py-3 text-white hover:bg-white/10" href={link.url} target="_blank" rel="noreferrer" key={link.key}>Open {link.label}</a>
+            ))}
+          </div>
+        </details>
+      </div>
     </div>
   );
 }

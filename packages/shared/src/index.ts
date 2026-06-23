@@ -437,12 +437,16 @@ export const ANALYTICS_EVENT_NAMES = [
   "recap_create_event_cta_clicked",
   "native_share_opened",
   "live_wall_opened",
+  "live_wall_viewed",
   "live_wall_mode_viewed",
   "live_wall_mode_switched",
+  "live_wall_mode_changed",
   "live_wall_fullscreen_clicked",
   "live_wall_slideshow_paused",
   "live_wall_slideshow_resumed",
   "live_wall_qr_display_opened",
+  "live_wall_qr_toggled",
+  "live_wall_upload_link_clicked",
   "live_wall_challenge_display_opened",
   "live_wall_awards_leaders_viewed",
   "recap_opened",
@@ -1414,6 +1418,18 @@ function eventLinkOrFallback(value: string | undefined | null) {
 
 export const LIVE_WALL_MODES = ["grid", "slideshow", "join", "challenge", "awards"] as const satisfies readonly LiveWallMode[];
 
+export const LIVE_WALL_MODE_LABELS: Record<LiveWallMode, string> = {
+  grid: "Photo Grid",
+  slideshow: "Slideshow",
+  join: "Join Screen",
+  challenge: "Prompts",
+  awards: "Awards",
+};
+
+export function getLiveWallModeLabel(mode: LiveWallMode) {
+  return LIVE_WALL_MODE_LABELS[mode];
+}
+
 export function parseLiveWallMode(value: unknown): LiveWallMode {
   const normalized = String(value || "").trim().toLowerCase();
   return (LIVE_WALL_MODES as readonly string[]).includes(normalized) ? (normalized as LiveWallMode) : "grid";
@@ -1434,15 +1450,15 @@ export function buildLiveWallDisplayLinks(
   const links: LiveWallDisplayLink[] = [
     {
       key: "grid",
-      label: "Live Wall",
+      label: getLiveWallModeLabel("grid"),
       url: buildLiveWallUrl(liveWallLink, "grid"),
-      purpose: "Use this as the default room display with photos, QR, challenge progress, and live count.",
-      instruction: "Open this on a TV, projector, laptop, or iPad while guests upload.",
+      purpose: "Use this as the default room display with photos, QR code, and a simple live count.",
+      instruction: "Open this on a TV or projector while guests upload.",
       analyticsName: "live_wall_mode_viewed",
     },
     {
       key: "join",
-      label: "QR Join Display",
+      label: getLiveWallModeLabel("join"),
       url: buildLiveWallUrl(liveWallLink, "join"),
       purpose: "Use this at the start of the event so guests know exactly how to upload.",
       instruction: "Put this on screen while guests arrive or whenever uploads slow down.",
@@ -1450,7 +1466,7 @@ export function buildLiveWallDisplayLinks(
     },
     {
       key: "slideshow",
-      label: "Slideshow",
+      label: getLiveWallModeLabel("slideshow"),
       url: buildLiveWallUrl(liveWallLink, "slideshow"),
       purpose: "Use this once photos are flowing and the room wants a showpiece moment.",
       instruction: "Rotate through visible photos with event branding and safe metadata.",
@@ -1461,9 +1477,9 @@ export function buildLiveWallDisplayLinks(
   if (event.challenge) {
     links.push({
       key: "challenge",
-      label: "Challenge Display",
+      label: getLiveWallModeLabel("challenge"),
       url: buildLiveWallUrl(liveWallLink, "challenge"),
-      purpose: "Use this to show challenge progress, prompt completion, or reveal messaging.",
+      purpose: "Use this to show prompt progress, Color Hunt context, or reveal messaging.",
       instruction: "Switch here when you want guests to know what to capture next.",
       analyticsName: "live_wall_challenge_display_opened",
     });
@@ -1472,7 +1488,7 @@ export function buildLiveWallDisplayLinks(
   if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
     links.push({
       key: "awards",
-      label: "Awards Display",
+      label: getLiveWallModeLabel("awards"),
       url: buildLiveWallUrl(liveWallLink, "awards"),
       purpose: "Use this to celebrate Event Awards leaders and winners.",
       instruction: "Open this after guests have submitted and voted on award categories.",

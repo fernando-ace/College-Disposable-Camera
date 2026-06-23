@@ -127,6 +127,7 @@ export default function EventDetailScreen() {
   const [settingsForm, setSettingsForm] = React.useState<EventSettingsForm | null>(null);
   const [settingsFieldErrors, setSettingsFieldErrors] = React.useState<EventSettingsFieldErrors>({});
   const [settingsStatus, setSettingsStatus] = React.useState("");
+  const [linkCopyStatus, setLinkCopyStatus] = React.useState("");
   const [settingsSaving, setSettingsSaving] = React.useState(false);
 
   async function loadEvent() {
@@ -208,6 +209,12 @@ export default function EventDetailScreen() {
     } finally {
       setSettingsSaving(false);
     }
+  }
+
+  async function copyEventLink(label: string, value?: string | null) {
+    if (!value) return;
+    await Clipboard.setStringAsync(value);
+    setLinkCopyStatus(`${label} copied.`);
   }
 
   React.useEffect(() => {
@@ -299,6 +306,7 @@ export default function EventDetailScreen() {
       )}
 
       {error ? <ErrorState message={error} /> : null}
+      {linkCopyStatus ? <Body tone="success">{linkCopyStatus}</Body> : null}
       {!event ? <LoadingState label="Loading event details..." /> : null}
 
       {event ? (
@@ -326,23 +334,27 @@ export default function EventDetailScreen() {
                 <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open poster page</Button>
               </Card>
             ) : null}
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-              <View style={{ flex: 1, minWidth: 150 }}>
-                <LinkBlock label="Live Wall" description="Open on a TV, projector, or laptop while guests upload." url={event.liveWallLink}>
-                  <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
-                </LinkBlock>
+            <LinkBlock label="Live Wall" description="Open this on a TV or projector. Use your phone to share links and keep the QR handy." url={event.liveWallLink}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
+                </View>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button tone="secondary" onPress={() => router.push(`/events/${event.id}/share`)}>Share guest link</Button>
+                </View>
+                <View style={{ flex: 1, minWidth: 150 }}>
+                  <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => copyEventLink("Live Wall link", event.liveWallLink)}>Copy Live Wall link</Button>
+                </View>
               </View>
-              <View style={{ flex: 1, minWidth: 150 }}>
-                <LinkBlock label="Recap" description="Open the finished memory page with highlights, contributors, challenge moments, and the full album." url={event.recapLink}>
-                  <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
-                </LinkBlock>
-              </View>
-            </View>
+            </LinkBlock>
+            <LinkBlock label="Recap" description="Open the finished memory page with highlights, contributors, challenge moments, and the full album." url={event.recapLink}>
+              <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
+            </LinkBlock>
             {liveWallDisplayLinks.length ? (
               <Card tone="warm">
-                <SectionHeader title="Presenter displays" subtitle="Open the right Live Wall mode for the room." />
+                <SectionHeader title="Advanced Live Wall modes" subtitle="Web presentation is primary. Use these when you want a specific room display." />
                 <View style={{ gap: 10 }}>
-                  {liveWallDisplayLinks.map((link) => (
+                  {liveWallDisplayLinks.filter((link) => link.key !== "grid").map((link) => (
                     <LinkBlock key={link.key} label={link.label} description={link.purpose} url={link.url}>
                       <Button tone="secondary" onPress={() => Linking.openURL(link.url)}>Open</Button>
                     </LinkBlock>

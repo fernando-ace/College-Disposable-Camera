@@ -31,6 +31,7 @@ import {
   getHostVisibleEventTemplates,
   getEventTemplate,
   getPromptPack,
+  getLiveWallModeLabel,
   plainModeLabel,
   isAnonymousGuestDisplayName,
   normalizeReportReason,
@@ -116,12 +117,17 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_link_shared"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_copied"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_shared"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_switched"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_changed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_fullscreen_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_slideshow_paused"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_slideshow_resumed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_qr_display_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_qr_toggled"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_upload_link_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_challenge_display_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_awards_leaders_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_copied"), true);
@@ -178,6 +184,7 @@ test("live wall mode helpers parse and build stable display links", () => {
   assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "grid"), "https://eventfilm.test/wall/spring");
   assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "join"), "https://eventfilm.test/wall/spring?mode=join");
   assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring?presenter=1", "challenge"), "https://eventfilm.test/wall/spring?presenter=1&mode=challenge");
+  assert.deepEqual(["grid", "slideshow", "join", "challenge", "awards"].map((mode) => getLiveWallModeLabel(mode as Parameters<typeof getLiveWallModeLabel>[0])), ["Photo Grid", "Slideshow", "Join Screen", "Prompts", "Awards"]);
 
   const event = {
     liveWallLink: "https://eventfilm.test/wall/spring",
@@ -192,6 +199,7 @@ test("live wall mode helpers parse and build stable display links", () => {
   } satisfies Pick<EventSummary, "liveWallLink" | "challenge">;
 
   assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.key), ["grid", "join", "slideshow", "challenge", "awards"]);
+  assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.label), ["Photo Grid", "Join Screen", "Slideshow", "Prompts", "Awards"]);
   assert.equal(buildHostShareAssets({ ...event, id: "event", name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
   assert.equal(buildHostLaunchKit({ ...event, name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
 });
