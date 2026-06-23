@@ -1,11 +1,106 @@
 import { expect, test } from "@playwright/test";
+import type { APIRequestContext } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 
 const apiUrl = (process.env.BROWSER_SMOKE_API_URL || process.env.EVENTFILM_API_URL || "http://localhost:4000").replace(/\/+$/, "");
+const baseUrl = (process.env.BROWSER_SMOKE_BASE_URL || process.env.EVENTFILM_WEB_URL || "http://localhost:5173").replace(/\/+$/, "");
 const seededSlug = process.env.EVENTFILM_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-memory-capsule";
 const revealedSeededSlug = process.env.EVENTFILM_REVEALED_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-storage-smoke";
-const demoHostEmail = process.env.DEMO_HOST_EMAIL || "fernando+eventfilm-demo@example.com";
-const demoHostPassword = process.env.DEMO_HOST_PASSWORD || "eventfilm-beta-demo";
+const defaultSmokeHostEmail = "fernando+eventfilm-demo@example.com";
+const defaultSmokeHostPassword = "eventfilm-beta-demo";
+
+function parsedUrl(value: string) {
+  return new URL(value.startsWith("http://") || value.startsWith("https://") ? value : `http://${value}`);
+}
+
+function isLocalUrl(value: string) {
+  const hostname = parsedUrl(value).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+const isDeployedBrowserSmoke = !isLocalUrl(baseUrl);
+
+function requireHttpsUrl(value: string, envName: string) {
+  if (!value.startsWith("https://")) {
+    throw new Error(`${envName} must include https:// for deployed smoke. Example: $env:BROWSER_SMOKE_API_URL="https://college-disposable-camera-production.up.railway.app"`);
+  }
+}
+
+if (isDeployedBrowserSmoke) {
+  requireHttpsUrl(apiUrl, "BROWSER_SMOKE_API_URL");
+}
+
+const smokeHostEmail = isDeployedBrowserSmoke
+  ? String(process.env.BROWSER_SMOKE_HOST_EMAIL || "").trim()
+  : String(process.env.BROWSER_SMOKE_HOST_EMAIL || process.env.DEMO_HOST_EMAIL || defaultSmokeHostEmail).trim();
+const smokeHostPassword = isDeployedBrowserSmoke
+  ? String(process.env.BROWSER_SMOKE_HOST_PASSWORD || "").trim()
+  : String(process.env.BROWSER_SMOKE_HOST_PASSWORD || process.env.DEMO_HOST_PASSWORD || defaultSmokeHostPassword).trim();
+
+if (isDeployedBrowserSmoke && (!smokeHostEmail || !smokeHostPassword)) {
+  throw new Error("Set BROWSER_SMOKE_HOST_EMAIL and BROWSER_SMOKE_HOST_PASSWORD for deployed host login smoke. Do not commit these values.");
+}
+
+type BrowserLoginDiagnostic = {
+  origin: string | null;
+  status: number | null;
+  wentToRailway: boolean;
+  wentToVercelOrigin: boolean;
+  corsOrNetworkFailure: boolean;
+  failureText: string | null;
+};
+
+async function assertDirectRailwayAuthWorks(request: APIRequestContext) {
+  let response;
+  try {
+    response = await request.post(`${apiUrl}/api/auth/login`, {
+      data: { email: smokeHostEmail, password: smokeHostPassword },
+    });
+  } catch {
+    throw new Error("Railway auth endpoint could not be reached. Check BROWSER_SMOKE_API_URL and Railway deploy status.");
+  }
+
+  const contentType = response.headers()["content-type"] || "";
+  if (!contentType.includes("application/json")) {
+    throw new Error("Expected JSON from Railway auth but received non-JSON. Check BROWSER_SMOKE_API_URL.");
+  }
+
+  if (response.status() === 200) {
+    console.log("Direct Railway auth works. Continue to browser login.");
+    return;
+  }
+  if (response.status() === 401) {
+    throw new Error("The deployed host credentials were rejected by the Railway API. Confirm the production host account and BROWSER_SMOKE_HOST_PASSWORD.");
+  }
+  if (response.status() === 500) {
+    throw new Error("Railway auth returned a server error. Check production env vars such as DATABASE_URL, JWT_SECRET, ANALYTICS_SALT, CLIENT_ORIGIN(S), and provider logs.");
+  }
+
+  throw new Error(`Railway auth returned unexpected status ${response.status()}. Check BROWSER_SMOKE_API_URL and Railway deploy status.`);
+}
+
+function summarizeBrowserLoginFailure(diagnostic: BrowserLoginDiagnostic, pageErrorText: string | null) {
+  const details = [
+    `Browser login request origin: ${diagnostic.origin || "not observed"}`,
+    `Browser login status: ${diagnostic.status ?? "not observed"}`,
+    `Browser login target: ${diagnostic.wentToRailway ? "Railway" : diagnostic.wentToVercelOrigin ? "Vercel origin" : "other or not observed"}`,
+    `CORS or network failure: ${diagnostic.corsOrNetworkFailure ? "yes" : "no"}`,
+    `Network failure detail: ${diagnostic.failureText || "not observed"}`,
+    `Page error message: ${pageErrorText || "not shown"}`,
+  ];
+
+  if (diagnostic.wentToVercelOrigin || diagnostic.origin === parsedUrl(baseUrl).origin || diagnostic.origin?.includes("localhost")) {
+    details.push("Diagnostic: Check Vercel VITE_API_URL.");
+  } else if (diagnostic.corsOrNetworkFailure) {
+    details.push("Diagnostic: Check Railway CLIENT_ORIGIN or CLIENT_ORIGINS includes https://eventfilm.vercel.app.");
+  } else if (diagnostic.status === 401) {
+    details.push("Diagnostic: Browser is sending different credentials or payload than the direct API diagnostic.");
+  } else if (diagnostic.status === 500) {
+    details.push("Diagnostic: Check Railway logs.");
+  }
+
+  return details.join("\n");
+}
 
 function cleanupCreatedSmokeEvent(eventId: string) {
   const script = `
@@ -86,11 +181,50 @@ test.describe("EventFilm browser smoke", () => {
     let createdEventId = "";
 
     try {
+      if (isDeployedBrowserSmoke) {
+        await assertDirectRailwayAuthWorks(request);
+      }
+
+      const browserLoginDiagnostic: BrowserLoginDiagnostic = {
+        origin: null,
+        status: null,
+        wentToRailway: false,
+        wentToVercelOrigin: false,
+        corsOrNetworkFailure: false,
+        failureText: null,
+      };
+      const apiOrigin = parsedUrl(apiUrl).origin;
+      const webOrigin = parsedUrl(baseUrl).origin;
+
+      page.on("request", (browserRequest) => {
+        if (!browserRequest.url().includes("/api/auth/login")) return;
+        const origin = parsedUrl(browserRequest.url()).origin;
+        browserLoginDiagnostic.origin = origin;
+        browserLoginDiagnostic.wentToRailway = origin === apiOrigin;
+        browserLoginDiagnostic.wentToVercelOrigin = origin === webOrigin;
+      });
+      page.on("response", (browserResponse) => {
+        if (!browserResponse.url().includes("/api/auth/login")) return;
+        browserLoginDiagnostic.origin = parsedUrl(browserResponse.url()).origin;
+        browserLoginDiagnostic.status = browserResponse.status();
+      });
+      page.on("requestfailed", (browserRequest) => {
+        if (!browserRequest.url().includes("/api/auth/login")) return;
+        browserLoginDiagnostic.origin = parsedUrl(browserRequest.url()).origin;
+        browserLoginDiagnostic.corsOrNetworkFailure = true;
+        browserLoginDiagnostic.failureText = browserRequest.failure()?.errorText || null;
+      });
+
       await page.goto("/login");
-      await page.locator("input[type='email']").fill(demoHostEmail);
-      await page.locator("input[type='password']").fill(demoHostPassword);
+      await page.locator("input[type='email']").fill(smokeHostEmail);
+      await page.locator("input[type='password']").fill(smokeHostPassword);
       await page.getByRole("button", { name: "Log in" }).click();
-      await expect(page).toHaveURL(/\/dashboard$/);
+      try {
+        await expect(page).toHaveURL(/\/dashboard$/);
+      } catch (error) {
+        const pageErrorText = await page.locator("form .text-red-700").first().textContent().catch(() => null);
+        throw new Error(`${(error as Error).message}\n${summarizeBrowserLoginFailure(browserLoginDiagnostic, pageErrorText)}`);
+      }
       await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 
       await page.getByRole("link", { name: "Create event" }).first().click();
@@ -186,9 +320,9 @@ test.describe("EventFilm browser smoke", () => {
     };
 
     const login = await request.post(`${apiUrl}/api/auth/login`, {
-      data: { email: demoHostEmail, password: demoHostPassword },
+      data: { email: smokeHostEmail, password: smokeHostPassword },
     });
-    test.skip(!login.ok(), `Demo host login failed. Run npm run demo:seed first.`);
+    test.skip(!login.ok(), `Smoke host login failed. Run npm run demo:seed first for local smoke or confirm the deployed smoke host credentials.`);
     const auth = await login.json();
 
     await page.addInitScript(({ token, user }) => {
@@ -313,9 +447,9 @@ test.describe("EventFilm browser smoke", () => {
     test.skip(!eventId, `Revealed smoke event ${revealedSeededSlug} did not include an id.`);
 
     const login = await request.post(`${apiUrl}/api/auth/login`, {
-      data: { email: demoHostEmail, password: demoHostPassword },
+      data: { email: smokeHostEmail, password: smokeHostPassword },
     });
-    test.skip(!login.ok(), "Demo host login failed, so the upload smoke cannot clean up after itself.");
+    test.skip(!login.ok(), "Smoke host login failed, so the upload smoke cannot clean up after itself.");
     const auth = await login.json();
 
     await page.goto(`/e/${revealedSeededSlug}`);

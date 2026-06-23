@@ -8,6 +8,11 @@ function requiredUrl(name) {
     process.exit(1);
   }
   const normalized = value.replace(/\/+$/, "");
+  if ((name === "BROWSER_SMOKE_API_URL" || name === "DEPLOYED_API_URL") && !normalized.startsWith("https://")) {
+    console.error(`${name} must include https:// for deployed browser smoke.`);
+    console.error('$env:BROWSER_SMOKE_API_URL="https://college-disposable-camera-production.up.railway.app"');
+    process.exit(1);
+  }
   const parsed = new URL(normalized.startsWith("http://") || normalized.startsWith("https://") ? normalized : `https://${normalized}`);
   if (parsed.hostname === "localhost" || parsed.hostname === "127.0.0.1") {
     console.error(`${name} must point at deployed infrastructure, not localhost.`);
@@ -27,10 +32,20 @@ const env = {
   ...process.env,
   EVENTFILM_WEB_URL: webUrl,
   EVENTFILM_API_URL: apiUrl,
+  BROWSER_SMOKE_BASE_URL: webUrl,
+  BROWSER_SMOKE_API_URL: apiUrl,
 };
 
 if (process.env.DEPLOYED_SMOKE_EVENT_SLUG && !process.env.EVENTFILM_SMOKE_EVENT_SLUG) {
   env.EVENTFILM_SMOKE_EVENT_SLUG = process.env.DEPLOYED_SMOKE_EVENT_SLUG;
+}
+
+if (process.env.DEPLOYED_SMOKE_HOST_EMAIL && !process.env.BROWSER_SMOKE_HOST_EMAIL) {
+  env.BROWSER_SMOKE_HOST_EMAIL = process.env.DEPLOYED_SMOKE_HOST_EMAIL;
+}
+
+if (process.env.DEPLOYED_SMOKE_HOST_PASSWORD && !process.env.BROWSER_SMOKE_HOST_PASSWORD) {
+  env.BROWSER_SMOKE_HOST_PASSWORD = process.env.DEPLOYED_SMOKE_HOST_PASSWORD;
 }
 
 console.log(`Running deployed browser smoke against ${webUrl} with API ${apiUrl}`);

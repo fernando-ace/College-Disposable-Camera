@@ -8,18 +8,18 @@ Use this as the final go/no-go list before inviting the first beta host. Do not 
 2. Confirm Vercel install settings do not use `--omit=optional` or `--no-optional`; clear the Vercel Build Cache after native optional dependency changes.
 3. Confirm Railway API deploy is green, rooted at `server/`, and has production env values including `ANALYTICS_SALT` and `FOUNDER_EMAILS` if founder dashboard access is needed.
 4. Generate `ANALYTICS_SALT` locally with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and add it in Railway, not in git.
-5. Confirm `WEB_PUBLIC_URL=https://eventfilm.vercel.app`, `API_PUBLIC_URL=<railway-api-url>`, `CLIENT_ORIGIN` or `CLIENT_ORIGINS`, and Vercel `VITE_API_URL=<railway-api-url>` are aligned.
+5. Confirm `WEB_PUBLIC_URL=https://eventfilm.vercel.app`, `API_PUBLIC_URL=https://<railway-api-url>`, `CLIENT_ORIGIN` or `CLIENT_ORIGINS`, and Vercel `VITE_API_URL=https://<railway-api-url>` are aligned.
 6. Confirm Supabase private bucket exists, the project is active/unpaused, and storage env vars are set only on the API host.
 7. Run `npm exec -w server -- prisma migrate status --schema prisma/schema.prisma` against the intended target database.
 8. Apply `npm run prisma:deploy -w server` only if migration status reports pending migrations and `DATABASE_URL` is confirmed for the target database.
 9. Create a dedicated deployed smoke host and clearly named revealed smoke event.
 10. Run `npm run smoke:deployed:api`.
-11. Run `npm run smoke:deployed:browser`.
+11. Run `npm run smoke:deployed:browser` with `BROWSER_SMOKE_HOST_EMAIL` and `BROWSER_SMOKE_HOST_PASSWORD` set in the shell; never commit the smoke password.
 12. Run `npm run smoke:deployed:storage` only when the event is safe for upload and cleanup.
 13. Create an EAS preview build with `EXPO_PUBLIC_API_URL` set to the deployed API URL.
 14. Invite the first beta host only after the hosted smoke test and evidence checklist below are complete.
 
-Fernando still needs to provide the real deployed API URL, deployed smoke event slug, deployed smoke host credentials, API provider/project identity, and Supabase bucket/project confirmation before full deployed smoke can pass.
+Fernando still needs to provide the real deployed HTTPS API URL, deployed smoke event slug, production smoke host credentials, API provider/project identity, and Supabase bucket/project confirmation before full deployed smoke can pass. The production web password can differ from local demo or mobile Expo test credentials.
 
 ## First beta event rehearsal
 

@@ -83,7 +83,7 @@ Before real beta smoke can pass, Fernando needs to confirm these target-environm
 - API provider/project identity: Railway project/service or the equivalent Render/Fly service.
 - Supabase project and private bucket name, expected `event-photos` unless changed.
 - Dedicated deployed smoke event slug.
-- Dedicated deployed smoke host email/password, stored only in local shell or provider env while running smoke.
+- Dedicated deployed smoke host email/password, passed as `BROWSER_SMOKE_HOST_EMAIL` and `BROWSER_SMOKE_HOST_PASSWORD` for browser smoke and stored only in local shell or provider env while running smoke.
 
 ## Environment Values
 
@@ -272,12 +272,16 @@ $env:DEPLOYED_WEB_URL="https://eventfilm.vercel.app"
 $env:DEPLOYED_SMOKE_EVENT_SLUG="eventfilm-beta-demo-storage-smoke"
 ```
 
-Optional target-environment smoke credentials:
+API URLs must include `https://`; do not pass a bare hostname or a value without a protocol.
+
+Browser host-login smoke credentials:
 
 ```powershell
-$env:DEPLOYED_SMOKE_HOST_EMAIL="smoke-host@example.com"
-$env:DEPLOYED_SMOKE_HOST_PASSWORD="target-environment-password"
+$env:BROWSER_SMOKE_HOST_EMAIL="smoke-host@example.com"
+$env:BROWSER_SMOKE_HOST_PASSWORD="<target-environment-web-password>"
 ```
+
+Never commit smoke passwords. The production web password can differ from local demo credentials and mobile Expo test credentials.
 
 Commands:
 
@@ -293,6 +297,8 @@ For the env-configured browser smoke path:
 ```powershell
 $env:BROWSER_SMOKE_BASE_URL="https://eventfilm.vercel.app"
 $env:BROWSER_SMOKE_API_URL="https://<railway-api-url>"
+$env:BROWSER_SMOKE_HOST_EMAIL="smoke-host@example.com"
+$env:BROWSER_SMOKE_HOST_PASSWORD="<target-environment-web-password>"
 npm run smoke:browser
 ```
 
@@ -328,9 +334,9 @@ npm run smoke:deployed:storage
 
 `smoke:deployed:api` verifies API health, analytics write, optional host-auth database route, guest event route, guest upload route shell, Live Wall, and Recap. If the event slug or host credentials are missing, it prints documented skips rather than pretending full coverage passed.
 
-`smoke:deployed:browser` runs the Playwright browser smoke against `DEPLOYED_WEB_URL` or `BROWSER_SMOKE_BASE_URL`, using `DEPLOYED_API_URL` or `BROWSER_SMOKE_API_URL` for API checks.
+`smoke:deployed:browser` runs the Playwright browser smoke against `DEPLOYED_WEB_URL` or `BROWSER_SMOKE_BASE_URL`, using `DEPLOYED_API_URL` or `BROWSER_SMOKE_API_URL` for API checks. For deployed host login, it requires `BROWSER_SMOKE_HOST_EMAIL` and `BROWSER_SMOKE_HOST_PASSWORD`; the wrapper also accepts existing `DEPLOYED_SMOKE_HOST_EMAIL` and `DEPLOYED_SMOKE_HOST_PASSWORD` values and passes them through without printing them.
 
-Raw `npm run smoke:browser` also accepts `BROWSER_SMOKE_BASE_URL` and `BROWSER_SMOKE_API_URL` for deployed-style browser checks.
+Raw `npm run smoke:browser` also accepts `BROWSER_SMOKE_BASE_URL` and `BROWSER_SMOKE_API_URL` for deployed-style browser checks. If `BROWSER_SMOKE_BASE_URL` is not localhost, `BROWSER_SMOKE_API_URL` must include `https://` and `BROWSER_SMOKE_HOST_EMAIL` plus `BROWSER_SMOKE_HOST_PASSWORD` must be set.
 
 `smoke:deployed:storage` reuses the real storage smoke. It uploads a tiny PNG through the deployed guest API, verifies DB record, file/preview routes, guest album, Live Wall, Recap, feature/unfeature, report, hide/restore, analytics summary, and cleanup. Run it only against a safe target event.
 
@@ -340,6 +346,8 @@ Failure triage:
 
 - Missing env: set the required `DEPLOYED_*` values in the shell and rerun.
 - Wrong CORS: add the deployed web origin to `CLIENT_ORIGIN` or `CLIENT_ORIGINS` on the API host.
+- Direct API auth returns 401: create or use a valid production host account, then set `BROWSER_SMOKE_HOST_EMAIL` and `BROWSER_SMOKE_HOST_PASSWORD`.
+- Direct API auth passes but browser auth fails: check Vercel `VITE_API_URL` first, then Railway `CLIENT_ORIGIN` or `CLIENT_ORIGINS` for CORS.
 - API cannot reach DB: verify `DATABASE_URL`, database allowlist/networking, and migration status.
 - API cannot reach Supabase: verify `SUPABASE_URL`, service role key, bucket name, and project pause status.
 - Storage bucket issue: create or correct the private bucket named by `SUPABASE_STORAGE_BUCKET`.
