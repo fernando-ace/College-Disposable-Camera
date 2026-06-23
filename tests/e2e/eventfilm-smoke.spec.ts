@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 
-const apiUrl = (process.env.EVENTFILM_API_URL || "http://localhost:4000").replace(/\/+$/, "");
+const apiUrl = (process.env.BROWSER_SMOKE_API_URL || process.env.EVENTFILM_API_URL || "http://localhost:4000").replace(/\/+$/, "");
 const seededSlug = process.env.EVENTFILM_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-memory-capsule";
 const revealedSeededSlug = process.env.EVENTFILM_REVEALED_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-storage-smoke";
 const demoHostEmail = process.env.DEMO_HOST_EMAIL || "fernando+eventfilm-demo@example.com";

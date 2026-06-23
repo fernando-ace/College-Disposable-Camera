@@ -14,6 +14,63 @@ Current beta inventory:
 
 No real deployed API URL is committed in this repo. Do not claim deployed smoke success until Fernando provides or configures the real API URL in the shell/provider environment.
 
+## Production Beta Launch Gate
+
+Use this as the single release gate before inviting the first beta host. Keep secrets in provider environments only; do not commit host credentials, Supabase keys, salts, database URLs, or private provider URLs.
+
+Vercel web:
+
+- Web URL: `https://eventfilm.vercel.app/`.
+- Project root remains `client/`.
+- Node.js Version is `22.x`.
+- Install command must not include `--omit=optional` or `--no-optional`; if a custom install command is needed, use optional dependencies explicitly.
+- Clear Build Cache after any native optional dependency change.
+- Confirm the latest intended commit is deployed.
+- Confirm the web build is green.
+- Confirm `VITE_API_URL` points at the deployed Railway API base URL with no `/api` suffix.
+
+Railway API:
+
+- Confirm the API deploy is green and rooted at `server/`.
+- Confirm production env includes `NODE_ENV=production`, `DATABASE_URL`, `JWT_SECRET`, `ANALYTICS_SALT`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`, `WEB_PUBLIC_URL`, `API_PUBLIC_URL`, and `CLIENT_ORIGIN` or `CLIENT_ORIGINS`.
+- Add `FOUNDER_EMAILS` only if founder dashboard access is needed; leave it empty to deny founder access safely.
+- Generate `ANALYTICS_SALT` locally, then paste it into Railway without committing it:
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+- Confirm API health after deploy:
+
+```powershell
+$env:DEPLOYED_API_URL="https://<railway-api-url>"
+npm run smoke:deployed:api
+```
+
+Supabase:
+
+- Confirm the project is active/unpaused.
+- Confirm the private bucket named by `SUPABASE_STORAGE_BUCKET` exists.
+- Confirm the API has the Supabase URL, service role key, and bucket name in Railway only.
+- Run upload smoke before inviting a host only when the target event is safe for test data and cleanup.
+- If production cleanup is not safe, do a manual phone upload test and manually hide/delete or clearly mark the test event afterward.
+
+Database:
+
+- Check migration status before applying anything:
+
+```bash
+npm exec -w server -- prisma migrate status --schema prisma/schema.prisma
+```
+
+- Apply migrations only when the command reports pending migrations and `DATABASE_URL` is confirmed to target the intended production database:
+
+```bash
+npm run prisma:deploy -w server
+```
+
+- Do not run production migrations from Codex unless the target is explicitly configured and intentionally requested.
+
 ## Values Fernando Must Provide
 
 Before real beta smoke can pass, Fernando needs to confirm these target-environment values:
@@ -77,9 +134,9 @@ Production candidate:
 
 ```env
 NODE_ENV="production"
-WEB_PUBLIC_URL="https://your-eventfilm-domain.com"
+WEB_PUBLIC_URL="https://eventfilm.vercel.app"
 API_PUBLIC_URL="https://api.your-eventfilm-domain.com"
-CLIENT_ORIGINS="https://your-eventfilm-domain.com"
+CLIENT_ORIGINS="https://eventfilm.vercel.app"
 FOUNDER_EMAILS="you@example.com"
 VITE_API_URL="https://api.your-eventfilm-domain.com"
 EXPO_PUBLIC_API_URL="https://api.your-eventfilm-domain.com"
@@ -156,6 +213,8 @@ npx @railway/cli@latest status
 npx @railway/cli@latest up --service <api-service-name>
 ```
 
+After deploy, confirm the Railway dashboard reports a green deploy and the API health route responds before running broader smoke. Keep `ANALYTICS_SALT`, `JWT_SECRET`, `DATABASE_URL`, and Supabase secrets in Railway variables only.
+
 If the API host is Render or Fly.io instead, use the provider dashboard or CLI to set the same backend env values and confirm the service root is `server/`.
 
 Supabase storage:
@@ -186,16 +245,22 @@ npx eas-cli@latest build --profile preview --platform ios
 
 1. Deploy the API service from `server/`.
 2. Set server env values, keeping all secrets server-side.
-3. Run migrations against the target database:
+3. Check migration status against the target database:
+
+```bash
+npm exec -w server -- prisma migrate status --schema prisma/schema.prisma
+```
+
+4. Apply migrations only when pending migrations exist and `DATABASE_URL` is confirmed to target the intended deployed database:
 
 ```bash
 npm run prisma:deploy -w server
 ```
 
-4. Confirm the Supabase private bucket named by `SUPABASE_STORAGE_BUCKET` exists and the project is active.
-5. Deploy the web client from `client/` with `VITE_API_URL` pointing at the deployed API base URL, no `/api` suffix.
-6. Create or seed a safe smoke host and event in the target environment.
-7. Run deployed smoke commands from the repo root.
+5. Confirm the Supabase private bucket named by `SUPABASE_STORAGE_BUCKET` exists and the project is active.
+6. Deploy the web client from `client/` with `VITE_API_URL` pointing at the deployed API base URL, no `/api` suffix.
+7. Create or seed a safe smoke host and event in the target environment.
+8. Run deployed smoke commands from the repo root.
 
 ## Deployed Smoke
 
@@ -203,7 +268,7 @@ Required URL env:
 
 ```powershell
 $env:DEPLOYED_API_URL="https://api.your-eventfilm-domain.com"
-$env:DEPLOYED_WEB_URL="https://your-eventfilm-domain.com"
+$env:DEPLOYED_WEB_URL="https://eventfilm.vercel.app"
 $env:DEPLOYED_SMOKE_EVENT_SLUG="eventfilm-beta-demo-storage-smoke"
 ```
 
@@ -223,9 +288,49 @@ npm run smoke:deployed:storage
 npm run smoke:deployed:all
 ```
 
+For the env-configured browser smoke path:
+
+```powershell
+$env:BROWSER_SMOKE_BASE_URL="https://eventfilm.vercel.app"
+$env:BROWSER_SMOKE_API_URL="https://<railway-api-url>"
+npm run smoke:browser
+```
+
+For local browser smoke:
+
+```bash
+npm run demo:seed
+npm run smoke:browser
+```
+
+For local real upload browser smoke, run it only when the local API has safe storage config and cleanup:
+
+```bash
+ENABLE_GUEST_UPLOAD_BROWSER_SMOKE=1 npm run smoke:browser
+```
+
+For local storage smoke:
+
+```powershell
+$env:STORAGE_SMOKE_API_URL="http://localhost:4000"
+npm run smoke:storage
+```
+
+For deployed storage smoke, run it only against a dedicated deployed smoke host and event:
+
+```powershell
+$env:DEPLOYED_API_URL="https://<railway-api-url>"
+$env:DEPLOYED_SMOKE_EVENT_SLUG="<safe-deployed-smoke-event-slug>"
+$env:DEPLOYED_SMOKE_HOST_EMAIL="smoke-host@example.com"
+$env:DEPLOYED_SMOKE_HOST_PASSWORD="target-environment-password"
+npm run smoke:deployed:storage
+```
+
 `smoke:deployed:api` verifies API health, analytics write, optional host-auth database route, guest event route, guest upload route shell, Live Wall, and Recap. If the event slug or host credentials are missing, it prints documented skips rather than pretending full coverage passed.
 
-`smoke:deployed:browser` runs the Playwright browser smoke against `DEPLOYED_WEB_URL` or `BROWSER_SMOKE_BASE_URL`, using `DEPLOYED_API_URL` for API checks.
+`smoke:deployed:browser` runs the Playwright browser smoke against `DEPLOYED_WEB_URL` or `BROWSER_SMOKE_BASE_URL`, using `DEPLOYED_API_URL` or `BROWSER_SMOKE_API_URL` for API checks.
+
+Raw `npm run smoke:browser` also accepts `BROWSER_SMOKE_BASE_URL` and `BROWSER_SMOKE_API_URL` for deployed-style browser checks.
 
 `smoke:deployed:storage` reuses the real storage smoke. It uploads a tiny PNG through the deployed guest API, verifies DB record, file/preview routes, guest album, Live Wall, Recap, feature/unfeature, report, hide/restore, analytics summary, and cleanup. Run it only against a safe target event.
 
@@ -299,25 +404,21 @@ Before giving the preview build to a beta host:
 Before deployment handoff:
 
 ```bash
+git status --short
 npm run test:shared
-npm run check:shared
-npm run check:api-client
+npm run test:server
 npm run test -w @eventfilm/api-client
 npm run check:web
-npm run check:api
-npm run check:mobile
-npm run lint:mobile
 npm run build:web
+npm run check:mobile
 npm run check
-npm exec -w server -- prisma migrate status --schema prisma/schema.prisma
-npm run demo:seed
 npm run smoke:browser
 npm run smoke:storage
-npm run demo:cleanup
-npm run preflight
 git diff --check
 git diff --cached --check
 ```
+
+Run `npm run smoke:storage` only when local storage env is configured and the target event is safe for cleanup. If not, skip it and run the deployed/manual storage smoke commands after the target environment is ready.
 
 For local storage smoke on Windows:
 

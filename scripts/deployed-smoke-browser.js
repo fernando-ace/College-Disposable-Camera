@@ -4,7 +4,7 @@ function requiredUrl(name) {
   const value = String(process.env[name] || "").trim();
   if (!value) {
     console.error(`${name} is required for deployed browser smoke.`);
-    console.error("Set DEPLOYED_WEB_URL and DEPLOYED_API_URL, then rerun npm run smoke:deployed:browser.");
+    console.error("Set DEPLOYED_WEB_URL and DEPLOYED_API_URL, or BROWSER_SMOKE_BASE_URL and BROWSER_SMOKE_API_URL, then rerun npm run smoke:deployed:browser.");
     process.exit(1);
   }
   const normalized = value.replace(/\/+$/, "");
@@ -19,7 +19,9 @@ function requiredUrl(name) {
 const webUrl = process.env.BROWSER_SMOKE_BASE_URL
   ? requiredUrl("BROWSER_SMOKE_BASE_URL")
   : requiredUrl("DEPLOYED_WEB_URL");
-const apiUrl = requiredUrl("DEPLOYED_API_URL");
+const apiUrl = process.env.BROWSER_SMOKE_API_URL
+  ? requiredUrl("BROWSER_SMOKE_API_URL")
+  : requiredUrl("DEPLOYED_API_URL");
 
 const env = {
   ...process.env,

@@ -52,6 +52,28 @@ Use this for the first real EventFilm host tests. Keep the first event small, fr
 - Recap link: for after reveal.
 - Host dashboard link: only for the host or Fernando.
 
+## First Host Invite Template
+
+Use this as a text or email draft. Replace the bracketed parts before sending.
+
+```text
+I'm testing EventFilm with a small number of real events. It gives you one QR link where guests can upload photos without making an account, then you get a recap to share after the event.
+
+For your event, I would help you create the page, give you the guest link and QR code, and stay available if anything feels off. During the event, guests just scan the QR code and add photos from their phones.
+
+What I would love feedback on:
+
+- whether guests understand the upload page
+- whether the QR/link is easy to share
+- whether Live Wall and Recap feel useful
+- anything confusing or stressful for you as the host
+
+If anything breaks, text me and I will help right away. This is still a beta, so we should use it for a casual event where a backup plan is okay.
+
+Guest link: [guest upload link]
+QR poster: [QR poster link or attachment]
+```
+
 ## Feedback To Collect
 
 - Did guests understand what to do from the QR page?
