@@ -56,7 +56,6 @@ import {
   Icon as CleanIcon,
   PrimaryButton,
   SecondaryButton as CleanSecondaryButton,
-  Section,
   Stepper,
 } from "./components/ui";
 import "./styles.css";
@@ -69,13 +68,29 @@ if (!API_URL) {
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
 const API_ORIGIN = new URL(API_BASE_URL).origin;
-const DEMO_STORAGE_KEY = "eventfilm_demo_uploads";
-const DEFAULT_DEMO_PHOTOS = [
-  { id: "demo-album-1", name: "Mia", dataUrl: "/demo/demo-album-1.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
-  { id: "demo-album-2", name: "Alex", dataUrl: "/demo/demo-album-2.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
-  { id: "demo-album-3", name: "Jordan", dataUrl: "/demo/demo-album-3.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
-  { id: "demo-album-4", name: "Taylor", dataUrl: "/demo/demo-album-4.jpg", createdAt: "2026-05-27T00:00:00.000Z" },
-];
+const LANDING_DEMO_PATH = "/e/eventfilm-beta-demo-storage-smoke";
+const LANDING_USE_CASES = [
+  { label: "Pregames", icon: "cup", image: "/landing/pregames.jpg" },
+  { label: "Birthdays", icon: "cake", image: "/landing/birthdays.jpg" },
+  { label: "Club events", icon: "music", image: "/landing/club-events.jpg" },
+  { label: "Friend trips", icon: "plane", image: "/landing/friend-trips.jpg" },
+  { label: "Graduation dinners", icon: "cap", image: "/landing/graduation-dinners.jpg" },
+  { label: "Greek life", icon: "columns", image: "/landing/greek-life.jpg" },
+] as const;
+const LANDING_STYLES = [
+  { label: "Simple Album", icon: "grid", image: "/landing/style-simple-album.jpg", description: "A clean album of everyone's photos." },
+  { label: "Photo Prompts", icon: "message", image: "/landing/style-photo-prompts.jpg", description: "Fun prompts to spark the best moments." },
+  { label: "Color Hunt", icon: "droplet", image: "/landing/style-color-hunt.jpg", description: "See your event through a shared color lens." },
+  { label: "Awards", icon: "trophy", image: "/landing/style-awards.jpg", description: "Celebrate the moments (and the people)." },
+  { label: "Memory Capsule", icon: "lock", image: "/landing/style-memory-capsule.jpg", description: "Collect messages and memories for the future." },
+] as const;
+const LANDING_FAQS = [
+  ["Do guests need an account?", "No. Guests can add photos from the event link in their browser without creating an account."],
+  ["Can I control who sees the photos?", "Yes. Hosts can review the album and share the recap when it is ready."],
+  ["When and how do we get the recap?", "After the event, share one recap link so everyone has the photos in one place."],
+  ["Can I add photos after the event?", "Yes. Keep the guest link open if you want people to add more."],
+  ["Is there a limit on photos?", "Hosts can set a simple per-guest photo limit when they create the event."],
+] as const;
 
 type AuthContextValue = {
   token: string | null;
@@ -83,13 +98,6 @@ type AuthContextValue = {
   login: (token: string, user: User) => void;
   logout: () => void;
 };
-type DemoPhoto = {
-  id: string;
-  name: string;
-  dataUrl: string;
-  createdAt: string;
-};
-
 const BETA_ISSUE_AREAS = [
   ["guest_upload", "Guest upload"],
   ["live_wall", "Photo Wall"],
@@ -360,15 +368,6 @@ async function shareOrCopyText({ title, text, url, fallbackLabel, onStatus, anal
   onStatus(`${fallbackLabel} copied`);
 }
 
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("Could not read the selected photo"));
-    reader.readAsDataURL(file);
-  });
-}
-
 function getGuestSession(slug: string) {
   const key = `eventfilm_guest_${slug}`;
   const saved = localStorage.getItem(key);
@@ -510,15 +509,6 @@ function StatusPill({ children, tone = "amber" }: { children: React.ReactNode; t
     plum: "bg-fuchsia-50 text-fuchsia-800 ring-fuchsia-100",
   };
   return <span className={cx("inline-flex items-center rounded-full px-3 py-1 text-[11px] font-bold uppercase ring-1", tones[tone])}>{children}</span>;
-}
-
-function LiveDemoPill() {
-  return (
-    <span className="inline-flex items-center gap-2 rounded-full bg-[#fff0d8] px-3 py-1 text-[11px] font-bold uppercase text-[#7c3f00] ring-1 ring-[#f7d89c]">
-      <span className="h-2 w-2 rounded-full bg-emerald-500 motion-safe:animate-[live-pulse_1.4s_ease-in-out_infinite]" aria-hidden="true" />
-      Live demo
-    </span>
-  );
 }
 
 function Card({ children, className = "", id }: { children: React.ReactNode; className?: string; id?: string }) {
@@ -1120,117 +1110,6 @@ function Shell({ children, wide = false }: { children: React.ReactNode; wide?: b
   );
 }
 
-function DemoUploader() {
-  const [name, setName] = useState("Guest");
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState("");
-  const [photos, setPhotos] = useState<DemoPhoto[]>(() => {
-    const saved = sessionStorage.getItem(DEMO_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
-  });
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const albumPhotos = [...photos, ...DEFAULT_DEMO_PHOTOS].slice(0, 6);
-
-  useEffect(() => {
-    if (!file) {
-      setPreviewUrl("");
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file]);
-
-  function savePhotos(nextPhotos: DemoPhoto[]) {
-    setPhotos(nextPhotos);
-    try {
-      sessionStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(nextPhotos.slice(0, 6)));
-    } catch {
-      setMessage("Saved for this page view. Your browser skipped session storage for this large photo.");
-    }
-  }
-
-  async function submit(event: React.FormEvent) {
-    event.preventDefault();
-    setError("");
-    setMessage("");
-    if (!file) return setError("Choose a photo to try the demo");
-    if (!file.type.startsWith("image/")) return setError("Choose an image file");
-    if (!name.trim()) return setError("Add a name first");
-
-    try {
-      const dataUrl = await readFileAsDataUrl(file);
-      const nextPhoto = { id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}`, name: name.trim(), dataUrl, createdAt: new Date().toISOString() };
-      savePhotos([nextPhoto, ...photos].slice(0, 6));
-      setFile(null);
-      setMessage("Demo photo added locally");
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
-  return (
-    <Card className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr] lg:p-8">
-      <div>
-        <LiveDemoPill />
-        <h3 className="mt-4 font-display text-3xl font-bold leading-tight text-stone-950">Mia's Graduation Cookout</h3>
-        <p className="mt-3 text-stone-600">Preview the guest upload flow. Choose a photo, add a name, and EventFilm temporarily saves it in this browser session only.</p>
-        <form className="mt-6 grid gap-4" onSubmit={submit}>
-          <label className="grid gap-2 text-sm font-bold text-stone-700">
-            Your name
-            <TextInput value={name} onChange={(event) => setName(event.target.value)} placeholder="Mia" />
-          </label>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400">
-              <Icon>photo_camera</Icon>
-              Take photo
-              <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-            </label>
-            <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900 transition hover:border-amber-500 hover:bg-amber-50">
-              <Icon>photo_library</Icon>
-              Choose photo
-              <input className="sr-only" type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-            </label>
-          </div>
-          {file && previewUrl && (
-            <div className="flex items-center gap-4 rounded-2xl bg-stone-50 p-3">
-              <img className="h-20 w-20 rounded-2xl object-cover" src={previewUrl} alt="Selected demo preview" />
-              <div className="min-w-0">
-                <p className="truncate text-sm font-bold">{file.name || "Selected photo"}</p>
-                <p className="text-sm text-stone-600">Ready for local demo upload</p>
-              </div>
-            </div>
-          )}
-          {message && <p className="rounded-2xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">{message}</p>}
-          {error && <p className="rounded-2xl bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p>}
-          <Button type="submit" className="w-full justify-between rounded-2xl px-5">
-            <span>Add to demo album</span>
-            <Icon>arrow_forward</Icon>
-          </Button>
-        </form>
-      </div>
-      <div className="rounded-[2rem] bg-stone-50 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-bold uppercase text-stone-500">Guest preview</p>
-            <h4 className="font-display text-xl font-bold">Demo album</h4>
-          </div>
-          <Link className="rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white" to="/signup">Create real event</Link>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          {albumPhotos.map((photo) => (
-            <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={photo.id}>
-              <img className="aspect-square w-full rounded-2xl object-cover" src={photo.dataUrl} alt={`Demo upload by ${photo.name}`} />
-              <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">Uploaded by {photo.name}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </Card>
-  );
-}
-
 function AwardVotingPanel({
   event,
   photos,
@@ -1755,6 +1634,81 @@ function EventPosterPage() {
   );
 }
 
+function LandingIcon({ name, className = "" }: { name: string; className?: string }) {
+  const common = {
+    className: cx("h-5 w-5 shrink-0", className),
+    fill: "none",
+    stroke: "currentColor",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    strokeWidth: 1.9,
+    viewBox: "0 0 24 24",
+    "aria-hidden": true,
+  };
+  const paths: Record<string, React.ReactNode> = {
+    cake: <><path d="M4 11h16v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" /><path d="M4 15c1.3 1 2.7 1 4 0s2.7-1 4 0 2.7 1 4 0 2.7-1 4 0" /><path d="M8 11V8" /><path d="M12 11V8" /><path d="M16 11V8" /><path d="M8 5l.7 1.1L8 7.2 7.3 6.1z" /><path d="M12 5l.7 1.1-.7 1.1-.7-1.1z" /><path d="M16 5l.7 1.1-.7 1.1-.7-1.1z" /></>,
+    calendar: <><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M8 3v4" /><path d="M16 3v4" /><path d="M3.5 10h17" /></>,
+    cap: <><path d="m3 9 9-4 9 4-9 4z" /><path d="M7 11v4c2.8 2 7.2 2 10 0v-4" /><path d="M21 9v5" /></>,
+    columns: <><path d="M4 20h16" /><path d="M5 8h14" /><path d="m4 8 8-5 8 5" /><path d="M7 8v12" /><path d="M12 8v12" /><path d="M17 8v12" /></>,
+    cup: <><path d="M7 8h10l-1 12H8z" /><path d="M6 4h12" /><path d="M9 4V2" /><path d="M15 4V2" /><path d="M8 12h8" /></>,
+    droplet: <path d="M12 3s6 6.1 6 10.3A6 6 0 0 1 6 13.3C6 9.1 12 3 12 3z" />,
+    envelope: <><rect x="3.5" y="6" width="17" height="12" rx="2" /><path d="m4 8 8 6 8-6" /></>,
+    grid: <><rect x="4" y="4" width="7" height="7" rx="1" /><rect x="13" y="4" width="7" height="7" rx="1" /><rect x="4" y="13" width="7" height="7" rx="1" /><rect x="13" y="13" width="7" height="7" rx="1" /></>,
+    link: <><path d="M10 13a5 5 0 0 0 7.1 0l1.8-1.8a5 5 0 0 0-7.1-7.1L10.5 5.4" /><path d="M14 11a5 5 0 0 0-7.1 0l-1.8 1.8a5 5 0 0 0 7.1 7.1l1.3-1.3" /></>,
+    lock: <><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>,
+    message: <><path d="M21 12a8.5 8.5 0 0 1-8.5 8.5H6l-3 2 .8-4A8.5 8.5 0 1 1 21 12z" /></>,
+    music: <><path d="M9 18V5l10-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="16" cy="16" r="3" /></>,
+    plane: <><path d="M22 3 10 14" /><path d="m22 3-7 19-5-8-8-5z" /></>,
+    plus: <><path d="M12 5v14" /><path d="M5 12h14" /></>,
+    shield: <><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" /><path d="m9 12 2 2 4-4" /></>,
+    trophy: <><path d="M8 4h8v5a4 4 0 0 1-8 0z" /><path d="M8 6H5a2 2 0 0 0 2 4h1" /><path d="M16 6h3a2 2 0 0 1-2 4h-1" /><path d="M12 13v5" /><path d="M8 21h8" /><path d="M9 18h6" /></>,
+    upload: <><path d="M12 4v11" /><path d="m8 8 4-4 4 4" /><path d="M5 20h14" /></>,
+  };
+
+  return <svg {...common}>{paths[name] || paths.grid}</svg>;
+}
+
+function LandingBrand() {
+  return (
+    <Link className="inline-flex items-center gap-3 text-[22px] font-semibold text-[#171717]" to="/">
+      <span className="relative grid h-8 w-8 place-items-center rounded-md border border-[#ff5a4f] text-[#ff5a4f]">
+        <CleanIcon name="camera" className="h-4 w-4" />
+        <span className="absolute -left-1 -top-1 h-4 w-4 rounded-[5px] border border-[#ff5a4f] bg-[#fffdfb]" aria-hidden="true" />
+      </span>
+      <span>EventFilm</span>
+    </Link>
+  );
+}
+
+function LandingButtonLink({ children, to, variant = "primary", onClick }: { children: React.ReactNode; to: string; variant?: "primary" | "secondary"; onClick?: () => void }) {
+  const className = variant === "primary"
+    ? "inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-lg bg-[#ff5a4f] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#ec443a]"
+    : "inline-flex min-h-12 items-center justify-center whitespace-nowrap rounded-lg border border-[#dedad4] bg-white px-6 py-3 text-sm font-semibold text-[#171717] shadow-none transition hover:border-[#ffb2aa] hover:bg-[#fff5f2]";
+  return (
+    <Link className={className} to={to} onClick={onClick}>
+      {children}
+    </Link>
+  );
+}
+
+function LandingSectionIntro({ label, title, className = "" }: { label: string; title: React.ReactNode; className?: string }) {
+  return (
+    <div className={cx("mx-auto max-w-3xl text-center", className)}>
+      <p className="text-[10px] font-bold text-[#ff5a4f]">{label}</p>
+      <h2 className="mt-3 font-serif-display text-4xl font-bold leading-tight text-[#171717] md:text-[2.15rem]">{title}</h2>
+    </div>
+  );
+}
+
+function LandingStepArrow({ className = "" }: { className?: string }) {
+  return (
+    <svg className={cx("absolute top-12 hidden h-12 w-32 text-[#ff5a4f] md:block", className)} viewBox="0 0 140 52" fill="none" aria-hidden="true">
+      <path d="M8 40C37 11 83 10 124 34" stroke="currentColor" strokeWidth="1.7" strokeDasharray="5 6" strokeLinecap="round" />
+      <path d="m121 24 12 14-18 2" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function LandingRedesign() {
   useEffect(() => {
     trackAnalytics("landing_page_viewed");
@@ -1764,172 +1718,141 @@ function LandingRedesign() {
     trackAnalytics("cta_clicked", { metadata: { label, surface: "landing_redesign" } });
   }
 
-  const useCases = [
-    ["Pregames", "/demo/demo-album-1.jpg"],
-    ["Birthdays", "/demo/demo-album-2.jpg"],
-    ["Club events", "/demo/demo-album-3.jpg"],
-    ["Friend trips", "/demo/demo-album-4.jpg"],
-    ["Graduation dinners", "/demo/demo-album-1.jpg"],
-    ["Greek life", "/demo/demo-album-2.jpg"],
-  ];
+  const steps = [
+    ["calendar", "Create an event", "Name it, pick a vibe, and you're ready to go."],
+    ["link", "Share the guest link", "Send it in your group chat. No sign-up needed."],
+    ["envelope", "Send the recap", "After the event, everyone gets the shared recap."],
+  ] as const;
 
   return (
-    <Shell wide>
-      <section className="grid min-h-[calc(100vh-5rem)] items-center gap-10 py-10 lg:grid-cols-[0.9fr_1.1fr] lg:gap-16">
-        <div>
-          <h1 className="max-w-[11ch] font-serif-display text-6xl font-bold leading-[0.95] text-ink sm:text-7xl lg:text-8xl">
-            Stop chasing photos after the event.
-          </h1>
-          <p className="mt-6 max-w-xl text-lg leading-8 text-muted">
-            Create one link for your event. Guests add photos without an account, and everyone gets a shared recap after.
-          </p>
-          <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-lg bg-coral px-7 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to="/signup" onClick={() => trackCta("Create your first event")}>
+    <div className="landing-page min-h-screen bg-[#fffdfb] text-[#171717]">
+      <header className="sticky top-0 z-40 bg-[#fffdfb]/92 backdrop-blur">
+        <div className="mx-auto grid max-w-[1240px] grid-cols-[1fr_auto] items-center gap-4 px-5 py-4 md:grid-cols-[1fr_auto_1fr] md:px-10">
+          <LandingBrand />
+          <nav className="hidden items-center justify-center gap-8 text-sm font-semibold text-[#171717] md:flex" aria-label="Landing sections">
+            <a className="hover:text-[#ff5a4f]" href="#how-it-works">How it works</a>
+            <a className="hover:text-[#ff5a4f]" href="#event-styles">Event styles</a>
+            <a className="hover:text-[#ff5a4f]" href="#use-cases">Use cases</a>
+            <a className="hover:text-[#ff5a4f]" href="#faq">FAQ</a>
+          </nav>
+          <div className="justify-self-end">
+            <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event nav")}>
               Create your first event
-            </Link>
-            <a className="inline-flex min-h-12 items-center justify-center rounded-lg border border-line bg-white px-7 py-3 text-sm font-semibold text-ink shadow-none transition hover:border-coral/40 hover:bg-coral-soft" href="#demo" onClick={() => trackCta("Try a demo")}>
-              Try a demo
-            </a>
+            </LandingButtonLink>
           </div>
-          <p className="mt-8 inline-flex items-center gap-3 text-sm font-semibold text-muted">
-            <CleanIcon name="lock" className="text-coral" />
-            No account needed for guests.
-          </p>
         </div>
-        <div className="relative mx-auto grid w-full max-w-2xl place-items-center">
-          <div className="absolute right-0 top-6 hidden h-72 w-52 overflow-hidden rounded-xl bg-white p-2 shadow-sm lg:block">
-            <img className="h-full w-full rounded-lg object-cover" src="/demo/demo-album-2.jpg" alt="Friends adding EventFilm photos" />
+      </header>
+
+      <main>
+        <section className="mx-auto grid max-w-[1240px] items-center gap-6 px-5 pb-8 pt-10 md:grid-cols-[0.98fr_1.02fr] md:px-10 md:pb-6 md:pt-12">
+          <div>
+            <h1 className="font-serif-display text-6xl font-bold leading-[0.95] text-[#171717] md:text-[4rem]">
+              <span className="block md:whitespace-nowrap">Stop chasing</span>
+              <span className="block md:whitespace-nowrap">photos after</span>
+              <span className="block md:whitespace-nowrap">the event.</span>
+            </h1>
+            <p className="mt-7 max-w-[430px] text-base leading-7 text-[#69645f]">
+              Create one link for your event. Guests add photos without an account, and everyone gets a shared recap after.
+            </p>
+            <div className="mt-8 flex flex-col gap-4 sm:flex-row">
+              <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event hero")}>
+                Create your first event
+              </LandingButtonLink>
+              <LandingButtonLink variant="secondary" to={LANDING_DEMO_PATH} onClick={() => trackCta("Try a demo")}>
+                Try a demo
+              </LandingButtonLink>
+            </div>
+            <p className="mt-7 inline-flex items-center gap-3 text-sm font-semibold text-[#69645f]">
+              <LandingIcon name="shield" className="h-6 w-6 text-[#171717]" />
+              No account needed for guests.
+            </p>
           </div>
-          <div className="relative z-10 w-full max-w-[330px] rounded-[2rem] border border-stone-200 bg-stone-950 p-3 shadow-sm">
-            <div className="overflow-hidden rounded-[1.5rem] bg-white">
-              <div className="flex items-center justify-between border-b border-line px-4 py-3">
-                <span className="text-sm font-bold text-ink">Spring Formal</span>
-                <span className="text-xs font-semibold text-muted">212 photos</span>
+          <div className="relative flex justify-center md:-mt-10 md:justify-end">
+            <img className="w-full max-w-[430px] object-contain md:max-w-[455px]" src="/landing/hero-phone-scene.jpg" alt="EventFilm phone album with guest photos" />
+          </div>
+        </section>
+
+        <section id="how-it-works" className="px-5 pb-4 pt-8 md:px-10 md:pb-5">
+          <LandingSectionIntro label="HOW IT WORKS" title="Three simple steps." />
+          <div className="relative mx-auto mt-6 grid max-w-[820px] gap-8 md:grid-cols-3 md:gap-10">
+            <LandingStepArrow className="left-[26%]" />
+            <LandingStepArrow className="left-[58%]" />
+            {steps.map(([icon, title, body], index) => (
+              <div className="text-center" key={title}>
+                <div className="mx-auto grid h-[62px] w-[62px] place-items-center rounded-full bg-[#fff1eb] text-[#ff5a4f]">
+                  <LandingIcon name={icon} className="h-8 w-8" />
+                </div>
+                <h3 className="mt-5 text-base font-bold text-[#171717]">{index + 1}. {title}</h3>
+                <p className="mx-auto mt-2 max-w-[170px] text-sm leading-5 text-[#69645f]">{body}</p>
               </div>
-              <div className="grid grid-cols-2 gap-2 p-3">
-                {DEFAULT_DEMO_PHOTOS.concat(DEFAULT_DEMO_PHOTOS).slice(0, 6).map((photo, index) => (
-                  <img className={cx("w-full rounded-lg object-cover", index === 0 ? "col-span-2 aspect-[2/1]" : "aspect-square")} src={photo.dataUrl} alt={`EventFilm album photo ${index + 1}`} key={`${photo.id}-${index}`} />
-                ))}
-              </div>
-              <div className="p-3">
-                <button className="flex min-h-11 w-full items-center justify-center gap-2 rounded-lg bg-coral px-4 py-3 text-sm font-bold text-white" type="button">
-                  <CleanIcon name="upload" />
-                  Add photos
-                </button>
+            ))}
+          </div>
+        </section>
+
+        <section id="use-cases" className="mx-auto max-w-[1240px] px-5 py-7 md:px-10">
+          <LandingSectionIntro label="WHAT PEOPLE USE IT FOR" title="Every kind of good time." />
+          <div className="mt-7 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-6">
+            {LANDING_USE_CASES.map((item) => (
+              <article className="text-center" key={item.label}>
+                <img className="aspect-square w-full rounded-lg object-cover shadow-sm" src={item.image} alt={`${item.label} event photos`} />
+                <p className="mx-auto mt-4 flex min-h-10 max-w-[140px] items-start justify-center gap-2 text-sm font-semibold leading-5 text-[#171717]">
+                  <LandingIcon name={item.icon} className="mt-0.5 h-5 w-5 text-[#ff5a4f]" />
+                  <span>{item.label}</span>
+                </p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="event-styles" className="mx-auto max-w-[1240px] px-5 py-6 md:px-10">
+          <LandingSectionIntro label="EVENT STYLES" title="Pick a style that fits your vibe." />
+          <div className="mt-7 grid gap-4 sm:grid-cols-2 md:grid-cols-5">
+            {LANDING_STYLES.map((style) => (
+              <article className="rounded-lg border border-[#e7e1da] bg-white p-2.5 shadow-sm" key={style.label}>
+                <img className="aspect-[1.45] w-full rounded-md object-cover" src={style.image} alt={`${style.label} preview`} />
+                <h3 className="mt-4 flex items-center gap-1.5 text-xs font-bold text-[#171717]">
+                  <LandingIcon name={style.icon} className="h-4 w-4 text-[#ff5a4f]" />
+                  {style.label}
+                </h3>
+                <p className="mt-2.5 text-xs leading-5 text-[#69645f]">{style.description}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="faq" className="px-5 py-4 md:px-10">
+          <LandingSectionIntro label="FAQ" title={<>Got questions? We&rsquo;ve got answers.</>} />
+          <div className="landing-faq mx-auto mt-5 max-w-[620px] overflow-hidden rounded-lg border border-[#e7e1da] bg-white">
+            {LANDING_FAQS.map(([question, answer]) => (
+              <details className="group border-b border-[#e7e1da] last:border-b-0" key={question}>
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-2 text-xs font-semibold text-[#171717]">
+                  <span>{question}</span>
+                  <LandingIcon name="plus" className="landing-plus h-4 w-4 text-[#171717] transition group-open:rotate-45" />
+                </summary>
+                <p className="px-4 pb-3 text-xs leading-5 text-[#69645f]">{answer}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <section className="mx-auto max-w-[1200px] px-5 pb-8 pt-3 md:px-10">
+          <div className="grid items-center gap-7 rounded-xl border border-[#f1e1d6] bg-[#fff4ec] px-8 py-5 md:grid-cols-[0.65fr_1.35fr] md:px-[4.5rem]">
+            <div className="flex justify-center md:justify-start">
+              <img className="w-full max-w-[280px] object-contain" src="/landing/cta-polaroids.jpg" alt="Printed EventFilm memories" />
+            </div>
+            <div>
+              <h2 className="font-serif-display text-4xl font-bold leading-tight text-[#171717] md:whitespace-nowrap md:text-[2rem]">Ready to make it easy?</h2>
+              <p className="mt-3 max-w-[360px] text-base leading-6 text-[#69645f]">Create your event, share the link, and enjoy the memories.</p>
+              <div className="mt-5">
+                <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event bottom")}>
+                  Create your first event
+                </LandingButtonLink>
               </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      <Section id="how-it-works" className="border-t border-line text-center">
-        <div className="mx-auto mb-12 max-w-2xl">
-          <h2 className="font-serif-display text-4xl font-bold text-ink sm:text-5xl">Three simple steps.</h2>
-        </div>
-        <div className="mx-auto grid max-w-5xl gap-8 md:grid-cols-3">
-          {[
-            ["calendar", "Create an event", "Name it, pick a vibe, and you are ready to go."],
-            ["link", "Share the guest link", "Send it in your group chat. No sign-up needed."],
-            ["message", "Send the recap", "After the event, everyone gets the shared recap."],
-          ].map(([icon, title, body], index) => (
-            <div className="text-center" key={title}>
-              <div className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-coral-soft text-coral">
-                <CleanIcon name={icon} />
-              </div>
-              <h3 className="mt-5 text-base font-bold text-ink">{index + 1}. {title}</h3>
-              <p className="mx-auto mt-2 max-w-56 text-sm leading-6 text-muted">{body}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section className="border-t border-line px-0" id="demo">
-        <div className="mx-auto mb-10 max-w-2xl text-center">
-          <h2 className="font-serif-display text-4xl font-bold text-ink">Try the guest side.</h2>
-          <p className="mt-3 text-muted">Upload locally in this browser, then create a real event when you are ready.</p>
-        </div>
-        <DemoUploader />
-      </Section>
-
-      <Section id="use-cases">
-        <div className="mx-auto mb-12 max-w-2xl">
-          <h2 className="text-center font-serif-display text-4xl font-bold text-ink">Every kind of good time.</h2>
-        </div>
-        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-6">
-          {useCases.map(([label, src]) => (
-            <div className="text-center" key={label}>
-              <img className="aspect-square w-full rounded-xl object-cover" src={src} alt={`${label} photos`} />
-              <p className="mt-3 text-sm font-semibold text-ink">{label}</p>
-            </div>
-          ))}
-        </div>
-      </Section>
-
-      <Section id="event-styles" className="border-t border-line">
-        <div className="mx-auto mb-10 max-w-2xl text-center">
-          <h2 className="font-serif-display text-4xl font-bold text-ink">Pick a style that fits your vibe.</h2>
-        </div>
-        <div className="grid gap-4 md:grid-cols-5">
-          {CHALLENGE_PACKS.map((pack) => (
-            <article className="rounded-xl border border-line bg-white p-4 shadow-sm" key={pack.slug}>
-              <div className="grid aspect-[4/3] place-items-center overflow-hidden rounded-lg bg-stone-50">
-                {pack.mode === "NONE" ? (
-                  <img className="h-full w-full object-cover" src="/demo/demo-album-1.jpg" alt="Simple Album" />
-                ) : (
-                  <CleanIcon name={pack.mode === CHALLENGE_TYPES.COLOR_HUNT ? "image" : pack.mode === CHALLENGE_TYPES.EVENT_AWARDS ? "heart" : pack.mode === CHALLENGE_TYPES.MEMORY_CAPSULE ? "lock" : "message"} className="h-10 w-10 text-coral" />
-                )}
-              </div>
-              <h3 className="mt-4 text-base font-bold text-ink">{plainModeLabel(pack.mode)}</h3>
-              <p className="mt-2 text-sm leading-6 text-muted">{pack.mode === "NONE" ? "A clean album of everyone's photos." : pack.shortDescription}</p>
-            </article>
-          ))}
-        </div>
-      </Section>
-
-      <Section id="faq" className="border-t border-line">
-        <div className="mx-auto mb-8 max-w-2xl text-center">
-          <h2 className="font-serif-display text-4xl font-bold text-ink">Got questions? We have answers.</h2>
-        </div>
-        <div className="mx-auto grid max-w-4xl overflow-hidden rounded-xl border border-line bg-white">
-          {[
-            ["Do guests need an account?", "No. Guests can upload from the event link in a browser without creating an account."],
-            ["Can I control who sees the photos?", "Hosts review photos and share the recap link when the album is ready."],
-            ["When do we get the recap?", "After the reveal time, send the Shared Recap so everyone has the photos in one place."],
-            ["Can I add photos after the event?", "Yes. Keep the guest link open if you want people to add more."],
-            ["Is there a limit on photos?", "Hosts set a simple photo limit when they create the event."],
-          ].map(([question, answer]) => (
-            <details className="border-b border-line p-4 last:border-b-0" key={question}>
-              <summary className="cursor-pointer list-none text-sm font-semibold text-ink">{question}</summary>
-              <p className="mt-3 text-sm leading-6 text-muted">{answer}</p>
-            </details>
-          ))}
-        </div>
-      </Section>
-
-      <section className="mb-8 grid items-center gap-8 rounded-xl border border-line bg-coral-soft p-8 sm:p-10 lg:grid-cols-[0.8fr_1fr]">
-        <div className="flex gap-3">
-          {DEFAULT_DEMO_PHOTOS.slice(0, 3).map((photo, index) => (
-            <img className={cx("h-28 w-24 rounded-xl object-cover shadow-sm", index === 1 ? "mt-5" : "")} src={photo.dataUrl} alt="EventFilm memory" key={photo.id} />
-          ))}
-        </div>
-        <div>
-          <h2 className="font-serif-display text-4xl font-bold text-ink">Ready to make it easy?</h2>
-          <p className="mt-3 max-w-md text-muted">Create your event, share the link, and enjoy the memories.</p>
-          <Link className="mt-5 inline-flex min-h-12 items-center justify-center rounded-lg bg-coral px-7 py-3 text-sm font-bold text-white shadow-sm hover:bg-coral-strong" to="/signup" onClick={() => trackCta("Create your first event bottom")}>Create your first event</Link>
-        </div>
-      </section>
-
-      <footer className="grid gap-4 border-t border-line py-8 text-sm text-muted sm:grid-cols-[1fr_auto]">
-        <p className="font-bold text-coral">EventFilm</p>
-        <nav className="flex flex-wrap gap-4">
-          <Link to="/privacy" className="font-semibold hover:text-ink">Privacy</Link>
-          <Link to="/terms" className="font-semibold hover:text-ink">Terms</Link>
-          <Link to="/support" className="font-semibold hover:text-ink">Contact</Link>
-          <Link to="/login" className="font-semibold hover:text-ink">Host login</Link>
-          <Link to="/signup" className="font-semibold hover:text-ink">Create event</Link>
-        </nav>
-      </footer>
-    </Shell>
+        </section>
+      </main>
+    </div>
   );
 }
 

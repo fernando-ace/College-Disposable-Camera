@@ -104,6 +104,10 @@ textarea {
   aspect-ratio: 3 / 4;
 }
 
+.landing-faq summary::-webkit-details-marker {
+  display: none;
+}
+
 @keyframes live-pulse {
   0%,
   100% {

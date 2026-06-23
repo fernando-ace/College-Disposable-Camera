@@ -154,7 +154,7 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /Stop chasing photos after the event/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Create your first event/i }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: /Try a demo/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Try a demo/i })).toHaveAttribute("href", /\/e\/eventfilm-beta-demo-storage-smoke$/);
 
     for (const path of ["/privacy", "/terms", "/support"]) {
       await page.goto(path);
