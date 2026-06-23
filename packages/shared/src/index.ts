@@ -1242,7 +1242,7 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
   {
     slug: "open-custom-event",
     name: "Open Custom Event",
-    shortDescription: "Start from a flexible setup and customize the mode, prompts, and copy yourself.",
+    shortDescription: "Start simple, then adjust prompts and copy if this event needs a specific vibe.",
     bestFor: "Anything that does not fit a preset or needs a host-specific vibe.",
     recommendedMode: "NONE",
     promptPackSlug: "custom",
@@ -1528,7 +1528,7 @@ export function buildHostShareAssets(
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
   const recapMessage = `The shared recap is ready: ${recapLink}`;
   const recapShareText = template ? `${template.recapFraming} View the shared recap: ${recapLink}` : recapMessage;
-  const liveWallSetupTip = "Put the Photo Wall on a TV, laptop, or iPad during the event. For small hangouts, you can also just share the guest link.";
+  const liveWallSetupTip = "Open the Photo Wall during the event so people can scan the QR code and watch photos appear. For small hangouts, you can also just share the guest link.";
   const qrPosterHint = "Print this or show it on a phone so guests can scan to add photos.";
   const winnerShareText =
     event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
@@ -1653,13 +1653,13 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
     inviteText,
     hostInstructions: template
       ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, open the Photo Wall during the event, then share the Shared Recap afterward.`
-      : "Create the event, confirm the photo mode, copy the guest link or QR code, open the Photo Wall during the event, then share the Shared Recap afterward.",
+      : "Create the event, copy the guest link or QR code, open the Photo Wall during the event, then share the Shared Recap afterward.",
     socialCaption,
     modeInstructions: pack.guestInstructions,
     liveWallDisplayLinks,
     checklist: [
       { key: "create-event", label: "Create event", complete: true },
-      { key: "choose-mode", label: "Choose event mode", complete: true },
+      { key: "choose-mode", label: "Choose photo setup", complete: true },
       { key: "copy-guest-link", label: "Copy guest link or QR code", complete: false },
       { key: "open-live-wall", label: "Open Photo Wall", complete: false },
       { key: "share-recap", label: "Share Shared Recap after event", complete: false },
@@ -2010,7 +2010,7 @@ export function deriveEventLifecycleStatus(
     return {
       status: "collecting_photos",
       label: "Collecting photos",
-      description: "Guests have started uploading. Keep the Photo Wall and moderation close.",
+      description: "Guests have started uploading. Keep the Photo Wall and photo review close.",
       phase: "during",
       tone: "green",
       shouldShowRepeatCta: false,

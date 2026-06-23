@@ -178,7 +178,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
   });
 
-  test("host can sign in and create an event with the beta handoff", async ({ page, request }) => {
+  test("host can sign in and create an event with clear next steps", async ({ page, request }) => {
     const health = await request.get(`${apiUrl}/api/health`);
     test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
 
@@ -232,7 +232,7 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
 
       await page.getByRole("link", { name: "Create event" }).first().click();
-      await expect(page.getByRole("heading", { name: "Create your first event" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Create an event" })).toBeVisible();
       await expect(page.locator("body")).toContainText("Friday pregame");
       await page.getByRole("button", { name: "Start with this" }).last().click();
       await page.getByRole("button", { name: "Continue" }).click();
@@ -277,13 +277,13 @@ test.describe("EventFilm browser smoke", () => {
 
     await page.goto(`/wall/${seededSlug}`);
     await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
-    await expect(page.locator("body")).toContainText("Add photos to the shared album.");
+    await expect(page.locator("body")).toContainText("Scan to add photos. Photos show up here.");
     await expect(page.locator("body")).toContainText("Scan to add photos");
     await expect(page.locator("body")).toContainText("No account needed.");
     await expect(page.getByRole("link", { name: "Open upload link" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
-    await expect(page.getByText("Advanced display modes")).toBeHidden();
+    await expect(page.getByText("More display options")).toBeHidden();
     await page.getByLabel("Open more Photo Wall controls").click();
-    await expect(page.getByText("Advanced display modes")).toBeVisible();
+    await expect(page.getByText("More display options")).toBeVisible();
 
     for (const mode of ["grid", "slideshow", "join", "challenge"]) {
       await page.goto(`/wall/${seededSlug}?mode=${mode}`);
@@ -315,7 +315,7 @@ test.describe("EventFilm browser smoke", () => {
     }
   });
 
-  test("seeded host event shows lifecycle share kit and issue-report entry", async ({ page, request }) => {
+  test("seeded host event shows lifecycle share kit and ordinary host help", async ({ page, request }) => {
     const health = await request.get(`${apiUrl}/api/health`);
     test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
 
@@ -357,7 +357,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page).not.toHaveURL(/created=1/);
 
     await page.goto(`/dashboard/events/${eventId}`);
-    await expect(page.getByText(/Event status/i).first()).toBeVisible();
+    await expect(page.getByText(/Next step/i).first()).toBeVisible();
     await expect(page.getByText("Before the event").first()).toBeVisible();
     await expect(page.getByText("During the event").first()).toBeVisible();
     await expect(page.getByText("After the event").first()).toBeVisible();
@@ -388,14 +388,14 @@ test.describe("EventFilm browser smoke", () => {
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
       await expect(page.getByRole("heading", { name: "Photo Wall" })).toBeVisible();
-      await expect(page.locator("body")).toContainText("Use this during the event so guests know where to add photos and can see pictures appear live.");
+      await expect(page.locator("body")).toContainText("Use this during the event. Guests scan the QR code, add photos, and see them appear here.");
       await expect(page.locator(`a[href$="/wall/${seededSlug}"]`).first()).toBeVisible();
       await expect(page.getByRole("link", { name: "Open Photo Wall" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy guest link" }).first()).toBeVisible();
       await expect(page.locator("body")).toContainText("Keep the QR code visible when people are adding photos.");
 
       await page.goto(`/dashboard/events/${eventId}?tab=uploads`);
-      await expect(page.getByRole("heading", { name: "Photos", exact: true })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Review photos", exact: true })).toBeVisible();
       await expect(page.getByRole("button", { name: /All photos/i })).toBeVisible();
 
       await page.goto(`/e/${seededSlug}`);
@@ -423,7 +423,7 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("link", { name: "Preview recap" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy recap link" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Download photos" })).toBeVisible();
-      await expect(page.locator("body")).toContainText("Before you send it");
+      await expect(page.locator("body")).toContainText("Before you share it");
 
       await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
         headers: { Authorization: `Bearer ${auth.token}` },
@@ -446,9 +446,9 @@ test.describe("EventFilm browser smoke", () => {
 
     await page.goto(`/dashboard/events/${eventId}?tab=settings`);
     await page.getByText("Help and repeat event").click();
-    await expect(page.getByRole("heading", { name: /Something off during the event/i })).toBeVisible();
-    await page.getByRole("button", { name: /Report issue/i }).click();
-    await expect(page.getByPlaceholder(/What happened/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create similar event" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Something off during the event/i })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /Report issue/i })).toHaveCount(0);
   });
 
   test("guest can upload without signing in when local storage smoke is enabled", async ({ page, request }) => {
