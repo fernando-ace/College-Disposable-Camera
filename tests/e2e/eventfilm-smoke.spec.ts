@@ -154,7 +154,7 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /Stop chasing photos after the event/i })).toBeVisible();
     await expect(page.getByRole("link", { name: /Create your first event/i }).first()).toBeVisible();
-    await expect(page.getByRole("link", { name: /Try the demo/i })).toBeVisible();
+    await expect(page.getByRole("link", { name: /Try a demo/i })).toBeVisible();
 
     for (const path of ["/privacy", "/terms", "/support"]) {
       await page.goto(path);
@@ -233,12 +233,12 @@ test.describe("EventFilm browser smoke", () => {
 
       await page.getByRole("link", { name: "Create event" }).first().click();
       await expect(page.getByRole("heading", { name: "Create an event" })).toBeVisible();
-      await expect(page.locator("body")).toContainText("Friday pregame");
-      await page.getByRole("button", { name: "Start with this" }).last().click();
+      await expect(page.locator("body")).toContainText("Hangout or pregame");
+      await page.getByRole("button", { name: "Start with this" }).first().click();
       await page.getByRole("button", { name: "Continue" }).click();
       await expect(page.locator("body")).toContainText(/Simple Album|Photo Prompts|More options/);
       await page.getByRole("button", { name: "Continue" }).click();
-      await expect(page.getByRole("heading", { name: "Confirm details" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Event details" })).toBeVisible();
 
       const eventName = `Browser Smoke ${Date.now()}`;
       await page.getByLabel("Event name").fill(eventName);
@@ -271,43 +271,46 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto(`/e/${seededSlug}`);
     await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
     await expect(page.locator("body")).toContainText("No account needed");
-    await expect(page.locator("body")).toContainText("Add your photos to the event album.");
+    await expect(page.locator("body")).toContainText("Add photos");
     await expect(page.locator("#guest-upload-card")).toContainText(/Add photos/i);
     await expect(page.locator("#event-album")).toContainText(/Photos are being collected|album unlocks|revealed photos|No photos yet/i);
 
     await page.goto(`/wall/${seededSlug}`);
-    await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
-    await expect(page.locator("body")).toContainText("Scan to add photos. Photos show up here.");
+    await expect(page.getByRole("heading", { name: "Photo Wall" })).toBeVisible();
+    await expect(page.locator("body")).toContainText(eventName);
+    await expect(page.locator("body")).toContainText("Scan to add photos.");
     await expect(page.locator("body")).toContainText("Scan to add photos");
     await expect(page.locator("body")).toContainText("No account needed.");
     await expect(page.getByRole("link", { name: "Open upload link" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
-    await expect(page.getByText("More display options")).toBeHidden();
     await page.getByLabel("Open more Photo Wall controls").click();
-    await expect(page.getByText("More display options")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy guest link" })).toBeVisible();
 
     for (const mode of ["grid", "slideshow", "join", "challenge"]) {
       await page.goto(`/wall/${seededSlug}?mode=${mode}`);
-      await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
-      await expect(page.locator("body")).toContainText(/Photo Wall|Slideshow|Join screen|Prompts|Scan to add photos|Photos are being saved/i);
+      await expect(page.getByRole("heading", { name: "Photo Wall" })).toBeVisible();
+      await expect(page.locator("body")).toContainText(eventName);
+      await expect(page.locator("body")).toContainText(/Photo Wall|Scan to add photos|Photos are saved for the reveal/i);
     }
 
     const awardsResponse = await request.get(`${apiUrl}/api/events/eventfilm-beta-demo-event-awards/live-wall`);
     if (awardsResponse.ok()) {
       const awardsPayload = await awardsResponse.json();
       await page.goto("/wall/eventfilm-beta-demo-event-awards?mode=awards");
-      await expect(page.getByRole("heading", { name: awardsPayload.event?.name || /EventFilm Beta Demo/i })).toBeVisible();
-      await expect(page.locator("body")).toContainText(/Awards|Awards are live|Leaders and winners/i);
+      await expect(page.getByRole("heading", { name: "Photo Wall" })).toBeVisible();
+      await expect(page.locator("body")).toContainText(awardsPayload.event?.name || "EventFilm Beta Demo");
+      await expect(page.locator("body")).toContainText(/Photo Wall|Scan to add photos/i);
     }
 
     await page.goto(`/recap/${seededSlug}`);
-    await expect(page.locator("body")).toContainText(new RegExp(`Shared recap|${escapeRegExp(eventName)}|locked|Photos are saved for the reveal`, "i"));
+    await expect(page.locator("body")).toContainText(new RegExp(`Shared Recap|${escapeRegExp(eventName)}|locked|Photos are saved for the reveal`, "i"));
 
     const revealedRecapResponse = await request.get(`${apiUrl}/api/events/${revealedSeededSlug}/recap`);
     if (revealedRecapResponse.ok()) {
       const revealedRecap = await revealedRecapResponse.json();
       await page.goto(`/recap/${revealedSeededSlug}`);
-      await expect(page.getByRole("heading", { name: revealedRecap.event.name })).toBeVisible();
-      await expect(page.locator("body")).toContainText(/Shared recap|Photos from the event, all in one place|No photos yet/i);
+      await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
+      await expect(page.locator("body")).toContainText(revealedRecap.event.name);
+      await expect(page.locator("body")).toContainText(/Shared Recap|Photos from the event, all in one place|No photos yet/i);
       await expect(page.getByRole("link", { name: /Add photos/i }).first()).toBeVisible();
       if ((revealedRecap.photos || []).length > 0) {
         await expect(page.locator("#recap-photos img").first()).toBeVisible();
@@ -358,10 +361,12 @@ test.describe("EventFilm browser smoke", () => {
 
     await page.goto(`/dashboard/events/${eventId}?tab=share`);
     await expect(page.getByText(/Next step/i).first()).toBeVisible();
-    await expect(page.getByText("Before the event").first()).toBeVisible();
-    await expect(page.getByText("During the event").first()).toBeVisible();
-    await expect(page.getByText("After the event").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Copy invite message" })).toBeVisible();
+    await expect(page.getByText("Guest link").first()).toBeVisible();
+    await expect(page.getByText("QR code").first()).toBeVisible();
+    await expect(page.getByText("Event poster").first()).toBeVisible();
+    await expect(page.getByText("Message to paste in group chat").first()).toBeVisible();
+    await expect(page.getByText("Which link should I use?").first()).toBeVisible();
+    await expect(page.getByRole("button", { name: "Copy message" })).toBeVisible();
     await page.getByRole("button", { name: "Settings" }).click();
     try {
       const updatedName = `${originalSettings.name} Smoke`;
@@ -373,17 +378,18 @@ test.describe("EventFilm browser smoke", () => {
 
       await page.getByRole("button", { name: "Share", exact: true }).click();
       await expect(page.locator("h1", { hasText: updatedName })).toBeVisible();
-      await expect(page.getByText("Before the event").first()).toBeVisible();
-      await expect(page.getByText("During the event").first()).toBeVisible();
-      await expect(page.getByText("After the event").first()).toBeVisible();
-      await expect(page.getByRole("button", { name: "Copy invite message" })).toBeVisible();
+      await expect(page.getByText("Guest link").first()).toBeVisible();
+      await expect(page.getByText("QR code").first()).toBeVisible();
+      await expect(page.getByText("Event poster").first()).toBeVisible();
+      await expect(page.getByText("Message to paste in group chat").first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Copy message" })).toBeVisible();
       await expect(page.locator("input[aria-label='Guest link']")).toHaveValue(new RegExp(`/e/${seededSlug}`));
 
       await page.goto(`/dashboard/events/${eventId}/poster`);
       await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
       await expect(page.locator("body")).toContainText("Scan to add photos");
-      await expect(page.locator("body")).toContainText("No account needed.");
-      await expect(page.locator("body")).toContainText(new RegExp(`/e/${seededSlug}`));
+      await expect(page.locator("body")).toContainText(/No account needed\.?/);
+      await expect(page.getByRole("button", { name: "Copy guest link" })).toBeVisible();
       await expect(page.getByAltText("Guest upload QR code")).toBeVisible();
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
@@ -447,8 +453,7 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto(`/dashboard/events/${eventId}?tab=settings`);
     await page.getByText("Help and repeat event").click();
     await expect(page.getByRole("button", { name: "Create similar event" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: /Something off during the event/i })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Report issue/i })).toBeVisible();
+    await expect(page.locator("body")).toContainText("Turn this event into the next one.");
   });
 
   test("guest can upload without signing in when local storage smoke is enabled", async ({ page, request }) => {

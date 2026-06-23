@@ -1,10 +1,18 @@
-@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Sora:wght@400;600;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 :root {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #1c1917;
-  background: #fff8ed;
+  color: #171717;
+  background: #fbfaf8;
+  --app: #fbfaf8;
+  --ink: #171717;
+  --muted: #66615b;
+  --line: #e8e2da;
+  --coral: #ff5a4f;
+  --coral-strong: #ec443a;
+  --coral-soft: #fff0ed;
+  --paper: #ffffff;
 }
 
 * {
@@ -13,7 +21,8 @@
 
 body {
   margin: 0;
-  background: #fff8ed;
+  background: var(--app);
+  letter-spacing: 0;
 }
 
 button,
@@ -23,7 +32,63 @@ textarea {
 }
 
 .font-display {
-  font-family: Sora, Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: Fraunces, Georgia, "Times New Roman", serif;
+}
+
+.font-serif-display {
+  font-family: Fraunces, Georgia, "Times New Roman", serif;
+}
+
+.bg-app {
+  background: var(--app);
+}
+
+.text-ink {
+  color: var(--ink);
+}
+
+.text-muted {
+  color: var(--muted);
+}
+
+.text-coral {
+  color: var(--coral);
+}
+
+.bg-coral {
+  background: var(--coral);
+}
+
+.bg-coral-strong {
+  background: var(--coral-strong);
+}
+
+.hover\:bg-coral-strong:hover {
+  background: var(--coral-strong);
+}
+
+.bg-coral-soft {
+  background: var(--coral-soft);
+}
+
+.hover\:bg-coral-soft:hover {
+  background: var(--coral-soft);
+}
+
+.border-line {
+  border-color: var(--line);
+}
+
+.border-coral {
+  border-color: var(--coral);
+}
+
+.hover\:border-coral\/40:hover {
+  border-color: color-mix(in srgb, var(--coral) 40%, transparent);
+}
+
+.ring-coral {
+  --tw-ring-color: var(--coral);
 }
 
 .tabular-nums {
