@@ -135,10 +135,12 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_photo_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_create_event_cta_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("native_share_opened"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_upload_page_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_name_entered"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_continued_anonymous"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("upload_success_action_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_my_uploads_viewed"), true);
+  assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_prompt_hint_expanded"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_album_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_recap_opened"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("challenge_progress_viewed"), true);

@@ -377,6 +377,21 @@ function recordGuestUploadMetadata(slug: string, photo: Photo) {
   return [nextItem, ...existing];
 }
 
+function guestChallengeHint(event: PublicEvent) {
+  if (event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT) return "Find your color and upload your best photos.";
+  if (event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) return "Pick a prompt and upload a matching photo.";
+  if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) return "Submit photos for the award categories.";
+  if (event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE) return "Add photos now. Everyone sees them after the reveal.";
+  return "Add any photos you want the host to have.";
+}
+
+function uploadLimitCopy(remaining: number | null, limit: number) {
+  if (remaining === null) return "Checking uploads...";
+  if (remaining <= 0) return "No uploads left from this browser.";
+  if (limit <= 10) return `You can add up to ${limit} ${limit === 1 ? "photo" : "photos"}. ${remaining} left.`;
+  return `${remaining} uploads left.`;
+}
+
 function getChallengeParticipantSession(slug: string) {
   return `eventfilm_challenge_participant_${slug}`;
 }
@@ -4745,8 +4760,11 @@ function GuestEvent() {
   const [selectedPromptId, setSelectedPromptId] = useState(() => localStorage.getItem(getChallengePromptSession(slug)) || "");
   const [selectedItemId, setSelectedItemId] = useState(() => localStorage.getItem(getChallengeItemSession(slug)) || "");
   const participantSelectRef = useRef<HTMLSelectElement | null>(null);
-  const promptSelectRef = useRef<HTMLSelectElement | null>(null);
-  const itemSelectRef = useRef<HTMLSelectElement | null>(null);
+  const uploadCardRef = useRef<HTMLFormElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const albumRef = useRef<HTMLElement | null>(null);
+  const myUploadsRef = useRef<HTMLElement | null>(null);
+  const pageViewedTrackedRef = useRef(false);
   const joinedTrackedRef = useRef(false);
   const returnedTrackedRef = useRef(false);
   const nameChoiceTrackedRef = useRef(false);
@@ -4760,8 +4778,9 @@ function GuestEvent() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [showScavengerSuccessActions, setShowScavengerSuccessActions] = useState(false);
+  const [showAllChallengeItems, setShowAllChallengeItems] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<GuestUploadSuccessSummary | null>(null);
+  const [uploadSuccessPhoto, setUploadSuccessPhoto] = useState<Photo | null>(null);
   const [awardVoting, setAwardVoting] = useState<AwardVotingSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
@@ -4769,6 +4788,14 @@ function GuestEvent() {
   async function load() {
     const eventData = await api<{ event: PublicEvent }>(`/api/events/${slug}`);
     setEvent(eventData.event);
+    if (!pageViewedTrackedRef.current) {
+      pageViewedTrackedRef.current = true;
+      trackAnalytics("guest_upload_page_viewed", {
+        eventId: eventData.event.id,
+        eventSlug: eventData.event.slug,
+        metadata: { mode: eventData.event.challenge?.type || "NONE", isRevealed: eventData.event.isRevealed },
+      });
+    }
     const rememberedUploads = loadGuestUploadMetadata(slug);
     setLocalUploads(rememberedUploads);
     if (rememberedUploads.length && !returnedTrackedRef.current) {
@@ -4865,6 +4892,8 @@ function GuestEvent() {
 
   function saveSelectedParticipant(participantId: string) {
     setSelectedParticipantId(participantId);
+    setUploadSuccess(null);
+    setUploadSuccessPhoto(null);
     if (participantId) localStorage.setItem(getChallengeParticipantSession(slug), participantId);
     else localStorage.removeItem(getChallengeParticipantSession(slug));
     if (participantId) trackAnalytics("challenge_item_selected", { eventId: event?.id, eventSlug: event?.slug, metadata: { itemKind: "color" } });
@@ -4877,7 +4906,8 @@ function GuestEvent() {
 
   function saveSelectedPrompt(promptId: string) {
     setSelectedPromptId(promptId);
-    setShowScavengerSuccessActions(false);
+    setUploadSuccess(null);
+    setUploadSuccessPhoto(null);
     setMessage("");
     if (promptId) localStorage.setItem(getChallengePromptSession(slug), promptId);
     else localStorage.removeItem(getChallengePromptSession(slug));
@@ -4886,18 +4916,25 @@ function GuestEvent() {
 
   function saveSelectedItem(itemId: string) {
     setSelectedItemId(itemId);
+    setUploadSuccess(null);
+    setUploadSuccessPhoto(null);
     setMessage("");
     if (itemId) localStorage.setItem(getChallengeItemSession(slug), itemId);
     else localStorage.removeItem(getChallengeItemSession(slug));
     if (itemId) trackAnalytics("challenge_item_selected", { eventId: event?.id, eventSlug: event?.slug, metadata: { itemKind: "award" } });
   }
 
+  function expandChallengeItems(label: string) {
+    setShowAllChallengeItems(true);
+    trackAnalytics("guest_prompt_hint_expanded", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", label } });
+  }
+
   async function uploadPhoto(uploadEvent: React.FormEvent) {
     uploadEvent.preventDefault();
     setMessage("");
     setError("");
-    setShowScavengerSuccessActions(false);
     setUploadSuccess(null);
+    setUploadSuccessPhoto(null);
 
     if (loading) return;
     const validation = validateUploadFile(file);
@@ -4932,14 +4969,8 @@ function GuestEvent() {
       const nextLocalUploads = recordGuestUploadMetadata(slug, data.photo);
       setLocalUploads(nextLocalUploads);
       setUploadSuccess(buildGuestUploadSuccessSummary({ event: event as PublicEvent, photo: data.photo, remainingUploads: data.remainingUploads }));
-      if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
-        setMessage("Photo uploaded. Want to complete another prompt?");
-        setShowScavengerSuccessActions(true);
-      } else if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
-        setMessage(event.isRevealed ? "Photo submitted. You can vote for award winners below." : "Photo submitted for the award category. Voting opens on the Recap after reveal.");
-      } else {
-        setMessage("Photo uploaded");
-      }
+      setUploadSuccessPhoto(data.photo);
+      setMessage("Photo added.");
       await load();
     } catch (err) {
       const message = (err as Error).message || "Upload failed. Check your connection and try again.";
@@ -4961,6 +4992,9 @@ function GuestEvent() {
   const contributorSummary = buildContributorSummary(photos);
   const visibleMyUploadIds = new Set(myUploads.map((photo) => photo.id));
   const unavailableUploads = localUploads.filter((item) => !visibleMyUploadIds.has(item.photoId));
+  const compactPromptItems = showAllChallengeItems ? guestPrompts : guestPrompts.slice(0, 3);
+  const compactAwardItems = showAllChallengeItems ? guestAwards : guestAwards.slice(0, 3);
+  const shouldMentionLimit = remaining === 0 || event?.photoLimitPerGuest === undefined || event.photoLimitPerGuest <= 10 || (remaining !== null && remaining <= 10);
 
   useEffect(() => {
     if (!event || !guestProgress || progressTrackedRef.current) return;
@@ -4968,19 +5002,13 @@ function GuestEvent() {
     trackAnalytics("challenge_progress_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { mode: guestProgress.mode, surface: "guest_upload" } });
   }, [event?.id, guestProgress?.mode]);
 
-  function uploadAnotherForPrompt() {
-    trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
-    setShowScavengerSuccessActions(false);
+  function resetForAnotherUpload() {
+    trackUploadSuccessAction("add_another_photo");
+    setUploadSuccess(null);
+    setUploadSuccessPhoto(null);
     setMessage("");
     setError("");
-  }
-
-  function chooseNewPrompt() {
-    saveSelectedPrompt("");
-    setShowScavengerSuccessActions(false);
-    setMessage("");
-    setError("");
-    setTimeout(() => promptSelectRef.current?.focus(), 0);
+    setTimeout(() => uploadCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function trackUploadSuccessAction(action: string) {
@@ -5002,26 +5030,30 @@ function GuestEvent() {
         </div>
       )}
       {event && (
-        <div className="mx-auto max-w-2xl">
-          <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-center text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
-            <StatusPill>{activePack.badge}</StatusPill>
+        <div className="mx-auto max-w-2xl pb-24 sm:pb-8">
+          <section className="overflow-hidden rounded-[2rem] bg-stone-950 p-6 text-white shadow-[0_28px_80px_rgba(101,62,0,0.18)] sm:p-8">
+            <div className="flex flex-wrap items-center gap-2">
+              <StatusPill>{activePack.badge}</StatusPill>
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-amber-100">No account needed</span>
+            </div>
             <h1 className="mt-5 font-display text-4xl font-bold">{event.name}</h1>
-            {event.description && <p className="mt-3 text-stone-200">{event.description}</p>}
-            <p className="mt-3 text-sm text-stone-300">Reveal: {formatDateTime(event.revealAt)}</p>
-            {!event.isRevealed && (
-              <p className="mt-5 rounded-3xl bg-amber-100 p-4 text-sm font-semibold text-amber-950">
-                {capsuleCopy ? capsuleCopy.revealNote : "Photos are hidden until the reveal. Keep uploading throughout the event."}
-              </p>
-            )}
+            <p className="mt-3 text-lg font-semibold text-stone-100">Add your photos to the private event album.</p>
+            {event.description && <p className="mt-3 text-stone-300">{event.description}</p>}
+            {!event.isRevealed && <p className="mt-4 text-sm font-semibold text-amber-100">The full album unlocks after {formatDateTime(event.revealAt)}.</p>}
+            <p className="mt-5 rounded-3xl bg-white/10 p-4 text-sm font-bold text-white">{guestChallengeHint(event)}</p>
+            <a className="mt-5 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white shadow-[0_16px_34px_rgba(232,93,63,0.22)] transition hover:-translate-y-0.5 hover:bg-[#d94f33] sm:w-auto" href="#guest-upload-card">
+              <Icon>photo_camera</Icon>
+              Add photos
+            </a>
           </section>
 
           {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && (
-            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Color Hunt</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Choose your color.</h2>
-              <p className="mt-2 text-stone-700">Find a real moment that matches your color, then send it in.</p>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Find your color.</h2>
+              <p className="mt-2 text-stone-700">Pick your name or team so the photo lands in the right Color Hunt lane.</p>
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-                Choose your name
+                Pick your color
                 <select ref={participantSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedParticipantId} onChange={(selectEvent) => saveSelectedParticipant(selectEvent.target.value)} required>
                   <option value="">Select a participant</option>
                   {event.challenge.participants.map((participant) => (
@@ -5042,19 +5074,21 @@ function GuestEvent() {
           )}
 
           {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (
-            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
-              <StatusPill>Photo Scavenger Hunt</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Pick your prompt.</h2>
-              <p className="mt-2 text-stone-700">Choose the moment you are completing before you upload.</p>
-              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-                Choose a prompt
-                <select ref={promptSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedPromptId} onChange={(selectEvent) => saveSelectedPrompt(selectEvent.target.value)} required>
-                  <option value="">Select a prompt</option>
-                  {guestPrompts.map((prompt) => (
-                    <option value={prompt.id} key={prompt.id}>{prompt.text}</option>
-                  ))}
-                </select>
-              </label>
+            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
+              <StatusPill>Photo Prompts</StatusPill>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Pick a prompt.</h2>
+              <p className="mt-2 text-stone-700">Choose one idea before uploading. The photo will be connected to that prompt.</p>
+              <div className="mt-5 grid gap-2">
+                {compactPromptItems.map((prompt, index) => {
+                  const promptId = prompt.id || `prompt-${prompt.order ?? index}`;
+                  return (
+                  <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm font-bold transition", selectedPromptId === promptId ? "border-[#e85d3f] bg-white text-[#653e00] shadow-sm" : "border-amber-200 bg-white/70 text-stone-800 hover:border-[#e85d3f]")} onClick={() => saveSelectedPrompt(promptId)} key={promptId}>
+                    {prompt.text}
+                  </button>
+                  );
+                })}
+                {!showAllChallengeItems && guestPrompts.length > 3 && <SecondaryButton type="button" className="min-h-10 justify-self-start px-4 py-2" onClick={() => expandChallengeItems("show_more_prompts")}>Show more prompts</SecondaryButton>}
+              </div>
               {selectedPrompt && (
                 <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-stone-800">
                   <p className="text-xs font-bold uppercase tracking-wide text-stone-500">Current prompt</p>
@@ -5065,19 +5099,21 @@ function GuestEvent() {
           )}
 
           {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
-            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Event Awards</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Submit to an award category.</h2>
-              <p className="mt-2 text-stone-700">{activePack.guestInstructions}</p>
-              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-                Choose an award
-                <select ref={itemSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedItemId} onChange={(selectEvent) => saveSelectedItem(selectEvent.target.value)} required>
-                  <option value="">Select an award category</option>
-                  {guestAwards.map((category) => (
-                    <option value={category.id} key={category.id}>{category.label}</option>
-                  ))}
-                </select>
-              </label>
+              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Choose an award category.</h2>
+              <p className="mt-2 text-stone-700">Pick the category that fits the photo. Voting stays on the Recap.</p>
+              <div className="mt-5 grid gap-2">
+                {compactAwardItems.map((category, index) => {
+                  const categoryId = category.id || `award-${category.order ?? index}`;
+                  return (
+                  <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm font-bold transition", selectedItemId === categoryId ? "border-[#e85d3f] bg-white text-[#653e00] shadow-sm" : "border-amber-200 bg-white/70 text-stone-800 hover:border-[#e85d3f]")} onClick={() => saveSelectedItem(categoryId)} key={categoryId}>
+                    {category.label}
+                  </button>
+                  );
+                })}
+                {!showAllChallengeItems && guestAwards.length > 3 && <SecondaryButton type="button" className="min-h-10 justify-self-start px-4 py-2" onClick={() => expandChallengeItems("show_more_awards")}>Show more categories</SecondaryButton>}
+              </div>
               {selectedAward && (
                 <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-stone-800">
                   <p className="text-xs font-bold uppercase tracking-wide text-stone-500">Current award</p>
@@ -5088,16 +5124,21 @@ function GuestEvent() {
           )}
 
           {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && capsuleCopy && (
-            <section className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
               <StatusPill>Memory Capsule</StatusPill>
               <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">{capsuleCopy.revealTitle}</h2>
               <p className="mt-2 text-stone-700">{capsuleCopy.revealNote}</p>
             </section>
           )}
 
-          <form className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6" onSubmit={uploadPhoto}>
-            <h2 className="font-display text-2xl font-bold">Upload a photo</h2>
-            <p className="mt-2 text-stone-600">{event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT ? "Pick a photo and send it to the private album." : "Use a nickname or continue anonymous, then send in your photo."}</p>
+          <form id="guest-upload-card" ref={uploadCardRef} className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6" onSubmit={uploadPhoto}>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="font-display text-3xl font-bold text-stone-950">Add photos</h2>
+                <p className="mt-2 text-stone-600">Choose from your phone or take a new photo. No sign-in, app download, or guest account.</p>
+              </div>
+              <span className="rounded-full bg-[#fff3ee] px-3 py-2 text-xs font-extrabold uppercase tracking-wide text-[#653e00]">No account needed</span>
+            </div>
             {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && selectedParticipant && (
               <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p>
             )}
@@ -5109,25 +5150,31 @@ function GuestEvent() {
             )}
             {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && (
               <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-                Display name or nickname
+                Display name <span className="font-semibold text-stone-500">(optional)</span>
                 <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="Optional" />
-                <span className="text-xs font-semibold text-stone-500">No account needed. Leave blank to post as Anonymous guest.</span>
+                <span className="text-xs font-semibold text-stone-500">Add your name if you want the host to know who uploaded it. Leave blank to post as Anonymous guest.</span>
               </label>
             )}
-            <p className="mt-4 rounded-[1rem] bg-[#fffaf6] p-3 text-sm font-bold text-stone-700">
-              {remaining === null ? "Checking uploads..." : `${remaining} uploads left`}
-            </p>
+            {shouldMentionLimit && <p className="mt-4 rounded-[1rem] bg-[#fffaf6] p-3 text-sm font-bold text-stone-700">{uploadLimitCopy(remaining, event.photoLimitPerGuest)}</p>}
             {remaining === 0 && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">You have used all uploads for this event.</p>}
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400">
                 <Icon>photo_camera</Icon>
-                Take photo
-                <input className="sr-only" type="file" accept="image/*" capture="environment" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+                Take a photo
+                <input ref={fileInputRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="Take a photo" onChange={(event) => {
+                  setFile(event.target.files?.[0] || null);
+                  setUploadSuccess(null);
+                  setUploadSuccessPhoto(null);
+                }} />
               </label>
               <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900 transition hover:border-amber-500 hover:bg-amber-50">
                 <Icon>photo_library</Icon>
-                Choose from library
-                <input className="sr-only" type="file" accept="image/*" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+                Choose from phone
+                <input className="sr-only" type="file" accept="image/*" aria-label="Choose from phone" onChange={(event) => {
+                  setFile(event.target.files?.[0] || null);
+                  setUploadSuccess(null);
+                  setUploadSuccessPhoto(null);
+                }} />
               </label>
             </div>
             {file && photoPreviewUrl && (
@@ -5140,31 +5187,27 @@ function GuestEvent() {
               </div>
             )}
             {uploadSuccess && (
-              <section className="mt-4 rounded-[1.35rem] border border-green-100 bg-green-50 p-4 text-green-950">
-                <p className="text-xs font-extrabold uppercase tracking-wide text-green-700">{uploadSuccess.title}</p>
-                <h3 className="mt-2 font-display text-2xl font-bold">Thanks, {uploadSuccess.guestDisplayName}.</h3>
-                <div className="mt-3 grid gap-2 text-sm font-bold text-green-900 sm:grid-cols-2">
-                  <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.challengeLabel}</span>
-                  <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.detail}</span>
-                  <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.remainingUploads} uploads left</span>
-                  {uploadSuccess.revealNote ? <span className="rounded-2xl bg-white/70 p-3">{uploadSuccess.revealNote}</span> : null}
+              <section className="mt-4 rounded-[1.35rem] border border-green-100 bg-green-50 p-4 text-green-950" role="status" aria-live="polite">
+                <div className="grid gap-4 sm:grid-cols-[6rem_1fr] sm:items-center">
+                  {uploadSuccessPhoto ? <img className="aspect-square w-full rounded-2xl object-cover" src={uploadSuccessPhoto.previewUrl || uploadSuccessPhoto.url} alt={`Uploaded photo by ${uploadSuccess.guestDisplayName}`} /> : null}
+                  <div>
+                    <p className="text-xs font-extrabold uppercase tracking-wide text-green-700">Photo added.</p>
+                    <h3 className="mt-2 font-display text-2xl font-bold">Thanks, {uploadSuccess.guestDisplayName}.</h3>
+                    <p className="mt-2 text-sm font-bold text-green-900">{uploadSuccess.detail}</p>
+                    {uploadSuccess.revealNote ? <p className="mt-2 text-sm font-semibold text-green-900">{uploadSuccess.revealNote}</p> : !event.isRevealed ? <p className="mt-2 text-sm font-semibold text-green-900">The full album unlocks after {formatDateTime(event.revealAt)}.</p> : null}
+                    <p className="mt-2 text-sm font-semibold text-green-900">The host can review event photos.</p>
+                  </div>
                 </div>
-                <div className="mt-4 grid gap-2 sm:grid-cols-2">
-                  <SecondaryButton type="button" onClick={() => {
-                    trackUploadSuccessAction("upload_another");
-                    setUploadSuccess(null);
-                    setMessage("");
-                    setError("");
-                  }}>Upload another</SecondaryButton>
-                  {event.isRevealed ? <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/e/${slug}`} onClick={() => {
-                    trackUploadSuccessAction("view_album");
-                    trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "upload_success" } });
-                  }}>View album</Link> : null}
-                  {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`} onClick={() => trackUploadSuccessAction("vote_on_awards")}>Vote on awards</Link> : null}
-                  <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`} onClick={() => {
-                    trackUploadSuccessAction("open_recap");
-                    trackAnalytics("guest_recap_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "upload_success" } });
-                  }}>Open recap</Link>
+                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                  <SecondaryButton type="button" onClick={resetForAnotherUpload}>Add another photo</SecondaryButton>
+                  <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" href="#my-uploads" onClick={() => {
+                    trackUploadSuccessAction("view_my_uploads");
+                    setTimeout(() => myUploadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                  }}>View my uploads</a>
+                  <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" href="#event-album" onClick={() => {
+                    trackUploadSuccessAction("back_to_event_album");
+                    setTimeout(() => albumRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                  }}>Back to event album</a>
                 </div>
               </section>
             )}
@@ -5172,18 +5215,12 @@ function GuestEvent() {
             {message && !uploadSuccess && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
               <Link className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-extrabold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`}>Vote on awards</Link>
             )}
-            {showScavengerSuccessActions && (
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                <SecondaryButton type="button" onClick={uploadAnotherForPrompt}>Upload another for this prompt</SecondaryButton>
-                <SecondaryButton type="button" onClick={chooseNewPrompt}>Choose a new prompt</SecondaryButton>
-              </div>
-            )}
             {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error} {file ? "Try again or choose a smaller image." : ""}</p>}
             {error && file && <SecondaryButton type="button" className="mt-3 w-full" onClick={() => {
               trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
               setError("");
             }}>Try again</SecondaryButton>}
-            <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Uploading..." : "Upload photo"}</Button>
+            <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Adding..." : "Add photos"}</Button>
           </form>
 
           {guestProgress && (
@@ -5217,14 +5254,14 @@ function GuestEvent() {
             </section>
           )}
 
-          <section className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6">
+          <section id="my-uploads" ref={myUploadsRef} className="mt-6 scroll-mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <StatusPill>My uploads</StatusPill>
-                <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Photos from this browser</h2>
-                <p className="mt-2 text-sm font-semibold text-stone-600">No account needed. This only remembers uploads on this device.</p>
+                <StatusPill>My Uploads</StatusPill>
+                <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Your uploads on this device</h2>
+                <p className="mt-2 text-sm font-semibold text-stone-600">Photos you add from this browser will appear here.</p>
               </div>
-              <span className="rounded-full bg-stone-100 px-4 py-2 text-sm font-extrabold text-stone-700">{myUploads.length} visible</span>
+              <span className="rounded-full bg-stone-100 px-4 py-2 text-sm font-extrabold text-stone-700">{myUploads.length} visible here</span>
             </div>
             {myUploads.length ? (
               <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -5233,19 +5270,23 @@ function GuestEvent() {
                     <img className="aspect-square w-full rounded-2xl object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
                     <figcaption className="p-2 text-xs font-bold text-stone-700">
                       <span className="block truncate">{photo.challengeParticipantName || photo.guestNickname || "Anonymous guest"}</span>
+                      <span className="mt-1 block text-stone-500">{formatDateTime(photo.createdAt)}</span>
                       {photoChallengeLabel(photo) ? <span className="mt-1 block truncate text-[#653e00]">{photoChallengeLabel(photo)}</span> : null}
                     </figcaption>
                   </figure>
                 ))}
               </div>
             ) : (
-              <p className="mt-5 rounded-2xl bg-stone-50 p-4 text-sm font-bold text-stone-600">Uploads from this browser will appear here after they are accepted.</p>
+              <div className="mt-5 rounded-2xl bg-stone-50 p-4 text-sm font-bold text-stone-600">
+                <p>No uploads from this device yet.</p>
+                <p className="mt-1 font-semibold">Add a photo and it will show up here.</p>
+              </div>
             )}
             {unavailableUploads.length ? (
               <div className="mt-4 grid gap-2">
                 {unavailableUploads.slice(0, 4).map((item) => (
                   <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-900" key={item.photoId}>
-                    {item.challengeLabel || "Uploaded photo"} is not available publicly right now.
+                    {item.challengeLabel || "This photo"} is only visible to the host right now.
                   </p>
                 ))}
               </div>
@@ -5253,14 +5294,15 @@ function GuestEvent() {
           </section>
 
           {!event.isRevealed && (
-            <section className="mt-8 rounded-3xl border border-amber-200 bg-amber-50 p-5">
-              <h2 className="font-display text-2xl font-bold text-[#653e00]">{capsuleCopy?.revealTitle || "Album"}</h2>
-              <p className="mt-2 text-sm font-semibold text-amber-900">{capsuleCopy?.revealNote || "Photos are hidden until the reveal. Keep uploading throughout the event."}</p>
+            <section id="event-album" ref={albumRef} className="mt-8 scroll-mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
+              <h2 className="font-display text-2xl font-bold text-[#653e00]">Photos are being collected.</h2>
+              <p className="mt-2 text-sm font-semibold text-amber-900">The album unlocks after {formatDateTime(event.revealAt)}.</p>
+              <a className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white sm:w-auto" href="#guest-upload-card">Add your photos</a>
             </section>
           )}
 
           {event.isRevealed && (
-            <section className="mt-8">
+            <section id="event-album" ref={albumRef} className="mt-8 scroll-mt-6">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <h2 className="font-display text-2xl font-bold">Album</h2>
@@ -5293,13 +5335,21 @@ function GuestEvent() {
                       <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengeParticipantName} - {photo.challengeColorName}</p>
                     )}
                     {photoChallengeLabel(photo) && <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photoChallengeLabel(photo)}</p>}
+                    <button type="button" className="mt-2 w-full rounded-full bg-stone-100 px-3 py-2 text-xs font-extrabold text-stone-700 hover:bg-stone-200" onClick={() => {
+                      setSelectedPhoto(photo);
+                      setReportStatus("");
+                      trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_album", photoId: photo.id } });
+                    }}>View / report</button>
                   </div>
                 ))}
               </div>
-              {!photos.length && <Card className="text-center"><p className="font-semibold text-stone-600">No photos yet.</p></Card>}
+              {!photos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet.</h3><p className="mt-2 font-semibold text-stone-600">Add your photos and help start the album.</p><a className="mt-4 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white" href="#guest-upload-card">Add your photos</a></Card>}
             </section>
           )}
           <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
+          <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#eadfce] bg-white/95 p-3 shadow-[0_-12px_30px_rgba(101,62,0,0.08)] backdrop-blur sm:hidden">
+            <a className="inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-extrabold text-white" href="#guest-upload-card">Add photos</a>
+          </div>
         </div>
       )}
       {!event && !error && <p>Loading event...</p>}
