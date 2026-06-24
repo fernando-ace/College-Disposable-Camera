@@ -25,6 +25,7 @@ const {
 } = require("./storage");
 
 const app = express();
+const LEGACY_PHOTO_LIMIT_PER_GUEST = 100;
 
 function normalizeOrigin(value) {
   return value.replace(/\/+$/, "");
@@ -713,14 +714,11 @@ function addDays(date, days) {
 function duplicateEventDefaults(event, overrides = {}) {
   const isMemoryCapsule = event.challenges?.[0]?.type === CHALLENGE_TYPE_MEMORY_CAPSULE;
   const defaultCapsuleReveal = addDays(new Date(), 1);
-  const eventDate = overrides.eventDate ? new Date(overrides.eventDate) : undefined;
   const revealAt = overrides.revealAt ? new Date(overrides.revealAt) : isMemoryCapsule ? defaultCapsuleReveal : undefined;
   return {
     name: String(overrides.name || `${event.name} (Copy)`).trim(),
     description: typeof overrides.description === "string" ? overrides.description.trim() || null : event.description,
-    ...(eventDate ? { eventDate } : {}),
     ...(revealAt ? { revealAt } : {}),
-    photoLimitPerGuest: Number.isInteger(Number(overrides.photoLimitPerGuest)) ? Number(overrides.photoLimitPerGuest) : event.photoLimitPerGuest,
   };
 }
 
@@ -737,7 +735,7 @@ function publicEventIsRevealed(event, now = new Date()) {
 }
 
 function settingsWithInternalTiming(settings, { isMemoryCapsule, now = new Date() }) {
-  const eventDate = settings.eventDate ? new Date(settings.eventDate) : now;
+  const eventDate = now;
   const revealAt = isMemoryCapsule
     ? settings.revealAt
       ? new Date(settings.revealAt)
@@ -1173,7 +1171,7 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
       slug,
       eventDate: settings.eventDate,
       revealAt: settings.revealAt,
-      photoLimitPerGuest: settings.photoLimitPerGuest,
+      photoLimitPerGuest: LEGACY_PHOTO_LIMIT_PER_GUEST,
       eventTemplateSlug: normalizeOptionalSlug(req.body.eventTemplateSlug, EVENT_TEMPLATE_SLUGS),
       promptPackSlug: normalizeOptionalSlug(req.body.promptPackSlug, PROMPT_PACK_SLUGS),
       ...(challengeSetup
@@ -1256,7 +1254,7 @@ app.post("/api/host/events/:eventId/duplicate", requireAuth, async (req, res) =>
       slug,
       eventDate: settings.eventDate,
       revealAt: settings.revealAt,
-      photoLimitPerGuest: settings.photoLimitPerGuest,
+      photoLimitPerGuest: source.photoLimitPerGuest || LEGACY_PHOTO_LIMIT_PER_GUEST,
       eventTemplateSlug: source.eventTemplateSlug,
       promptPackSlug: source.promptPackSlug,
       ...(challengeSetup
@@ -1753,7 +1751,7 @@ app.get("/api/events/:slug/guest-status", async (req, res) => {
     include: { _count: { select: { photos: { where: activePhotoWhere() } } } },
   });
   const used = guest?._count.photos || 0;
-  res.json({ uploadedCount: used, remainingUploads: Math.max(event.photoLimitPerGuest - used, 0), nickname: guest?.nickname || null });
+  res.json({ uploadedCount: used, remainingUploads: null, nickname: guest?.nickname || null });
 });
 
 app.get("/api/events/:slug/my-uploads", async (req, res) => {
@@ -1777,7 +1775,7 @@ app.get("/api/events/:slug/my-uploads", async (req, res) => {
   const used = guest?._count.photos || 0;
   res.json({
     uploadedCount: used,
-    remainingUploads: Math.max(event.photoLimitPerGuest - used, 0),
+    remainingUploads: null,
     photos: (guest?.photos || []).map(photoPayload),
   });
 });
@@ -1839,9 +1837,6 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
     });
 
     const used = await prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, guestId: guest.id }) });
-    if (used >= event.photoLimitPerGuest) {
-      return res.status(403).json({ error: "You have used all uploads for this event" });
-    }
 
     const objectKey = createPhotoObjectKey(event.id, req.file.originalname);
     await uploadPhotoObject({
@@ -1875,7 +1870,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
     res.status(201).json({
       photo: photoPayload(photo),
       uploadedCount: used + 1,
-      remainingUploads: Math.max(event.photoLimitPerGuest - used - 1, 0),
+      remainingUploads: null,
     });
   } catch (error) {
     if (uploadedObjectKey) {

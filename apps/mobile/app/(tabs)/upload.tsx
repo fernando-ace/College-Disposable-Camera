@@ -36,7 +36,6 @@ export default function UploadScreen() {
   const [selectedItemId, setSelectedItemId] = React.useState("");
   const [asset, setAsset] = React.useState<ImagePicker.ImagePickerAsset | null>(null);
   const [uploadedPreviewUri, setUploadedPreviewUri] = React.useState("");
-  const [remaining, setRemaining] = React.useState<number | null>(null);
   const [message, setMessage] = React.useState("");
   const [uploadSuccess, setUploadSuccess] = React.useState<GuestUploadSuccessSummary | null>(null);
   const [error, setError] = React.useState("");
@@ -52,7 +51,6 @@ export default function UploadScreen() {
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
   const isAlbumLocked = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !event.isRevealed;
   const canUpload = Boolean(event && asset && clientId)
-    && remaining !== 0
     && (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT || Boolean(selectedParticipant))
     && (event?.challenge?.type !== CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT || Boolean(selectedPrompt))
     && (event?.challenge?.type !== CHALLENGE_TYPES.EVENT_AWARDS || Boolean(selectedAward));
@@ -78,7 +76,6 @@ export default function UploadScreen() {
       const eventData = await api.getPublicEventBySlug(nextSlug);
       setEvent(eventData.event);
       const status = await api.getGuestStatus(nextSlug, nextClientId);
-      setRemaining(status.remainingUploads);
       if (status.nickname && status.nickname !== "Anonymous guest") setNickname(status.nickname);
     } catch (err) {
       setError(`${(err as Error).message}. Check the event link and your API connection, then try again.`);
@@ -159,8 +156,7 @@ export default function UploadScreen() {
       if (event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT) await setGuestDisplayName(slug, nickname);
       setUploadedPreviewUri(asset.uri);
       setAsset(null);
-      setRemaining(data.remainingUploads);
-      setUploadSuccess(buildGuestUploadSuccessSummary({ event, photo: data.photo, remainingUploads: data.remainingUploads }));
+      setUploadSuccess(buildGuestUploadSuccessSummary({ event, photo: data.photo }));
       setMessage(event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT ? "Photo uploaded. Pick another prompt or upload another angle." : event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? "Photo submitted for the award category." : "Photo uploaded.");
     } catch (err) {
       setError(`${(err as Error).message}. Check your connection or choose a smaller image, then try again.`);
@@ -188,7 +184,6 @@ export default function UploadScreen() {
         action={event ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
             <Badge>{challengeLabel(event.challenge)}</Badge>
-            <Badge tone={remaining === 0 ? "red" : "green"}>{remaining === null ? "Checking uploads" : `${remaining} uploads left`}</Badge>
           </View>
         ) : undefined}
       />
@@ -274,7 +269,6 @@ export default function UploadScreen() {
                   <Card tone="warm" padding={14}>
                     <Badge tone="green">{uploadSuccess.title}</Badge>
                     <SectionHeader title={`Thanks, ${uploadSuccess.guestDisplayName}`} subtitle={`${uploadSuccess.challengeLabel} - ${uploadSuccess.detail}`} />
-                    <Body tone="muted">{uploadSuccess.remainingUploads} uploads left.</Body>
                     {uploadSuccess.revealNote ? <Body tone="muted">{uploadSuccess.revealNote}</Body> : null}
                     {!isAlbumLocked ? (
                       <Link href={`/album/${event.slug}`} asChild>
@@ -291,7 +285,6 @@ export default function UploadScreen() {
             ) : message ? <SuccessState message={message} /> : null}
 
             {error ? <ErrorState message={error} /> : null}
-            {remaining === 0 ? <ErrorState message="You have used all uploads for this event." /> : null}
             {asset ? <Button loading={loading} disabled={!canUpload} onPress={upload}>Upload photo</Button> : null}
             {event && !asset && !uploadedPreviewUri ? <Body tone="muted">{isAlbumLocked ? "Choose a photo when you are ready. The Memory Capsule opens at reveal time." : "Choose a photo when you are ready. It appears in the album after upload."}</Body> : null}
           </Card>

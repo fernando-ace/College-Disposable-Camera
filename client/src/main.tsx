@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { createEventFilmApiClient } from "@eventfilm/api-client";
 import type { AnalyticsSummary, EventAnalyticsSummary, EventRecapResponse, LiveWallResponse } from "@eventfilm/api-client";
 import {
@@ -8,7 +11,6 @@ import {
   CHALLENGE_TYPES,
   COLOR_HUNT_PALETTE,
   PROMPT_PACKS,
-  applyEventTemplateToDraft,
   buildContributorSummary,
   buildGuestChallengeProgress,
   buildGuestUploadSuccessSummary,
@@ -29,7 +31,6 @@ import {
   createPrompt,
   createStarterPrompts,
   draftFromChallenge,
-  getEventTemplate,
   getChallengePack,
   getPromptPack,
   plainModeLabel,
@@ -48,7 +49,7 @@ import {
   validateEventSettingsInput,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, EventTemplateSlug, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, LiveWallDisplayLink, LiveWallMode, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, LiveWallDisplayLink, LiveWallMode, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
 import {
   AppShell,
   BrandMark,
@@ -90,7 +91,7 @@ const LANDING_FAQS = [
   ["Can I control who sees the photos?", "Yes. Hosts can review the album and share the recap when it is ready."],
   ["When and how do we get the recap?", "After the event, share one recap link so everyone has the photos in one place."],
   ["Can I add photos after the event?", "Yes. Keep the guest link open if you want people to add more."],
-  ["Is there a limit on photos?", "Hosts can set a simple per-guest photo limit when they create the event."],
+  ["Is there a limit on photos?", "No. Guests can keep adding photos from the event link."],
 ] as const;
 
 type AuthContextValue = {
@@ -244,7 +245,6 @@ function publicRouteErrorMessage(error: unknown, fallback = "This event link is 
   if (/not found/i.test(message)) return "We could not find this event. Check the link or ask the host to resend it.";
   if (/locked until/i.test(message)) return "This album is still locked until the host's reveal time.";
   if (/failed to fetch|network/i.test(message)) return "EventFilm could not reach the server. Check your connection and try again.";
-  if (/used all uploads/i.test(message)) return "You have used all uploads for this event.";
   if (/photo must|upload a jpg|choose|enter your name|select|prompt|award/i.test(message)) return message;
   return fallback;
 }
@@ -265,15 +265,13 @@ type EventSettingsForm = {
   name: string;
   description: string;
   revealAt?: string;
-  photoLimitPerGuest: string;
 };
 
-function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "description" | "eventDate" | "revealAt" | "photoLimitPerGuest">): EventSettingsForm {
+function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "description" | "revealAt">): EventSettingsForm {
   return {
     name: event.name,
     description: event.description || "",
     revealAt: toDateTimeLocal(new Date(event.revealAt)),
-    photoLimitPerGuest: String(event.photoLimitPerGuest),
   };
 }
 
@@ -288,7 +286,6 @@ function eventSettingsInputFromForm(form: EventSettingsForm, options: { requireR
     name: form.name,
     description: form.description,
     ...(options.requireRevealAt ? { revealAt: safeDateInputToIso(form.revealAt || "") } : {}),
-    photoLimitPerGuest: Number(form.photoLimitPerGuest),
   };
 }
 
@@ -404,13 +401,6 @@ function recordGuestUploadMetadata(slug: string, photo: Photo) {
   const existing = loadGuestUploadMetadata(slug).filter((item) => item.photoId !== photo.id);
   saveGuestUploadMetadata(slug, [nextItem, ...existing]);
   return [nextItem, ...existing];
-}
-
-function uploadLimitCopy(remaining: number | null, limit: number) {
-  if (remaining === null) return "Checking uploads...";
-  if (remaining <= 0) return "No uploads left from this browser.";
-  if (limit <= 10) return `You can add up to ${limit} ${limit === 1 ? "photo" : "photos"}. ${remaining} left.`;
-  return `${remaining} uploads left.`;
 }
 
 function getChallengeParticipantSession(slug: string) {
@@ -659,61 +649,6 @@ function PhotoDetailModal({
   );
 }
 
-const TEMPLATE_DISPLAY_NAMES: Partial<Record<EventTemplateSlug, string>> = {
-  "birthday-party": "Birthday",
-  "family-gathering": "Hangout or pregame",
-  "greek-life-event": "Greek life",
-  "graduation-party": "Graduation",
-  "student-org-event": "Club or team event",
-  "open-custom-event": "Custom",
-};
-
-const CREATE_EVENT_TYPE_CARDS: Array<{ slug: EventTemplateSlug; title: string; body: string; recommended: string; custom?: boolean }> = [
-  { slug: "family-gathering", title: "Hangout or pregame", body: "A quick shared album for a casual night.", recommended: "Simple Album" },
-  { slug: "birthday-party", title: "Birthday", body: "Collect the candids, group pics, and favorite moments.", recommended: "Simple Album" },
-  { slug: "student-org-event", title: "Club or team event", body: "Easy photos for meetings, games, banquets, and team nights.", recommended: "Photo Prompts" },
-  { slug: "greek-life-event", title: "Greek life", body: "For mixers, formals, big/little moments, and chapter events.", recommended: "Awards" },
-  { slug: "graduation-party", title: "Graduation", body: "Save family, friend, campus, and dinner photos in one place.", recommended: "Memory Capsule" },
-  { slug: "open-custom-event", title: "Custom", body: "Start simple and adjust the details yourself.", recommended: "Simple Album", custom: true },
-];
-
-function templateDisplayName(template: { slug: EventTemplateSlug; name: string }) {
-  return TEMPLATE_DISPLAY_NAMES[template.slug] || template.name;
-}
-
-function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
-  return (
-    <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-lg font-bold text-ink">Event type</h2>
-          <p className="mt-1 max-w-2xl text-sm text-muted">Pick a starter, or keep it custom. This only changes the defaults.</p>
-        </div>
-      </div>
-      <div className="mt-4 flex max-w-full min-w-0 gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
-        {CREATE_EVENT_TYPE_CARDS.map((template) => {
-          const selected = draft.eventTemplateSlug === template.slug;
-          return (
-            <button
-              type="button"
-              className={cx(
-                "min-w-[220px] rounded-lg border p-4 text-left transition sm:min-w-0",
-                selected ? "border-coral bg-coral-soft text-ink" : "border-line bg-white text-ink hover:border-coral/40",
-              )}
-              onClick={() => template.custom ? onSkip() : onSelect(template.slug)}
-              key={template.slug}
-            >
-              <span className="block text-base font-bold">{template.title}</span>
-              <span className="mt-1 block text-sm leading-5 text-muted">{template.body}</span>
-              <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-muted ring-1 ring-line">{template.recommended}</span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function PhotoStylePicker({ draft, onSelect }: { draft: ChallengeDraft; onSelect: (type: ChallengeDraft["type"]) => void }) {
   return (
     <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
@@ -743,6 +678,144 @@ function PhotoStylePicker({ draft, onSelect }: { draft: ChallengeDraft; onSelect
   );
 }
 
+function usesPromptPackSetup(type: ChallengeDraft["type"]) {
+  return type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT || type === CHALLENGE_TYPES.EVENT_AWARDS;
+}
+
+function sortableItemId(item: { id?: string }, index: number, prefix: string) {
+  return item.id || `${prefix}-${index}`;
+}
+
+function SortableEditorList<T extends { id?: string }>({
+  items,
+  idPrefix,
+  getHandleLabel,
+  onReorder,
+  children,
+}: {
+  items: T[];
+  idPrefix: string;
+  getHandleLabel: (item: T, index: number) => string;
+  onReorder: (fromIndex: number, toIndex: number) => void;
+  children: (item: T, index: number) => React.ReactNode;
+}) {
+  const [keyboardActiveId, setKeyboardActiveId] = useState<string | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const itemIds = useMemo(() => items.map((item, index) => sortableItemId(item, index, idPrefix)), [idPrefix, items]);
+
+  useEffect(() => {
+    if (keyboardActiveId && !itemIds.includes(keyboardActiveId)) setKeyboardActiveId(null);
+  }, [itemIds, keyboardActiveId]);
+
+  function handleDragEnd(event: DragEndEvent) {
+    if (!event.over || event.active.id === event.over.id) return;
+    const fromIndex = itemIds.indexOf(String(event.active.id));
+    const toIndex = itemIds.indexOf(String(event.over.id));
+    if (fromIndex < 0 || toIndex < 0) return;
+    onReorder(fromIndex, toIndex);
+  }
+
+  function handleKeyboardMove(id: string, direction: -1 | 1) {
+    const fromIndex = itemIds.indexOf(id);
+    const toIndex = fromIndex + direction;
+    if (fromIndex < 0 || toIndex < 0 || toIndex >= itemIds.length) return;
+    onReorder(fromIndex, toIndex);
+  }
+
+  return (
+    <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <SortableContext items={itemIds} strategy={verticalListSortingStrategy}>
+        <div className="mt-3 grid gap-3">
+          {items.map((item, index) => (
+            <SortableEditorRow
+              id={itemIds[index]}
+              index={index}
+              handleLabel={getHandleLabel(item, index)}
+              isKeyboardActive={keyboardActiveId === itemIds[index]}
+              onKeyboardMove={(direction) => handleKeyboardMove(itemIds[index], direction)}
+              onKeyboardToggle={() => setKeyboardActiveId((current) => (current === itemIds[index] ? null : itemIds[index]))}
+              key={itemIds[index]}
+            >
+              {children(item, index)}
+            </SortableEditorRow>
+          ))}
+        </div>
+      </SortableContext>
+    </DndContext>
+  );
+}
+
+function SortableEditorRow({
+  id,
+  index,
+  handleLabel,
+  isKeyboardActive,
+  onKeyboardMove,
+  onKeyboardToggle,
+  children,
+}: {
+  id: string;
+  index: number;
+  handleLabel: string;
+  isKeyboardActive: boolean;
+  onKeyboardMove: (direction: -1 | 1) => void;
+  onKeyboardToggle: () => void;
+  children: React.ReactNode;
+}) {
+  const { attributes, isDragging, listeners, setActivatorNodeRef, setNodeRef, transform, transition } = useSortable({ id });
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLButtonElement>) {
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      onKeyboardToggle();
+      return;
+    }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      onKeyboardMove(event.key === "ArrowDown" ? 1 : -1);
+    }
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={cx(
+        "grid gap-3 rounded-2xl bg-stone-50 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-center",
+        isDragging && "relative z-10 ring-2 ring-amber-300",
+      )}
+    >
+      <div className="flex items-center gap-2">
+        <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-sm font-bold text-stone-600">{index + 1}</span>
+        <button
+          ref={setActivatorNodeRef}
+          type="button"
+          className={cx(
+            "grid h-10 w-10 touch-none place-items-center rounded-lg border border-stone-200 bg-white text-stone-500 transition hover:border-coral/40 hover:text-stone-900 focus:outline-none focus:ring-4 focus:ring-[#ffe1d8] active:cursor-grabbing sm:cursor-grab",
+            isKeyboardActive && "border-coral text-stone-900 ring-4 ring-[#ffe1d8]",
+          )}
+          aria-label={handleLabel}
+          title="Drag to reorder"
+          {...attributes}
+          {...(listeners || {})}
+          aria-pressed={isKeyboardActive}
+          onKeyDown={handleKeyDown}
+        >
+          <CleanIcon name="grip" className="h-5 w-5" />
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function ChallengeSetup({
   draft,
   onChange,
@@ -762,6 +835,7 @@ function ChallengeSetup({
   const [isAwardEditorOpen, setIsAwardEditorOpen] = useState(false);
   const selectedPack = getChallengePack(draft.type);
   const selectedPromptPack = getPromptPack(draft.promptPackSlug);
+  const showPromptPackSetup = usesPromptPackSetup(draft.type);
   const showDuplicateColorWarning = draft.type === CHALLENGE_TYPES.COLOR_HUNT && hasDuplicateParticipantColors(draft.participants);
   const showDuplicatePromptWarning = draft.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && hasDuplicatePrompts(draft.prompts);
   const showDuplicateCategoryWarning = draft.type === CHALLENGE_TYPES.EVENT_AWARDS && hasDuplicateCategories(draft.categories);
@@ -843,14 +917,10 @@ function ChallengeSetup({
     onChange({ ...draft, prompts: draft.prompts.filter((_, promptIndex) => promptIndex !== index).map((prompt, order) => ({ ...prompt, order })) });
   }
 
-  function movePrompt(index: number, direction: -1 | 1) {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= draft.prompts.length) return;
-    const prompts = [...draft.prompts];
-    const [prompt] = prompts.splice(index, 1);
-    prompts.splice(nextIndex, 0, prompt);
+  function reorderPrompts(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
     trackPromptsCustomized("prompt");
-    onChange({ ...draft, prompts: prompts.map((nextPrompt, order) => ({ ...nextPrompt, order })) });
+    onChange({ ...draft, prompts: arrayMove(draft.prompts, fromIndex, toIndex).map((nextPrompt, order) => ({ ...nextPrompt, order })) });
   }
 
   function useStarterPrompts() {
@@ -878,14 +948,10 @@ function ChallengeSetup({
     onChange({ ...draft, categories: draft.categories.filter((_, categoryIndex) => categoryIndex !== index).map((category, order) => ({ ...category, order })) });
   }
 
-  function moveCategory(index: number, direction: -1 | 1) {
-    const nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= draft.categories.length) return;
-    const categories = [...draft.categories];
-    const [category] = categories.splice(index, 1);
-    categories.splice(nextIndex, 0, category);
+  function reorderCategories(fromIndex: number, toIndex: number) {
+    if (fromIndex === toIndex) return;
     trackPromptsCustomized("award");
-    onChange({ ...draft, categories: categories.map((nextCategory, order) => ({ ...nextCategory, order })) });
+    onChange({ ...draft, categories: arrayMove(draft.categories, fromIndex, toIndex).map((nextCategory, order) => ({ ...nextCategory, order })) });
   }
 
   function useDefaultAwards() {
@@ -934,7 +1000,7 @@ function ChallengeSetup({
         </div>
       )}
 
-      {isMoreOptionsOpen ? (
+      {isMoreOptionsOpen && showPromptPackSetup ? (
       <div className={cx(advancedOnly ? "mt-4 rounded-lg border border-line bg-stone-50 p-4" : "mt-5 rounded-xl bg-white p-5")}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -1024,19 +1090,16 @@ function ChallengeSetup({
               <span className="text-sm text-stone-500">{isPromptEditorOpen ? "Hide" : "Show"}</span>
             </button>
             {isPromptEditorOpen && (
-              <div className="mt-3 grid gap-3">
-                {draft.prompts.map((prompt, index) => (
-                  <div className="grid gap-3 rounded-2xl bg-stone-50 p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center" key={prompt.id || index}>
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-sm font-bold text-stone-600">{index + 1}</span>
-                    <TextInput value={prompt.text} onChange={(event) => updatePrompt(index, event.target.value)} placeholder="Photo prompt" />
-                    <div className="flex gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
-                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, -1)} disabled={index === 0}>Up</button>
-                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => movePrompt(index, 1)} disabled={index === draft.prompts.length - 1}>Down</button>
-                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700" onClick={() => removePrompt(index)} disabled={draft.prompts.length <= 1}>Remove</button>
-                    </div>
-                  </div>
-                ))}
-                <SecondaryButton type="button" className="justify-self-start" onClick={addPrompt}>Add prompt</SecondaryButton>
+              <div>
+                <SortableEditorList items={draft.prompts} idPrefix="prompt" getHandleLabel={(_prompt, index) => `Drag to reorder prompt ${index + 1}`} onReorder={reorderPrompts}>
+                  {(prompt, index) => (
+                    <>
+                      <TextInput value={prompt.text} onChange={(event) => updatePrompt(index, event.target.value)} placeholder="Photo prompt" />
+                      <button type="button" className="min-h-10 w-full shrink-0 rounded-full border border-stone-200 bg-white px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700 disabled:text-stone-300 sm:w-auto" onClick={() => removePrompt(index)} disabled={draft.prompts.length <= 1}>Remove</button>
+                    </>
+                  )}
+                </SortableEditorList>
+                <SecondaryButton type="button" className="mt-3 justify-self-start" onClick={addPrompt}>Add prompt</SecondaryButton>
               </div>
             )}
           </div>
@@ -1070,19 +1133,16 @@ function ChallengeSetup({
               <span className="text-sm text-stone-500">{isAwardEditorOpen ? "Hide" : "Show"}</span>
             </button>
             {isAwardEditorOpen && (
-              <div className="mt-3 grid gap-3">
-                {draft.categories.map((category, index) => (
-                  <div className="grid gap-3 rounded-2xl bg-stone-50 p-3 sm:grid-cols-[auto_1fr_auto] sm:items-center" key={category.id || index}>
-                    <span className="grid h-10 w-10 place-items-center rounded-full bg-white text-sm font-bold text-stone-600">{index + 1}</span>
-                    <TextInput value={category.label} onChange={(event) => updateCategory(index, event.target.value)} placeholder="Award category" />
-                    <div className="flex gap-2 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
-                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => moveCategory(index, -1)} disabled={index === 0}>Up</button>
-                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-3 text-sm font-bold text-stone-600 disabled:text-stone-300" onClick={() => moveCategory(index, 1)} disabled={index === draft.categories.length - 1}>Down</button>
-                      <button type="button" className="min-h-10 shrink-0 rounded-full border border-stone-200 bg-white px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700" onClick={() => removeCategory(index)} disabled={draft.categories.length <= 1}>Remove</button>
-                    </div>
-                  </div>
-                ))}
-                <SecondaryButton type="button" className="justify-self-start" onClick={addCategory}>Add category</SecondaryButton>
+              <div>
+                <SortableEditorList items={draft.categories} idPrefix="award" getHandleLabel={(_category, index) => `Drag to reorder award category ${index + 1}`} onReorder={reorderCategories}>
+                  {(category, index) => (
+                    <>
+                      <TextInput value={category.label} onChange={(event) => updateCategory(index, event.target.value)} placeholder="Award category" />
+                      <button type="button" className="min-h-10 w-full shrink-0 rounded-full border border-stone-200 bg-white px-4 text-sm font-bold text-stone-600 hover:border-red-300 hover:text-red-700 disabled:text-stone-300 sm:w-auto" onClick={() => removeCategory(index)} disabled={draft.categories.length <= 1}>Remove</button>
+                    </>
+                  )}
+                </SortableEditorList>
+                <SecondaryButton type="button" className="mt-3 justify-self-start" onClick={addCategory}>Add category</SecondaryButton>
               </div>
             )}
           </div>
@@ -1452,7 +1512,6 @@ function RepeatEventActions({ event, lifecycle, compact = false, onDuplicated }:
           name: duplicateDefaults.name,
           description: duplicateDefaults.description,
           ...(duplicateDefaults.revealAt ? { revealAt: duplicateDefaults.revealAt } : {}),
-          photoLimitPerGuest: duplicateDefaults.photoLimitPerGuest,
         },
         auth.token,
       );
@@ -2084,9 +2143,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 function Dashboard() {
   const auth = useAuth();
   const [events, setEvents] = useState<EventSummary[]>([]);
-  const [activeTab, setActiveTab] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const [canViewFounder, setCanViewFounder] = useState(false);
-  const [copyStatus, setCopyStatus] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -2097,46 +2155,29 @@ function Dashboard() {
     setCanViewFounder(Boolean(auth.user?.isFounder));
   }, [auth.token, auth.user?.isFounder]);
 
-  const eventRows = events.map((event) => ({ event, lifecycle: deriveEventLifecycleStatus(event) }));
-  const upcomingEvents = eventRows.filter((row) => row.lifecycle.status === "draft_or_upcoming").length;
-  const liveEvents = eventRows.filter((row) => row.lifecycle.phase === "during").length;
-  const recapReady = eventRows.filter((row) => row.lifecycle.phase === "after").length;
+  const sortedEvents = useMemo(
+    () => [...events].sort((first, second) => first.name.localeCompare(second.name)),
+    [events],
+  );
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredEvents = useMemo(() => {
+    if (!normalizedQuery) return sortedEvents;
+    return sortedEvents.filter((event) => [
+      event.name,
+      event.description || "",
+      plainModeLabel(event.challenge?.type || "NONE"),
+      challengeLabel(event.challenge),
+    ].join(" ").toLowerCase().includes(normalizedQuery));
+  }, [normalizedQuery, sortedEvents]);
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
-  const defaultTab = liveEvents ? "live" : recapReady ? "recap" : upcomingEvents ? "upcoming" : "past";
-  const selectedTab = activeTab || defaultTab;
-  const filteredRows = eventRows.filter(({ lifecycle }) => {
-    if (selectedTab === "upcoming") return lifecycle.status === "draft_or_upcoming";
-    if (selectedTab === "live") return lifecycle.phase === "during";
-    if (selectedTab === "recap") return lifecycle.phase === "after";
-    return lifecycle.status === "archived_or_past";
-  });
-
-  async function copyEventLink(event: EventSummary) {
-    try {
-      await copyText(event.eventLink);
-      setCopyStatus(`${event.name} guest link copied`);
-    } catch (err) {
-      setCopyStatus((err as Error).message);
-    }
-  }
-
-  function primaryAction(event: EventSummary, lifecycle: EventLifecycle) {
-    if (lifecycle.phase === "after" && event.recapLink) {
-      return <a className="inline-flex min-h-10 items-center justify-center rounded-lg bg-coral px-4 py-2 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Share recap</a>;
-    }
-    if (lifecycle.phase === "during" && event.liveWallLink) {
-      return <a className="inline-flex min-h-10 items-center justify-center rounded-lg bg-coral px-4 py-2 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a>;
-    }
-    return <button type="button" className="inline-flex min-h-10 items-center justify-center rounded-lg bg-coral px-4 py-2 text-sm font-bold text-white" onClick={() => copyEventLink(event)}>Share guest link</button>;
-  }
 
   return (
     <AppShell userEmail={auth.user?.email} canViewFounder={canViewFounder}>
       <div className="rounded-xl border border-line bg-white p-6 shadow-sm sm:p-8">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <h1 className="font-serif-display text-4xl font-bold text-ink">Welcome back</h1>
-            <p className="mt-3 max-w-2xl text-muted">You have {upcomingEvents} {upcomingEvents === 1 ? "event" : "events"} coming up and {recapReady} {recapReady === 1 ? "recap" : "recaps"} ready to share.</p>
+            <h1 className="font-serif-display text-4xl font-bold text-ink">Event library</h1>
+            <p className="mt-3 max-w-2xl text-muted">Open an event to manage guest links, QR posters, Photo Wall, recap, downloads, and settings.</p>
             <p className="mt-2 text-sm font-semibold text-stone-500">{auth.user?.email}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -2151,73 +2192,77 @@ function Dashboard() {
         ) : null}
       </div>
       {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-      <div className="mt-6 grid gap-4 sm:grid-cols-3">
-        {[
-          ["Ready", upcomingEvents],
-          ["Photos", totalPhotos],
-          ["Recaps", recapReady],
-        ].map(([label, value]) => (
-          <div className="rounded-xl border border-line bg-white px-5 py-4 shadow-sm" key={label}>
-            <p className="text-sm font-semibold text-muted">{label}</p>
-            <p className="mt-1 text-2xl font-bold text-ink">{value}</p>
-          </div>
-        ))}
-      </div>
       <section className="mt-8">
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <h2 className="font-serif-display text-3xl font-bold text-ink">Your events</h2>
-          <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
-            <div className="flex min-w-max gap-2">
-              {[
-                ["upcoming", "Ready"],
-                ["live", "Live now"],
-                ["recap", "Recap ready"],
-                ["past", "Past"],
-              ].map(([key, label]) => (
-                <button type="button" className={cx("rounded-lg px-4 py-2 text-sm font-semibold", selectedTab === key ? "bg-coral text-white" : "bg-white text-muted ring-1 ring-line hover:text-ink")} onClick={() => setActiveTab(key)} key={key}>{label}</button>
-              ))}
-            </div>
+        <div className="mb-4 grid gap-3 rounded-xl border border-line bg-white p-4 shadow-sm lg:grid-cols-[1fr_auto] lg:items-center">
+          <label className="grid gap-2 text-sm font-bold text-stone-700">
+            Search events
+            <input
+              className="h-12 rounded-lg border border-line bg-white px-4 text-base font-semibold text-ink outline-none transition placeholder:text-stone-400 focus:border-coral focus:ring-4 focus:ring-coral-soft"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search by event name or photo setup"
+              aria-label="Search events"
+            />
+          </label>
+          <div className="text-sm font-semibold text-muted lg:text-right">
+            <p>{filteredEvents.length} of {events.length} {events.length === 1 ? "event" : "events"}</p>
+            <p>{totalPhotos} {totalPhotos === 1 ? "photo" : "photos"} across your library</p>
           </div>
         </div>
-        {copyStatus ? <p className="mb-4 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{copyStatus}</p> : null}
         <div className="grid gap-5 lg:grid-cols-2">
-          {filteredRows.map(({ event, lifecycle }) => (
-            <div className="overflow-hidden rounded-xl border border-line bg-white shadow-sm transition hover:border-coral/40" key={event.id}>
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <LifecycleBadge lifecycle={lifecycle} />
-                    <Link to={`/dashboard/events/${event.id}`}><h3 className="mt-3 text-xl font-bold text-ink">{event.name}</h3></Link>
-                    <p className="mt-1 text-sm text-stone-600">Photo setup: {plainModeLabel(event.challenge?.type || "NONE")}</p>
+          {filteredEvents.map((event) => {
+            const previewPhotos = (event.previewPhotos || []).slice(0, 4);
+            const setupLabel = plainModeLabel(event.challenge?.type || "NONE");
+            return (
+              <article className="overflow-hidden rounded-xl border border-line bg-white shadow-sm transition hover:border-coral/40" key={event.id}>
+                <div className="grid gap-0 sm:grid-cols-[180px_minmax(0,1fr)]">
+                  <div className="grid min-h-40 grid-cols-2 gap-1 bg-stone-100 p-2">
+                    {previewPhotos.length ? (
+                      previewPhotos.map((photo) => (
+                        <img
+                          className="h-full min-h-16 w-full rounded-lg object-cover"
+                          src={assetUrl(photo.previewUrl || photo.url)}
+                          alt={photo.originalFilename || `${event.name} photo`}
+                          key={photo.id}
+                        />
+                      ))
+                    ) : (
+                      <div className="col-span-2 grid min-h-36 place-items-center rounded-lg bg-[#fffaf6] text-muted">
+                        <div className="text-center">
+                          <CleanIcon name="image" className="mx-auto h-8 w-8" />
+                          <p className="mt-2 text-sm font-semibold">No photos yet</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <div className="rounded-lg bg-coral-soft px-4 py-3 text-center">
-                    <p className="text-2xl font-bold text-coral">{event.photoCount}</p>
-                    <p className="text-xs font-semibold text-muted">Photos</p>
-                  </div>
-                </div>
-                <p className="mt-3 text-sm font-semibold text-stone-600">{buildHostNextStep(event)}</p>
-                {lifecycle.status === "draft_or_upcoming" ? <p className="mt-1 text-sm font-semibold text-[#653e00]">Share this so guests can start adding photos.</p> : null}
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {primaryAction(event, lifecycle)}
-                  <details className="relative">
-                    <summary className="inline-flex min-h-10 cursor-pointer list-none items-center justify-center rounded-[1rem] border border-[#eadfce] bg-[#fffaf6] px-4 py-2 text-sm font-bold text-stone-700">More</summary>
-                    <div className="absolute right-0 z-20 mt-2 grid w-44 gap-1 rounded-[1rem] border border-[#eadfce] bg-white p-2 text-sm font-bold shadow-xl">
-                      <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to={`/dashboard/events/${event.id}`}>View event</Link>
-                      <button type="button" className="rounded-lg px-3 py-2 text-left text-stone-700 hover:bg-[#fffaf6]" onClick={() => copyEventLink(event)}>Copy guest link</button>
-                      <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to="/dashboard/events/new">Create similar</Link>
-                      <Link className="rounded-lg px-3 py-2 text-stone-700 hover:bg-[#fffaf6]" to={`/dashboard/events/${event.id}?tab=recap`}>Download photos</Link>
-                      <Link className="rounded-lg px-3 py-2 text-red-700 hover:bg-red-50" to={`/dashboard/events/${event.id}?tab=settings`}>Delete event</Link>
+                  <div className="flex min-w-0 flex-col p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <Link to={`/dashboard/events/${event.id}`}><h3 className="truncate text-xl font-bold text-ink">{event.name}</h3></Link>
+                        <p className="mt-1 text-sm font-semibold text-stone-600">Photo setup: {setupLabel}</p>
+                      </div>
+                      <div className="shrink-0 rounded-lg bg-coral-soft px-3 py-2 text-center">
+                        <p className="text-xl font-bold text-coral tabular-nums">{event.photoCount}</p>
+                        <p className="text-xs font-semibold text-muted">{event.photoCount === 1 ? "photo" : "photos"}</p>
+                      </div>
                     </div>
-                  </details>
+                    {event.description ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted">{event.description}</p> : <p className="mt-3 text-sm leading-6 text-muted">Open this event to manage links, photos, recap, and settings.</p>}
+                    <div className="mt-auto pt-5">
+                      <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to={`/dashboard/events/${event.id}`}>
+                        Open event
+                      </Link>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-          ))}
+              </article>
+            );
+          })}
         </div>
-        {!filteredRows.length && events.length ? (
+        {!filteredEvents.length && events.length ? (
           <Card className="mt-5 bg-[#fffaf3] text-center">
-            <h3 className="font-display text-2xl font-bold text-stone-950">No events in this view</h3>
-            <p className="mx-auto mt-2 max-w-xl text-stone-600">Switch tabs to find the next event that needs attention.</p>
+            <h3 className="font-display text-2xl font-bold text-stone-950">No events match that search</h3>
+            <p className="mx-auto mt-2 max-w-xl text-stone-600">Try a name, description, or photo setup.</p>
+            <button className="mt-5 inline-flex min-h-11 items-center justify-center rounded-lg border border-line bg-white px-5 py-3 text-sm font-bold text-ink hover:bg-stone-50" type="button" onClick={() => setSearchQuery("")}>Clear search</button>
           </Card>
         ) : null}
         {!events.length && (
@@ -2746,49 +2791,23 @@ function CreateEvent() {
     name: "",
     description: "",
     revealAt: toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000)),
-    photoLimitPerGuest: "10",
   });
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    trackAnalytics("event_template_viewed", { path: "/dashboard/events/new", metadata: { surface: "create_event" } });
-  }, []);
-
   function update(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
   }
 
-  function selectTemplate(templateSlug: EventTemplateSlug) {
-    const template = getEventTemplate(templateSlug);
-    setChallengeDraft((current) => applyEventTemplateToDraft(templateSlug, current));
-    if (template?.suggestedUploadLimit) {
-      setForm((current) => ({ ...current, photoLimitPerGuest: String(template.suggestedUploadLimit) }));
-    }
-    setAdvancedOpen(false);
-    setError("");
-    trackAnalytics("event_template_selected", { path: "/dashboard/events/new", metadata: { templateSlug, mode: template?.recommendedMode || "NONE", promptPackSlug: template?.promptPackSlug || null } });
-  }
-
-  function skipTemplate() {
-    setChallengeDraft({ ...createEmptyChallengeDraft(), eventTemplateSlug: "open-custom-event", promptPackSlug: "custom" });
-    setAdvancedOpen(false);
-    setError("");
-    trackAnalytics("template_skipped", { path: "/dashboard/events/new", metadata: { templateSlug: "open-custom-event" } });
-  }
-
-  const selectedTemplate = getEventTemplate(challengeDraft.eventTemplateSlug);
   const selectedMode = getChallengePack(challengeDraft.type);
   const selectedPromptPack = getPromptPack(challengeDraft.promptPackSlug);
-  const photoLimit = Number(form.photoLimitPerGuest);
+  const showPromptPackSetup = usesPromptPackSetup(challengeDraft.type);
   const challengeValidationError = validateChallengeDraft(challengeDraft);
   const disabledReason = !form.name.trim()
     ? "Add an event name to create your event."
-    : !Number.isInteger(photoLimit) || photoLimit < 1
-      ? "Set a photo limit of at least 1."
-      : challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE && Number.isNaN(new Date(form.revealAt).getTime())
+    : challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE && Number.isNaN(new Date(form.revealAt).getTime())
         ? "Choose a valid reveal time."
         : challengeValidationError;
   const canCreate = !disabledReason;
@@ -2817,7 +2836,6 @@ function CreateEvent() {
           name: form.name.trim(),
           description: form.description.trim(),
           ...(challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? { revealAt: new Date(form.revealAt).toISOString() } : {}),
-          photoLimitPerGuest: photoLimit,
           eventTemplateSlug: challengeDraft.eventTemplateSlug,
           promptPackSlug: challengeDraft.promptPackSlug,
           challenge,
@@ -2829,9 +2847,6 @@ function CreateEvent() {
         eventSlug: data.event.slug,
         metadata,
       });
-      if (challengeDraft.eventTemplateSlug && challengeDraft.eventTemplateSlug !== "open-custom-event") {
-        trackAnalytics("event_created_from_template", { eventId: data.event.id, eventSlug: data.event.slug, metadata });
-      }
       navigate(`/dashboard/events/${data.event.id}?created=1`);
     } catch (err) {
       setError((err as Error).message);
@@ -2861,19 +2876,13 @@ function CreateEvent() {
                   Description <span className="font-semibold text-stone-500">(optional)</span>
                   <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
                 </label>
-                <div className="grid gap-4 sm:grid-cols-2">
+                {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? (
                   <label className="grid gap-2 text-sm font-bold text-stone-700">
-                    Photo limit per guest
-                    <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
+                    Reveal time
+                    <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
+                    <span className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this time.</span>
                   </label>
-                  {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? (
-                    <label className="grid gap-2 text-sm font-bold text-stone-700">
-                      Reveal time
-                      <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
-                      <span className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this time.</span>
-                    </label>
-                  ) : null}
-                </div>
+                ) : null}
                 {error ? <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}
                 <div className="rounded-lg bg-[#fffaf6] p-3 text-sm font-semibold text-stone-700 lg:hidden">
                   {disabledReason || "Ready to create. You will get the guest link, QR poster, Photo Wall, and recap next."}
@@ -2881,7 +2890,6 @@ function CreateEvent() {
               </div>
             </Card>
 
-            <TemplateLibrary draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} />
             <PhotoStylePicker draft={challengeDraft} onSelect={selectPhotoStyle} />
 
             <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
@@ -2891,7 +2899,9 @@ function CreateEvent() {
                   <p className="mt-1 text-sm text-muted">
                     {challengeDraft.type === "NONE"
                       ? "Simple Album is ready. Guests can add photos without extra choices."
-                      : `${plainModeLabel(challengeDraft.type)} uses ${selectedPromptPack.name}. You can customize it now or after creating the event.`}
+                      : showPromptPackSetup
+                        ? `${plainModeLabel(challengeDraft.type)} uses ${selectedPromptPack.name}. You can customize it now or after creating the event.`
+                        : `${selectedMode.name} setup is ready. You can customize it now or after creating the event.`}
                   </p>
                 </div>
                 {challengeDraft.type !== "NONE" ? (
@@ -2917,11 +2927,9 @@ function CreateEvent() {
               <h2 className="text-lg font-bold text-ink">Launch summary</h2>
               <div className="mt-4 grid gap-3 text-sm text-stone-700">
                 <p><strong className="text-stone-950">Event:</strong> {form.name.trim() || "Untitled event"}</p>
-                <p><strong className="text-stone-950">Template:</strong> {selectedTemplate ? templateDisplayName(selectedTemplate) : "Custom"}</p>
                 <p><strong className="text-stone-950">Photo style:</strong> {plainModeLabel(challengeDraft.type)}</p>
-                {challengeDraft.type !== "NONE" ? <p><strong className="text-stone-950">Prompts:</strong> {selectedPromptPack.name}</p> : null}
+                {showPromptPackSetup ? <p><strong className="text-stone-950">Prompts:</strong> {selectedPromptPack.name}</p> : null}
                 {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <p><strong className="text-stone-950">Reveal:</strong> {formatDateTime(form.revealAt)}</p> : null}
-                <p><strong className="text-stone-950">Uploads:</strong> {form.photoLimitPerGuest || "0"} per guest</p>
               </div>
               <div className={cx("mt-5 rounded-lg p-3 text-sm font-semibold", canCreate ? "bg-green-50 text-green-800" : "bg-[#fffaf6] text-[#653e00]")}>
                 {disabledReason || "Ready to create. You can share the QR link after setup."}
@@ -3163,6 +3171,7 @@ function ManageEvent() {
   const challengeColors = Array.from(new Map(challengeParticipants.map((participant) => [participant.colorSlug, participant])).values());
   const challengePrompts = promptsFromChallenge(event?.challenge);
   const challengeAwards = categoriesFromChallenge(event?.challenge);
+  const showPromptPackSetup = usesPromptPackSetup(challengeDraft.type);
   const filteredPhotos = event?.photos.filter((photo) => {
     if (galleryFilter === "all") return true;
     if (galleryFilter === "visible") return isPhotoVisible(photo);
@@ -3518,15 +3527,9 @@ function ManageEvent() {
                       {visibleSettingsFieldErrors.revealAt ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.revealAt}</span> : null}
                     </label>
                   ) : null}
-                  <label className="grid gap-2 text-sm font-bold text-stone-700">
-                    Photo limit per guest
-                    <TextInput type="number" min="1" max="100" value={settingsForm.photoLimitPerGuest} onChange={(formEvent) => updateSettingsField("photoLimitPerGuest", formEvent.target.value)} required />
-                    <span className="text-xs font-semibold text-stone-500">Keep this high for casual events and lower for games or prompts.</span>
-                    {visibleSettingsFieldErrors.photoLimitPerGuest ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.photoLimitPerGuest}</span> : null}
-                  </label>
                   <div className="grid gap-3 rounded-[1rem] bg-[#fffaf6] p-4 text-sm text-stone-700 sm:grid-cols-2">
                     <p><strong className="block text-stone-950">Photo setup</strong>{plainModeLabel(challengeDraft.type)}</p>
-                    <p><strong className="block text-stone-950">Photo prompts</strong>{getPromptPack(challengeDraft.promptPackSlug).name}</p>
+                    {showPromptPackSetup ? <p><strong className="block text-stone-950">Photo prompts</strong>{getPromptPack(challengeDraft.promptPackSlug).name}</p> : null}
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                     <div>
@@ -4158,7 +4161,6 @@ function GuestEvent() {
   const returnedTrackedRef = useRef(false);
   const nameChoiceTrackedRef = useRef(false);
   const progressTrackedRef = useRef(false);
-  const [remaining, setRemaining] = useState<number | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [myUploads, setMyUploads] = useState<Photo[]>([]);
   const [localUploads, setLocalUploads] = useState<GuestUploadLocalMetadata[]>(() => loadGuestUploadMetadata(slug));
@@ -4207,8 +4209,7 @@ function GuestEvent() {
         metadata: { mode: eventData.event.challenge?.type || "NONE", hasChallenge: Boolean(eventData.event.challenge) },
       });
     }
-    const status = await api<{ remainingUploads: number; nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
-    setRemaining(status.remainingUploads);
+    const status = await api<{ nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
     if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && status.nickname && !nickname) setNickname(status.nickname);
     const myUploadData = await eventFilmApi.getGuestMyUploads(slug, session.clientId);
     setMyUploads(myUploadData.photos);
@@ -4355,19 +4356,17 @@ function GuestEvent() {
     setLoading(true);
     trackAnalytics("photo_upload_started", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
     try {
-      const data = await api<{ photo: Photo; remainingUploads: number }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
+      const data = await api<{ photo: Photo }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
       trackAnalytics("photo_upload_succeeded", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
       setFile(null);
-      setRemaining(data.remainingUploads);
       const nextLocalUploads = recordGuestUploadMetadata(slug, data.photo);
       setLocalUploads(nextLocalUploads);
-      setUploadSuccess(buildGuestUploadSuccessSummary({ event: event as PublicEvent, photo: data.photo, remainingUploads: data.remainingUploads }));
+      setUploadSuccess(buildGuestUploadSuccessSummary({ event: event as PublicEvent, photo: data.photo }));
       setUploadSuccessPhoto(data.photo);
       setMessage("Photo added.");
       await load();
     } catch (err) {
-      const message = (err as Error).message || "Upload failed. Check your connection and try again.";
-      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: message.includes("used all uploads") ? "event_limit" : "error" } });
+      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: "error" } });
       setError(publicRouteErrorMessage(err, "Upload failed. Check your connection and try again."));
     } finally {
       setLoading(false);
@@ -4386,8 +4385,6 @@ function GuestEvent() {
   const unavailableUploads = localUploads.filter((item) => !visibleMyUploadIds.has(item.photoId));
   const compactPromptItems = showAllChallengeItems ? guestPrompts : guestPrompts.slice(0, 3);
   const compactAwardItems = showAllChallengeItems ? guestAwards : guestAwards.slice(0, 3);
-  const shouldMentionLimit = remaining === 0 || event?.photoLimitPerGuest === undefined || event.photoLimitPerGuest <= 10 || (remaining !== null && remaining <= 10);
-
   useEffect(() => {
     if (!event || !guestProgress || progressTrackedRef.current) return;
     progressTrackedRef.current = true;
@@ -4693,8 +4690,6 @@ function GuestEvent() {
                       <span className="text-xs font-semibold text-stone-500">Leave blank to post as Anonymous guest.</span>
                     </label>
                   ) : null}
-                  {shouldMentionLimit ? <p className="mt-4 rounded-lg bg-[#fffaf6] p-3 text-sm font-bold text-stone-700">{uploadLimitCopy(remaining, event.photoLimitPerGuest)}</p> : null}
-                  {remaining === 0 ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">You have used all uploads for this event.</p> : null}
                   <div className="mt-4 grid gap-3 grid-cols-2">
                     <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#d84d32]">
                       <Icon>photo_camera</Icon>
@@ -4751,7 +4746,7 @@ function GuestEvent() {
                     trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
                     setError("");
                   }}>Try again</SecondaryButton> : null}
-                  <Button className="mt-5 w-full rounded-lg" disabled={loading || remaining === 0}>{loading ? "Adding..." : "Add photos"}</Button>
+                  <Button className="mt-5 w-full rounded-lg" disabled={loading}>{loading ? "Adding..." : "Add photos"}</Button>
                 </form>
 
                 {guestProgress ? (

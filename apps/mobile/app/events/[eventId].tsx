@@ -92,15 +92,13 @@ type EventSettingsForm = {
   name: string;
   description: string;
   revealAt?: Date;
-  photoLimitPerGuest: string;
 };
 
-function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "description" | "eventDate" | "revealAt" | "photoLimitPerGuest">): EventSettingsForm {
+function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "description" | "revealAt">): EventSettingsForm {
   return {
     name: event.name,
     description: event.description || "",
     revealAt: new Date(event.revealAt),
-    photoLimitPerGuest: String(event.photoLimitPerGuest),
   };
 }
 
@@ -109,7 +107,6 @@ function eventSettingsInputFromForm(form: EventSettingsForm, options: { requireR
     name: form.name,
     description: form.description,
     ...(options.requireRevealAt && form.revealAt ? { revealAt: form.revealAt.toISOString() } : {}),
-    photoLimitPerGuest: Number(form.photoLimitPerGuest),
   };
 }
 
@@ -416,9 +413,6 @@ export default function EventDetailScreen() {
                   <Field value={settingsForm.description} onChangeText={(value) => updateSettingsField("description", value)} multiline />
                 </FieldGroup>
                 {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && settingsForm.revealAt ? <DateTimeField label="Reveal time" helper="Memory Capsule keeps the album hidden until this reveal time." value={settingsForm.revealAt} onChange={(value) => updateSettingsField("revealAt", value)} error={visibleSettingsFieldErrors.revealAt} /> : null}
-                <FieldGroup label="Photo limit per guest" helper="Keep this high for casual events and lower for games or prompts." error={visibleSettingsFieldErrors.photoLimitPerGuest}>
-                  <Field keyboardType="number-pad" value={settingsForm.photoLimitPerGuest} onChangeText={(value) => updateSettingsField("photoLimitPerGuest", value)} />
-                </FieldGroup>
                 {settingsStatus ? <Body tone={settingsStatus.includes("saved") || settingsStatus.includes("canceled") ? "success" : "danger"}>{settingsStatus}</Body> : null}
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                   <View style={{ flex: 1, minWidth: 132 }}>
@@ -694,7 +688,6 @@ function RepeatEventPanel({ event, lifecycle }: { event: EventSummary; lifecycle
         name: duplicateDefaults.name,
         description: duplicateDefaults.description,
         ...(duplicateDefaults.revealAt ? { revealAt: duplicateDefaults.revealAt } : {}),
-        photoLimitPerGuest: duplicateDefaults.photoLimitPerGuest,
       });
       api.trackAnalyticsEvent({
         name: "duplicate_event_created",

@@ -157,7 +157,7 @@ test("guest my uploads helper sends clientId query", async () => {
     baseUrl: "https://api.eventfilm.test/",
     fetchImpl: (async (url) => {
       calls.push(String(url));
-      return new Response(JSON.stringify({ uploadedCount: 1, remainingUploads: 4, photos: [] }), {
+      return new Response(JSON.stringify({ uploadedCount: 1, remainingUploads: null, photos: [] }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -165,7 +165,7 @@ test("guest my uploads helper sends clientId query", async () => {
   });
 
   const data = await client.getGuestMyUploads("spring formal", "client 1");
-  assert.deepEqual(data, { uploadedCount: 1, remainingUploads: 4, photos: [] });
+  assert.deepEqual(data, { uploadedCount: 1, remainingUploads: null, photos: [] });
   assert.equal(calls[0], "https://api.eventfilm.test/api/events/spring%20formal/my-uploads?clientId=client%201");
 });
 
@@ -206,9 +206,7 @@ test("create event sends template and prompt pack slugs", async () => {
 
   await client.createEvent({
     name: "Birthday",
-    eventDate: "2026-01-01T00:00:00.000Z",
     revealAt: "2026-01-02T00:00:00.000Z",
-    photoLimitPerGuest: 10,
     eventTemplateSlug: "birthday-party",
     promptPackSlug: "birthday",
     challenge: null,
@@ -248,9 +246,7 @@ test("update host event settings patches the encoded host event endpoint", async
   const input = {
     name: "Updated Formal",
     description: "New host note",
-    eventDate: "2026-06-22T12:00:00.000Z",
     revealAt: "2026-06-22T16:00:00.000Z",
-    photoLimitPerGuest: 8,
   };
   const client = createEventFilmApiClient({
     baseUrl: "https://api.eventfilm.test/",

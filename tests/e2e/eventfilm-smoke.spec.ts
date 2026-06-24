@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { APIRequestContext } from "@playwright/test";
+import type { APIRequestContext, Locator, Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
 
 const apiUrl = (process.env.BROWSER_SMOKE_API_URL || process.env.EVENTFILM_API_URL || "http://localhost:4000").replace(/\/+$/, "");
@@ -127,6 +127,20 @@ function cleanupCreatedSmokeEvent(eventId: string) {
   execFileSync(process.execPath, ["-e", script, eventId], { cwd: process.cwd(), stdio: "pipe" });
 }
 
+async function expectFirstEditorItemKeyboardReorders(page: Page, handleName: string, inputs: Locator) {
+  await expect(inputs.nth(1)).toBeVisible();
+  const firstValue = await inputs.nth(0).inputValue();
+  const secondValue = await inputs.nth(1).inputValue();
+
+  await page.getByRole("button", { name: handleName }).focus();
+  await page.keyboard.press("Space");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Space");
+
+  await expect(inputs.nth(0)).toHaveValue(secondValue);
+  await expect(inputs.nth(1)).toHaveValue(firstValue);
+}
+
 test.describe("EventFilm browser smoke", () => {
   test.beforeEach(async ({ page }) => {
     const consoleProblems: string[] = [];
@@ -247,13 +261,30 @@ test.describe("EventFilm browser smoke", () => {
         const pageErrorText = await page.locator("form .text-red-700").first().textContent().catch(() => null);
         throw new Error(`${(error as Error).message}\n${summarizeBrowserLoginFailure(browserLoginDiagnostic, pageErrorText)}`);
       }
-      await expect(page.getByRole("heading", { name: "Welcome back" })).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Event library" })).toBeVisible();
+      await expect(page.getByLabel("Search events")).toBeVisible();
 
       await page.getByRole("link", { name: "Create event" }).first().click();
       await expect(page.getByRole("heading", { name: "Create an event" })).toBeVisible();
-      await expect(page.locator("body")).toContainText("Hangout or pregame");
-      await page.getByRole("button", { name: /Hangout or pregame/i }).click();
+      await expect(page.locator("body")).not.toContainText("Event type");
+      await expect(page.getByRole("heading", { name: "Photo style" })).toBeVisible();
       await expect(page.locator("body")).toContainText(/Simple Album|Photo Prompts|Optional setup/);
+
+      await page.getByRole("button", { name: /^Photo Prompts/ }).click();
+      await page.getByRole("button", { name: "Customize" }).click();
+      await page.getByRole("button", { name: /Edit prompts/ }).click();
+      await expect(page.getByRole("button", { name: /^Up$/ })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Down$/ })).toHaveCount(0);
+      await expectFirstEditorItemKeyboardReorders(page, "Drag to reorder prompt 1", page.getByPlaceholder("Photo prompt"));
+
+      await page.getByRole("button", { name: /^Awards/ }).click();
+      await page.getByRole("button", { name: "Customize" }).click();
+      await page.getByRole("button", { name: /Edit award categories/ }).click();
+      await expect(page.getByRole("button", { name: /^Up$/ })).toHaveCount(0);
+      await expect(page.getByRole("button", { name: /^Down$/ })).toHaveCount(0);
+      await expectFirstEditorItemKeyboardReorders(page, "Drag to reorder award category 1", page.getByPlaceholder("Award category"));
+
+      await page.getByRole("button", { name: /^Simple Album/ }).click();
 
       const eventName = `Browser Smoke ${Date.now()}`;
       await page.getByLabel("Event name").fill(eventName);
@@ -334,7 +365,7 @@ test.describe("EventFilm browser smoke", () => {
     }
   });
 
-  test("seeded host event shows lifecycle share kit and ordinary host help", async ({ page, request }) => {
+  test("seeded host event shows event library, share kit, and ordinary host help", async ({ page, request }) => {
     const health = await request.get(`${apiUrl}/api/health`);
     test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
 
@@ -346,9 +377,7 @@ test.describe("EventFilm browser smoke", () => {
     const originalSettings = {
       name: eventPayload.event.name,
       description: eventPayload.event.description || null,
-      eventDate: eventPayload.event.eventDate,
       revealAt: eventPayload.event.revealAt,
-      photoLimitPerGuest: eventPayload.event.photoLimitPerGuest,
     };
 
     const login = await request.post(`${apiUrl}/api/auth/login`, {
@@ -430,15 +459,20 @@ test.describe("EventFilm browser smoke", () => {
         data: {
           ...originalSettings,
           name: updatedName,
-          eventDate: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
           revealAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         },
       });
       await page.goto("/dashboard");
-      await expect(page.getByRole("link", { name: "Open Photo Wall" }).first()).toBeVisible();
+      await expect(page.getByRole("heading", { name: "Event library" })).toBeVisible();
+      await expect(page.getByLabel("Search events")).toBeVisible();
+      await expect(page.getByText(updatedName).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: "Open event" }).first()).toBeVisible();
+      await expect(page.getByRole("link", { name: "Open Photo Wall" })).toHaveCount(0);
       await expect(page.getByRole("button", { name: "Share guest link" })).toHaveCount(0);
-      await page.getByText("More").first().click();
-      await expect(page.getByRole("button", { name: "Copy guest link" }).first()).toBeVisible();
+      await expect(page.getByText("Recap ready")).toHaveCount(0);
+      await expect(page.getByText("More")).toHaveCount(0);
+      await page.getByLabel("Search events").fill(updatedName);
+      await expect(page.getByText(`${updatedName}`)).toBeVisible();
 
       await page.goto(`/dashboard/events/${eventId}?tab=recap`);
       await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
@@ -447,19 +481,6 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("button", { name: "Copy recap link" })).toBeVisible();
       await expect(page.getByRole("button", { name: "Download photos" })).toBeVisible();
       await expect(page.locator("body")).toContainText("Before you share it");
-
-      await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
-        headers: { Authorization: `Bearer ${auth.token}` },
-        data: {
-          ...originalSettings,
-          name: updatedName,
-          eventDate: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
-          revealAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
-        },
-      });
-      await page.goto(`/dashboard/events/${eventId}`);
-      await expect(page.getByRole("button", { name: "Share recap" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Copy recap link" }).first()).toBeVisible();
     } finally {
       await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
         headers: { Authorization: `Bearer ${auth.token}` },

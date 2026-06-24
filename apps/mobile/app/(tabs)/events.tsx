@@ -2,26 +2,14 @@ import * as React from "react";
 import { Link, router } from "expo-router";
 import { View } from "react-native";
 import type { EventSummary } from "@eventfilm/shared";
-import { deriveEventLifecycleStatus } from "@eventfilm/shared";
-import { Body, Button, Card, EmptyState, ErrorState, EventCard, LoadingState, Screen, SectionHeader, StatTile, TaskHeader } from "../../src/components/ui";
+import { challengeLabel } from "@eventfilm/shared";
+import { Body, Button, Card, EmptyState, ErrorState, EventCard, Field, FieldGroup, LoadingState, Screen, SectionHeader, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
-
-function eventTime(value: string) {
-  return new Date(value).getTime();
-}
-
-function sortEvents(events: EventSummary[]) {
-  const now = Date.now();
-  return [...events].sort((a, b) => {
-    const aDistance = Math.abs(eventTime(a.eventDate) - now);
-    const bDistance = Math.abs(eventTime(b.eventDate) - now);
-    return aDistance - bDistance;
-  });
-}
 
 export default function EventsScreen() {
   const { api, user, signOut } = useAuth();
   const [events, setEvents] = React.useState<EventSummary[]>([]);
+  const [searchQuery, setSearchQuery] = React.useState("");
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
 
@@ -76,19 +64,22 @@ export default function EventsScreen() {
     );
   }
 
-  const sortedEvents = sortEvents(events);
-  const featuredEvent = sortedEvents[0];
-  const remainingEvents = sortedEvents.slice(1);
-  const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
-  const upcomingEvents = events.filter((event) => deriveEventLifecycleStatus(event).status === "draft_or_upcoming").length;
-  const recapsReady = events.filter((event) => deriveEventLifecycleStatus(event).phase === "after").length;
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  const filteredEvents = React.useMemo(() => {
+    if (!normalizedQuery) return events;
+    return events.filter((event) => [
+      event.name,
+      event.description || "",
+      challengeLabel(event.challenge),
+    ].join(" ").toLowerCase().includes(normalizedQuery));
+  }, [events, normalizedQuery]);
 
   return (
     <Screen bottomPadding={112}>
       <TaskHeader
         eyebrow="Host dashboard"
-        title="Your events, ready to share."
-        body={`Signed in as ${user.email}`}
+        title="Event library"
+        body={`Signed in as ${user.email}. Open an event to manage links, photos, recap, and settings.`}
         action={(
           <View style={{ gap: 10 }}>
             <Link href="/create-event" asChild>
@@ -106,12 +97,6 @@ export default function EventsScreen() {
         )}
       />
 
-      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-        <StatTile label="Ready" value={upcomingEvents} tone="accent" />
-        <StatTile label="Photos" value={totalPhotos} />
-        <StatTile label="Recaps ready" value={recapsReady} />
-      </View>
-
       {error ? <ErrorState message={error} /> : null}
       {loading && !events.length ? <LoadingState label="Loading your events..." /> : null}
 
@@ -127,19 +112,24 @@ export default function EventsScreen() {
         />
       ) : null}
 
-      {featuredEvent ? (
+      {events.length ? (
         <View style={{ gap: 12 }}>
-          <SectionHeader title="Featured album" subtitle="Open this event to share links, check uploads, or prep the room display." />
-          <EventCard event={featuredEvent} featured onPress={() => router.push(`/events/${featuredEvent.id}`)} />
-        </View>
-      ) : null}
-
-      {remainingEvents.length ? (
-        <View style={{ gap: 12 }}>
-          <SectionHeader title="Other events" subtitle="Open any album to manage links, uploads, and sharing." />
-          {remainingEvents.map((event) => (
+          <Card>
+            <FieldGroup label="Search events" helper={`${filteredEvents.length} of ${events.length} ${events.length === 1 ? "event" : "events"}`}>
+              <Field value={searchQuery} onChangeText={setSearchQuery} placeholder="Search by name or photo setup" autoCapitalize="none" />
+            </FieldGroup>
+          </Card>
+          <SectionHeader title="Your events" subtitle="Open an event to manage guest links, photos, recap, downloads, and settings." />
+          {filteredEvents.map((event) => (
             <EventCard key={event.id} event={event} onPress={() => router.push(`/events/${event.id}`)} />
           ))}
+          {!filteredEvents.length ? (
+            <EmptyState
+              title="No matching events"
+              body="Try a different event name or photo setup."
+              action={<Button tone="secondary" onPress={() => setSearchQuery("")}>Clear search</Button>}
+            />
+          ) : null}
         </View>
       ) : null}
     </Screen>

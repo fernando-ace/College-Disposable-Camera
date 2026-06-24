@@ -1,7 +1,7 @@
 import * as React from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import type { EventSummary, Photo } from "@eventfilm/shared";
-import { CHALLENGE_TYPES, challengeLabel, deriveEventLifecycleStatus, photoChallengeLabel } from "@eventfilm/shared";
+import { challengeLabel, photoChallengeLabel } from "@eventfilm/shared";
 
 export const colors = {
   ink: "#1c1917",
@@ -515,30 +515,34 @@ function isLocalhostUrl(value?: string | null) {
 }
 
 export function EventCard({ event, onPress, featured = false }: { event: EventSummary; onPress?: () => void; featured?: boolean }) {
-  const isMemoryCapsule = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
-  const revealDate = isMemoryCapsule ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.revealAt)) : null;
-  const lifecycle = deriveEventLifecycleStatus(event);
-  const lifecycleTone: "amber" | "dark" | "green" | "red" | "stone" = lifecycle.tone === "green" ? "green" : lifecycle.tone === "amber" ? "amber" : lifecycle.tone === "plum" ? "dark" : "stone";
+  const previewPhotos = (event.previewPhotos || []).slice(0, featured ? 4 : 3);
 
   return (
     <Pressable disabled={!onPress} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.78 : 1 })}>
       <Card tone={featured ? "accent" : "default"} padding={featured ? 18 : 15}>
+        {previewPhotos.length ? (
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            {previewPhotos.map((photo) => (
+              <Image
+                key={photo.id}
+                source={{ uri: photo.previewUrl || photo.url }}
+                resizeMode="cover"
+                style={{ flex: 1, aspectRatio: 1, minHeight: featured ? 72 : 56, borderRadius: 14, backgroundColor: colors.wash }}
+              />
+            ))}
+          </View>
+        ) : null}
         <View style={{ gap: 7 }}>
           <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-            <Text selectable style={{ flex: 1, color: colors.ink, fontSize: featured ? 22 : 18, lineHeight: featured ? 27 : 23, fontWeight: "900" }}>{event.name}</Text>
-            <Badge tone={featured ? "dark" : "amber"}>{event.photoCount} photos</Badge>
+            <Text selectable style={{ flex: 1, color: colors.ink, fontSize: featured ? 22 : 18, lineHeight: featured ? 27 : 23, fontWeight: "700" }}>{event.name}</Text>
+            <Badge tone={featured ? "dark" : "stone"}>{event.photoCount} {event.photoCount === 1 ? "photo" : "photos"}</Badge>
           </View>
           {event.description ? <Body tone="muted">{event.description}</Body> : null}
         </View>
         <View style={{ gap: 5, borderRadius: 16, borderCurve: "continuous", backgroundColor: featured ? "#fffaf0" : colors.wash, padding: 11 }}>
-          <Caption>{isMemoryCapsule && revealDate ? `Reveal: ${revealDate}` : "Photos appear as soon as guests upload."}</Caption>
+          <Caption>Photo setup: {challengeLabel(event.challenge)}</Caption>
         </View>
-        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-          <Badge tone={lifecycleTone}>{lifecycle.label}</Badge>
-          <Badge tone="stone">{challengeLabel(event.challenge)}</Badge>
-          {featured ? <Badge>Active focus</Badge> : null}
-        </View>
-        <Caption>{lifecycle.description}</Caption>
+        <Caption>Open this event to manage links, photos, recap, downloads, and settings.</Caption>
       </Card>
     </Pressable>
   );

@@ -87,7 +87,7 @@ export type EventRecapResponse = {
 
 export type GuestMyUploadsResponse = {
   uploadedCount: number;
-  remainingUploads: number;
+  remainingUploads: number | null;
   photos: Photo[];
 };
 
@@ -153,9 +153,7 @@ export type HostEventFeedback = {
 export type DuplicateEventOverrides = {
   name?: string;
   description?: string | null;
-  eventDate?: string;
   revealAt?: string;
-  photoLimitPerGuest?: number;
 };
 
 export type LaunchLinkVerification = {
@@ -280,7 +278,7 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     if (input.challengePromptId) formData.append("challengePromptId", input.challengePromptId);
     if (input.challengeItemId) formData.append("challengeItemId", input.challengeItemId);
 
-    return request<{ photo: Photo; uploadedCount: number; remainingUploads: number }>(`/api/events/${encodeURIComponent(slug)}/photos`, {
+    return request<{ photo: Photo; uploadedCount: number; remainingUploads: number | null }>(`/api/events/${encodeURIComponent(slug)}/photos`, {
       method: "POST",
       body: formData,
     });

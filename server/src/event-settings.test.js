@@ -15,22 +15,18 @@ test("event settings validation trims safe input", () => {
   assert.equal(validation.ok, true);
   assert.equal(validation.value.name, "Updated Formal");
   assert.equal(validation.value.description, "New host note");
-  assert.equal(validation.value.photoLimitPerGuest, 8);
+  assert.equal(validation.value.photoLimitPerGuest, undefined);
 });
 
 test("event settings validation reports invalid basics", () => {
   const validation = validateEventSettingsInput({
     name: "",
-    eventDate: "bad",
     revealAt: "also bad",
-    photoLimitPerGuest: 0,
   });
 
   assert.equal(validation.ok, false);
   assert.match(validation.fieldErrors.name, /required/);
-  assert.match(validation.fieldErrors.eventDate, /valid event date/);
   assert.match(validation.fieldErrors.revealAt, /valid reveal time/);
-  assert.match(validation.fieldErrors.photoLimitPerGuest, /between 1 and 100/);
 });
 
 test("event settings validation can require Memory Capsule reveal time", () => {
@@ -62,9 +58,10 @@ test("host-owned event settings update writes only safe fields", async () => {
   });
 
   assert.equal(event.name, "Updated Formal");
-  assert.deepEqual(Object.keys(updateArgs.data).sort(), ["description", "name", "photoLimitPerGuest"].sort());
+  assert.deepEqual(Object.keys(updateArgs.data).sort(), ["description", "name"].sort());
   assert.equal(updateArgs.data.slug, undefined);
   assert.equal(updateArgs.data.eventLink, undefined);
+  assert.equal(updateArgs.data.photoLimitPerGuest, undefined);
   assert.deepEqual(updateArgs.include, { photos: true });
 });
 

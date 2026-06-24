@@ -381,7 +381,7 @@ def guest_page(img: Image.Image, d: ImageDraw.ImageDraw, name: str, selected=Fal
     layout = upload_layout()
     rounded(d, layout["name"], 10, (255, 255, 255), (218, 216, 214), 1)
     text(d, (SCREEN_X + 64, form_y + 148), name or "John Doe", (INK if name else (160, 154, 148)), FONTS["small"], "lm")
-    text(d, (SCREEN_X + 44, form_y + 204), "5 uploads left", MUTED, FONTS["small"])
+    text(d, (SCREEN_X + 44, form_y + 204), "Add as many moments as you want", MUTED, FONTS["small"])
     text(d, (SCREEN_X + 44, form_y + 246), "Photo", INK, FONTS["tiny_b"])
     rounded(d, layout["take"], 12, ORANGE)
     text(d, box_center(layout["take"]), "Take photo", (255, 255, 255), FONTS["small_b"], "mm")

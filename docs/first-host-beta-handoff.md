@@ -21,7 +21,7 @@ Use this for the first real EventFilm host tests. Keep the first event small, fr
 - Confirm deployed API, web, and storage smoke readiness.
 - Create the host account and event.
 - Choose the event mode.
-- If the event name, description, date, reveal time, or photo limit changes, update it from the host event Settings tab before sharing links.
+- If the event name, description, date, or reveal time changes, update it from the host event Settings tab before sharing links.
 - Open the guest link in a logged-out phone browser.
 - Upload one test photo and clean it up or hide it.
 - Open Live Wall on the display device.

@@ -235,7 +235,6 @@ export type GuestUploadSuccessSummary = {
   guestDisplayName: string;
   challengeLabel: string;
   detail: string;
-  remainingUploads: number;
   revealNote?: string;
 };
 
@@ -842,7 +841,7 @@ export function buildAwardVotingSummary({
 
 export type GuestStatus = {
   uploadedCount?: number;
-  remainingUploads: number;
+  remainingUploads: number | null;
   nickname: string | null;
 };
 
@@ -857,9 +856,7 @@ export type ChallengeSubmission = {
 export type CreateEventInput = {
   name: string;
   description?: string | null;
-  eventDate?: ISODateString;
   revealAt?: ISODateString;
-  photoLimitPerGuest: number;
   eventTemplateSlug?: EventTemplateSlug | string | null;
   promptPackSlug?: PromptPackSlug | string | null;
   challenge?: EventChallengeInput;
@@ -868,22 +865,17 @@ export type CreateEventInput = {
 export const EVENT_SETTINGS_LIMITS = {
   nameMaxLength: 120,
   descriptionMaxLength: 1000,
-  photoLimitMin: 1,
-  photoLimitMax: 100,
 } as const;
 
 export type UpdateEventSettingsInput = {
   name: string;
   description?: string | null;
-  eventDate?: ISODateString;
   revealAt?: ISODateString;
-  photoLimitPerGuest: number;
 };
 
 export type EventSettingsFieldErrors = Partial<Record<keyof UpdateEventSettingsInput, string>>;
 
 export type EventSettingsValidationOptions = {
-  requireEventDate?: boolean;
   requireRevealAt?: boolean;
 };
 
@@ -902,11 +894,8 @@ export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInp
   const fieldErrors: EventSettingsFieldErrors = {};
   const name = String(input.name ?? "").trim();
   const description = input.description == null ? "" : String(input.description).trim();
-  const hasEventDate = input.eventDate !== undefined && input.eventDate !== null && input.eventDate !== "";
   const hasRevealAt = input.revealAt !== undefined && input.revealAt !== null && input.revealAt !== "";
-  const eventDate = parseEventSettingsDate(input.eventDate);
   const revealAt = parseEventSettingsDate(input.revealAt);
-  const photoLimitPerGuest = Number(input.photoLimitPerGuest);
 
   if (!name) {
     fieldErrors.name = "Event name is required.";
@@ -918,22 +907,10 @@ export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInp
     fieldErrors.description = `Description must be ${EVENT_SETTINGS_LIMITS.descriptionMaxLength} characters or fewer.`;
   }
 
-  if (options.requireEventDate && !eventDate) {
-    fieldErrors.eventDate = "Enter a valid event date.";
-  } else if (hasEventDate && !eventDate) {
-    fieldErrors.eventDate = "Enter a valid event date.";
-  }
-
   if (options.requireRevealAt && !revealAt) {
     fieldErrors.revealAt = "Enter a valid reveal time.";
   } else if (hasRevealAt && !revealAt) {
     fieldErrors.revealAt = "Enter a valid reveal time.";
-  }
-
-  if (!Number.isInteger(photoLimitPerGuest)) {
-    fieldErrors.photoLimitPerGuest = "Photo limit must be a whole number.";
-  } else if (photoLimitPerGuest < EVENT_SETTINGS_LIMITS.photoLimitMin || photoLimitPerGuest > EVENT_SETTINGS_LIMITS.photoLimitMax) {
-    fieldErrors.photoLimitPerGuest = `Photo limit must be between ${EVENT_SETTINGS_LIMITS.photoLimitMin} and ${EVENT_SETTINGS_LIMITS.photoLimitMax}.`;
   }
 
   if (Object.keys(fieldErrors).length) {
@@ -945,8 +922,6 @@ export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInp
     value: {
       name,
       description: description || null,
-      photoLimitPerGuest,
-      ...(eventDate ? { eventDate: eventDate.toISOString() } : {}),
       ...(revealAt ? { revealAt: revealAt.toISOString() } : {}),
     },
   };
@@ -1002,7 +977,6 @@ export type EventTemplateDefinition = {
   recommendedMode: ChallengeMode;
   promptPackSlug: PromptPackSlug;
   revealTiming: string;
-  suggestedUploadLimit?: number;
   inviteCopy: string;
   liveWallCopy: string;
   recapFraming: string;
@@ -1120,7 +1094,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.EVENT_AWARDS,
     promptPackSlug: "birthday",
     revealTiming: "Reveal later that night or the next morning.",
-    suggestedUploadLimit: 12,
     inviteCopy: "Help capture the birthday from every angle. Upload your funniest, sweetest, and most main-character photos here:",
     liveWallCopy: "Keep the birthday energy on screen while guests add their favorite moments.",
     recapFraming: "A birthday recap full of the people, outfits, candids, and chaos that made it feel like the night.",
@@ -1135,7 +1108,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
     promptPackSlug: "wedding-engagement",
     revealTiming: "Reveal after the reception or the next day.",
-    suggestedUploadLimit: 15,
     inviteCopy: "Share your favorite candid photos from the celebration. No account needed:",
     liveWallCopy: "Open the Photo Wall during the reception so guests can watch the celebration build.",
     recapFraming: "A guest-made celebration story with candids, dance-floor moments, family photos, and details.",
@@ -1150,7 +1122,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.EVENT_AWARDS,
     promptPackSlug: "greek-life",
     revealTiming: "Reveal after the event or at the next chapter moment.",
-    suggestedUploadLimit: 10,
     inviteCopy: "Drop your best photos from the event here so the chapter recap is ready:",
     liveWallCopy: "Show the best group shots, fits, and candid moments as they come in.",
     recapFraming: "A chapter recap built from group shots, spirit moments, candids, and favorite fits.",
@@ -1165,7 +1136,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
     promptPackSlug: "student-org",
     revealTiming: "Reveal after the event wrap-up.",
-    suggestedUploadLimit: 8,
     inviteCopy: "Help document the event. Upload team photos, speaker moments, and behind-the-scenes shots here:",
     liveWallCopy: "Use the Photo Wall to make the event feel active and shared.",
     recapFraming: "A campus-event recap with the people, activities, and behind-the-scenes details that mattered.",
@@ -1180,7 +1150,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.MEMORY_CAPSULE,
     promptPackSlug: "graduation",
     revealTiming: "Reveal after the party when everyone can relive the day.",
-    suggestedUploadLimit: 12,
     inviteCopy: "Add your favorite graduation photos here so everyone can see the full album after the reveal:",
     liveWallCopy: "Let family and friends watch graduation memories appear during the party.",
     recapFraming: "A graduation story with family, friends, campus photos, candids, and final group moments.",
@@ -1195,7 +1164,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
     promptPackSlug: "friend-trip",
     revealTiming: "Reveal on the last night or after everyone gets home.",
-    suggestedUploadLimit: 20,
     inviteCopy: "Drop the trip photos here so nobody has to chase the group chat afterward:",
     liveWallCopy: "Keep the trip album alive with food, views, candids, and chaotic moments.",
     recapFraming: "A trip recap that feels like the group chat turned into a polished album.",
@@ -1210,7 +1178,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
     promptPackSlug: "camp-retreat",
     revealTiming: "Reveal at the closing session or after checkout.",
-    suggestedUploadLimit: 15,
     inviteCopy: "Capture retreat moments as they happen. Upload photos for the final recap here:",
     liveWallCopy: "Use the Photo Wall between sessions to show the retreat taking shape.",
     recapFraming: "A retreat recap with teams, activities, nature moments, and the final group story.",
@@ -1225,7 +1192,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: CHALLENGE_TYPES.EVENT_AWARDS,
     promptPackSlug: "club-banquet",
     revealTiming: "Reveal after awards or the morning after.",
-    suggestedUploadLimit: 10,
     inviteCopy: "Upload your banquet photos here so the full recap is ready after the event:",
     liveWallCopy: "Show table photos, award moments, and celebration shots during the banquet.",
     recapFraming: "A banquet recap with outfits, tables, award moments, speakers, and final celebration photos.",
@@ -1240,7 +1206,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: "NONE",
     promptPackSlug: "custom",
     revealTiming: "Reveal during or after the gathering.",
-    suggestedUploadLimit: 12,
     inviteCopy: "Add your favorite family photos here so everyone can enjoy the shared album:",
     liveWallCopy: "Keep the shared family album visible while people add photos.",
     recapFraming: "A warm family album from everyone who was there.",
@@ -1255,7 +1220,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     recommendedMode: "NONE",
     promptPackSlug: "custom",
     revealTiming: "Choose the reveal timing that fits the event.",
-    suggestedUploadLimit: 10,
     inviteCopy: "Upload your favorite photos from the event here:",
     liveWallCopy: "Open the Photo Wall while guests upload photos.",
     recapFraming: "A shared recap from the people who were there.",
@@ -1957,26 +1921,20 @@ export function buildChallengePayload(draft: ChallengeDraft): EventChallengeInpu
   };
 }
 
-function addHours(date: Date, hours: number) {
-  return new Date(date.getTime() + hours * 60 * 60 * 1000);
-}
-
 function addDays(date: Date, days: number) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
 export function deriveEventLifecycleStatus(
-  event: Pick<EventSummary | PublicEvent, "eventDate" | "revealAt" | "photoCount" | "challenge">,
+  event: Pick<EventSummary | PublicEvent, "revealAt" | "photoCount" | "challenge">,
   counts: { totalPhotos?: number | null; visiblePhotos?: number | null; recapOpens?: number | null } = {},
   now: Date = new Date(),
 ): EventLifecycle {
-  const eventAt = new Date(event.eventDate);
   const revealAt = new Date(event.revealAt);
   const totalPhotos = counts.totalPhotos ?? event.photoCount ?? 0;
   const visibleCount = counts.visiblePhotos ?? totalPhotos;
   const isMemoryCapsule = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
   const isRevealLocked = isMemoryCapsule && revealAt.getTime() > now.getTime();
-  const happeningSoonAt = addHours(now, 24);
   const archiveCutoff = addDays(revealAt, 14);
 
   if (!isMemoryCapsule) {
@@ -2051,22 +2009,10 @@ export function deriveEventLifecycleStatus(
     };
   }
 
-  if (eventAt.getTime() <= happeningSoonAt.getTime()) {
-    return {
-      status: "live_or_happening_soon",
-      label: eventAt.getTime() <= now.getTime() ? "Happening now" : "Happening soon",
-      description: "Share the guest link, keep the QR handy, and open the Photo Wall when guests arrive.",
-      phase: "during",
-      tone: "green",
-      shouldShowRepeatCta: false,
-      shouldAskFeedback: false,
-    };
-  }
-
   return {
     status: "draft_or_upcoming",
-    label: "Upcoming",
-    description: "Share the guest link before people arrive.",
+    label: isMemoryCapsule ? "Capsule ready" : "Ready to share",
+    description: isMemoryCapsule ? "Share the guest link before reveal time." : "Share the guest link so people can start adding photos.",
     phase: "before",
     tone: "stone",
     shouldShowRepeatCta: false,
@@ -2075,7 +2021,7 @@ export function deriveEventLifecycleStatus(
 }
 
 export function buildHostNextStep(
-  event: Pick<EventSummary | PublicEvent, "eventDate" | "revealAt" | "photoCount" | "challenge">,
+  event: Pick<EventSummary | PublicEvent, "revealAt" | "photoCount" | "challenge">,
   counts: { totalPhotos?: number | null; visiblePhotos?: number | null; recapOpens?: number | null } = {},
   now: Date = new Date(),
 ) {
@@ -2088,7 +2034,7 @@ export function buildHostNextStep(
   return "Your recap is ready to share again.";
 }
 
-export function buildDuplicateEventInput(event: Pick<EventSummary, "name" | "description" | "photoLimitPerGuest" | "eventTemplateSlug" | "promptPackSlug" | "challenge">, now: Date = new Date()): CreateEventInput {
+export function buildDuplicateEventInput(event: Pick<EventSummary, "name" | "description" | "eventTemplateSlug" | "promptPackSlug" | "challenge">, now: Date = new Date()): CreateEventInput {
   const draft = draftFromChallenge(event.challenge);
   const challenge = buildChallengePayload({
     ...draft,
@@ -2101,7 +2047,6 @@ export function buildDuplicateEventInput(event: Pick<EventSummary, "name" | "des
     name: `${event.name} (Copy)`,
     description: event.description || null,
     ...(memoryCapsuleRevealAt ? { revealAt: memoryCapsuleRevealAt } : {}),
-    photoLimitPerGuest: event.photoLimitPerGuest,
     eventTemplateSlug: event.eventTemplateSlug || null,
     promptPackSlug: event.promptPackSlug || null,
     challenge,
@@ -2270,11 +2215,9 @@ export function buildContributorSummary(photos: Photo[], limit = 3): Contributor
 export function buildGuestUploadSuccessSummary({
   event,
   photo,
-  remainingUploads,
 }: {
   event: Pick<PublicEvent, "challenge" | "isRevealed" | "revealAt">;
   photo: Photo;
-  remainingUploads: number;
 }): GuestUploadSuccessSummary {
   const capsuleCopy = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
   const challengeDetail = photoChallengeLabel(photo);
@@ -2283,7 +2226,6 @@ export function buildGuestUploadSuccessSummary({
     guestDisplayName: contributorDisplayName(photo),
     challengeLabel: challengeLabel(event.challenge),
     detail: challengeDetail || "Added to the event album",
-    remainingUploads,
     revealNote: capsuleCopy && !event.isRevealed ? capsuleCopy.revealNote : undefined,
   };
 }

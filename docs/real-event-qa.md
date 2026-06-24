@@ -147,7 +147,7 @@ reachable and the Supabase project is active/unpaused before changing app code.
 
 - Open the guest upload link in a browser while logged out.
 - Upload from a phone camera or library.
-- Confirm remaining upload count updates.
+- Upload more than once from the same device and confirm both photos save.
 - Confirm invalid files and oversized files show friendly errors.
 - Confirm no guest account is required.
 - Confirm the album lock message appears before reveal.

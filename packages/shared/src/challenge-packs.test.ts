@@ -373,7 +373,7 @@ test("unknown templates and old events use safe fallbacks", () => {
   assert.equal(metadata.recapSubtitle, "Photos the host picked to show first.");
 });
 
-test("event lifecycle status is derived from dates, photo state, and reveal state", () => {
+test("event lifecycle status is derived from photo state and Memory Capsule reveal state", () => {
   const now = new Date("2026-06-22T12:00:00.000Z");
   const base = {
     id: "event",
@@ -389,8 +389,9 @@ test("event lifecycle status is derived from dates, photo state, and reveal stat
   const capsule = { ...base, challenge: { id: "challenge", type: CHALLENGE_TYPES.MEMORY_CAPSULE, title: "Capsule", instructions: "Upload.", participants: [] } } satisfies EventSummary;
 
   assert.equal(deriveEventLifecycleStatus(base, {}, now).status, "draft_or_upcoming");
-  assert.equal(deriveEventLifecycleStatus({ ...base, eventDate: "2026-06-23T08:00:00.000Z" }, {}, now).label, "Ready to share");
+  assert.equal(deriveEventLifecycleStatus({ ...base, eventDate: "2020-01-01T08:00:00.000Z" }, {}, now).label, "Ready to share");
   assert.equal(deriveEventLifecycleStatus(base, { totalPhotos: 3 }, now).status, "collecting_photos");
+  assert.equal(deriveEventLifecycleStatus(capsule, {}, now).label, "Capsule ready");
   assert.equal(deriveEventLifecycleStatus(capsule, { totalPhotos: 3 }, now).status, "reveal_locked");
   assert.equal(deriveEventLifecycleStatus({ ...capsule, revealAt: "2026-06-22T11:00:00.000Z" }, { visiblePhotos: 3 }, now).status, "recap_ready");
   assert.equal(deriveEventLifecycleStatus({ ...capsule, revealAt: "2026-06-01T11:00:00.000Z" }, { visiblePhotos: 3 }, now).status, "archived_or_past");
@@ -411,7 +412,7 @@ test("host next step copy follows the simplified lifecycle hierarchy", () => {
   } satisfies EventSummary;
 
   assert.equal(buildHostNextStep(base, {}, now), "Share the guest link.");
-  assert.equal(buildHostNextStep({ ...base, eventDate: "2026-06-22T11:00:00.000Z" }, {}, now), "Share the guest link.");
+  assert.equal(buildHostNextStep({ ...base, eventDate: "2020-01-01T11:00:00.000Z" }, {}, now), "Share the guest link.");
   assert.equal(buildHostNextStep(base, { totalPhotos: 3 }, now), "Open the Photo Wall.");
   assert.equal(
     buildHostNextStep({ ...base, revealAt: "2026-06-22T11:00:00.000Z", challenge: { id: "challenge", type: CHALLENGE_TYPES.MEMORY_CAPSULE, title: "Capsule", instructions: "Upload.", participants: [] } }, { visiblePhotos: 3 }, now),
@@ -446,10 +447,9 @@ test("duplicate event input copies setup only and resets timing", () => {
 
   assert.equal(duplicate.name, "Chapter Formal (Copy)");
   assert.equal(duplicate.description, "Spring formal.");
-  assert.equal(duplicate.photoLimitPerGuest, 12);
   assert.equal(duplicate.eventTemplateSlug, "greek-life-event");
   assert.equal(duplicate.promptPackSlug, "greek-life");
-  assert.equal(duplicate.eventDate, undefined);
+  assert.equal("eventDate" in duplicate, false);
   assert.equal(duplicate.revealAt, undefined);
   assert.equal(duplicate.challenge?.type, CHALLENGE_TYPES.EVENT_AWARDS);
   assert.deepEqual(duplicate.challenge && "categories" in duplicate.challenge ? duplicate.challenge.categories?.map((category) => category.label) : [], ["Best fit", "Best group"]);
@@ -473,7 +473,7 @@ test("duplicate Memory Capsule input keeps only reveal timing", () => {
 
   const duplicate = buildDuplicateEventInput(source, new Date("2026-06-22T12:00:00.000Z"));
 
-  assert.equal(duplicate.eventDate, undefined);
+  assert.equal("eventDate" in duplicate, false);
   assert.equal(duplicate.revealAt, "2026-06-23T12:00:00.000Z");
   assert.equal(duplicate.challenge?.type, CHALLENGE_TYPES.MEMORY_CAPSULE);
 });
@@ -560,31 +560,27 @@ test("event settings validation trims safe fields and rejects unsafe basics", ()
     name: "  Chapter Formal  ",
     description: "  Bring the good candids.  ",
     photoLimitPerGuest: 12,
-  });
+  } as Parameters<typeof validateEventSettingsInput>[0]);
   assert.equal(valid.ok, true);
   if (valid.ok) {
     assert.equal(valid.value.name, "Chapter Formal");
     assert.equal(valid.value.description, "Bring the good candids.");
-    assert.equal(valid.value.photoLimitPerGuest, 12);
+    assert.equal((valid.value as { photoLimitPerGuest?: unknown }).photoLimitPerGuest, undefined);
   }
 
   const invalid = validateEventSettingsInput({
     name: " ",
     description: "x".repeat(1001),
-    eventDate: "not a date",
     revealAt: "also not a date",
-    photoLimitPerGuest: 101,
   });
   assert.equal(invalid.ok, false);
   if (!invalid.ok) {
     assert.match(invalid.fieldErrors.name || "", /required/);
     assert.match(invalid.fieldErrors.description || "", /1000/);
-    assert.match(invalid.fieldErrors.eventDate || "", /valid event date/);
     assert.match(invalid.fieldErrors.revealAt || "", /valid reveal time/);
-    assert.match(invalid.fieldErrors.photoLimitPerGuest || "", /between 1 and 100/);
   }
 
-  const missingReveal = validateEventSettingsInput({ name: "Capsule", photoLimitPerGuest: 12 }, { requireRevealAt: true });
+  const missingReveal = validateEventSettingsInput({ name: "Capsule" }, { requireRevealAt: true });
   assert.equal(missingReveal.ok, false);
   if (!missingReveal.ok) {
     assert.match(missingReveal.fieldErrors.revealAt || "", /valid reveal time/);
@@ -626,14 +622,12 @@ test("guest upload success summary describes identity and challenge context", ()
   const summary = buildGuestUploadSuccessSummary({
     event,
     photo: photo({ guestNickname: "", challengeItemLabel: "Best candid" }),
-    remainingUploads: 2,
   });
 
   assert.equal(summary.title, "Upload succeeded");
   assert.equal(summary.guestDisplayName, "Anonymous guest");
   assert.equal(summary.challengeLabel, "Memory Capsule");
   assert.equal(summary.detail, "Best candid");
-  assert.equal(summary.remainingUploads, 2);
   assert.equal(summary.revealNote, "Come back after reveal.");
 });
 

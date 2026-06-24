@@ -417,11 +417,8 @@ function PromptPackPicker({ draft, onChange }: { draft: ChallengeDraft; onChange
   );
 }
 
-function createDisabledReason({ name, photoLimitPerGuest, challengeDraft }: { name: string; photoLimitPerGuest: string; challengeDraft: ChallengeDraft }) {
+function createDisabledReason({ name, challengeDraft }: { name: string; challengeDraft: ChallengeDraft }) {
   if (!name.trim()) return "Add an event name to create your event.";
-
-  const photoLimit = Number(photoLimitPerGuest);
-  if (!Number.isInteger(photoLimit) || photoLimit < 1) return "Set a photo limit of at least 1.";
 
   return validateChallengeDraft(challengeDraft);
 }
@@ -432,11 +429,10 @@ export default function CreateEventScreen() {
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
   const [revealAt, setRevealAt] = React.useState(() => new Date(Date.now() + 3 * 60 * 60 * 1000));
-  const [photoLimitPerGuest, setPhotoLimitPerGuest] = React.useState("10");
   const [challengeDraft, setChallengeDraft] = React.useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
-  const disabledReason = createDisabledReason({ name, photoLimitPerGuest, challengeDraft });
+  const disabledReason = createDisabledReason({ name, challengeDraft });
   const canCreate = !disabledReason;
 
   React.useEffect(() => {
@@ -451,7 +447,6 @@ export default function CreateEventScreen() {
   function selectTemplate(templateSlug: EventTemplateSlug) {
     const template = EVENT_TEMPLATES.find((item) => item.slug === templateSlug);
     setChallengeDraft((draft) => applyEventTemplateToDraft(templateSlug, draft));
-    if (template?.suggestedUploadLimit) setPhotoLimitPerGuest(String(template.suggestedUploadLimit));
     api.trackAnalyticsEvent({
       name: "event_template_selected",
       source: "mobile",
@@ -476,10 +471,6 @@ export default function CreateEventScreen() {
 
   function stepProblem(nextStep = step) {
     if (nextStep > 1 && !name.trim()) return "Add an event name before continuing.";
-    if (nextStep > 3) {
-      const photoLimit = Number(photoLimitPerGuest);
-      if (!Number.isInteger(photoLimit) || photoLimit < 1) return "Set a photo limit of at least 1.";
-    }
     if (nextStep > 5) return disabledReason;
     return "";
   }
@@ -509,12 +500,10 @@ export default function CreateEventScreen() {
     setError("");
     try {
       if (disabledReason) throw new Error(disabledReason);
-      const photoLimit = Number(photoLimitPerGuest);
       const data = await api.createEvent({
         name: name.trim(),
         description: description.trim() || null,
         ...(challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? { revealAt: revealAt.toISOString() } : {}),
-        photoLimitPerGuest: photoLimit,
         eventTemplateSlug: challengeDraft.eventTemplateSlug,
         promptPackSlug: challengeDraft.promptPackSlug,
         challenge: buildChallengePayload(challengeDraft),
@@ -573,11 +562,8 @@ export default function CreateEventScreen() {
 
       {step === 2 ? (
         <Card>
-          <SectionHeader title="Uploads" subtitle="Set a friendly cap. Normal event photos appear as soon as guests upload." />
+          <SectionHeader title="Timing" subtitle={challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Set when the Memory Capsule opens." : "Normal event photos appear as soon as guests upload."} />
           {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <DateTimeField label="Reveal date and time" helper="Only Memory Capsule keeps the album locked until this time." value={revealAt} onChange={setRevealAt} /> : null}
-          <FieldGroup label="Photo limit per guest" helper="A friendly cap keeps the album useful without blocking the best moments.">
-            <Field keyboardType="number-pad" value={photoLimitPerGuest} onChangeText={setPhotoLimitPerGuest} />
-          </FieldGroup>
         </Card>
       ) : null}
 
@@ -622,7 +608,6 @@ export default function CreateEventScreen() {
             <ReviewRow label="Template" value={EVENT_TEMPLATES.find((template) => template.slug === challengeDraft.eventTemplateSlug)?.name || "Custom event"} />
             <ReviewRow label="Mode" value={challengeTypeName(challengeDraft.type)} />
             {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <ReviewRow label="Reveal" value={formatDateTime(revealAt)} /> : null}
-            <ReviewRow label="Uploads" value={`${photoLimitPerGuest || "0"} per guest`} />
           </View>
           {challengeDraft.type === CHALLENGE_TYPES.COLOR_HUNT ? (
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
