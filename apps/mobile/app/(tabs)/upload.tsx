@@ -50,6 +50,7 @@ export default function UploadScreen() {
   const selectedPrompt = prompts.find((prompt) => prompt.id === selectedPromptId);
   const selectedAward = awardCategories.find((category) => category.id === selectedItemId);
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+  const isAlbumLocked = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !event.isRevealed;
   const canUpload = Boolean(event && asset && clientId)
     && remaining !== 0
     && (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT || Boolean(selectedParticipant))
@@ -275,13 +276,13 @@ export default function UploadScreen() {
                     <SectionHeader title={`Thanks, ${uploadSuccess.guestDisplayName}`} subtitle={`${uploadSuccess.challengeLabel} - ${uploadSuccess.detail}`} />
                     <Body tone="muted">{uploadSuccess.remainingUploads} uploads left.</Body>
                     {uploadSuccess.revealNote ? <Body tone="muted">{uploadSuccess.revealNote}</Body> : null}
-                    {event.isRevealed ? (
+                    {!isAlbumLocked ? (
                       <Link href={`/album/${event.slug}`} asChild>
                         <Button tone="secondary">View album</Button>
                       </Link>
                     ) : null}
                     {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? (
-                      <Body tone="muted">Vote on awards from the recap after reveal.</Body>
+                      <Body tone="muted">Vote on awards from the Shared Recap.</Body>
                     ) : null}
                   </Card>
                 ) : null}
@@ -292,10 +293,10 @@ export default function UploadScreen() {
             {error ? <ErrorState message={error} /> : null}
             {remaining === 0 ? <ErrorState message="You have used all uploads for this event." /> : null}
             {asset ? <Button loading={loading} disabled={!canUpload} onPress={upload}>Upload photo</Button> : null}
-            {event && !asset && !uploadedPreviewUri ? <Body tone="muted">Choose a photo when you are ready. The host controls when the album reveals.</Body> : null}
+            {event && !asset && !uploadedPreviewUri ? <Body tone="muted">{isAlbumLocked ? "Choose a photo when you are ready. The Memory Capsule opens at reveal time." : "Choose a photo when you are ready. It appears in the album after upload."}</Body> : null}
           </Card>
 
-          {event.isRevealed ? (
+          {!isAlbumLocked ? (
             <Link href={`/album/${event.slug}`} asChild>
               <Button tone="secondary">View album</Button>
             </Link>

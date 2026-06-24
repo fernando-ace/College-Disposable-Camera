@@ -5,8 +5,6 @@ const { EventSettingsError, updateHostEventSettings, validateEventSettingsInput 
 const validInput = {
   name: "  Updated Formal  ",
   description: "  New host note  ",
-  eventDate: "2026-06-22T12:00:00.000Z",
-  revealAt: "2026-06-22T16:00:00.000Z",
   photoLimitPerGuest: 8,
   slug: "should-not-write",
   eventLink: "https://example.com/e/should-not-write",
@@ -35,11 +33,20 @@ test("event settings validation reports invalid basics", () => {
   assert.match(validation.fieldErrors.photoLimitPerGuest, /between 1 and 100/);
 });
 
+test("event settings validation can require Memory Capsule reveal time", () => {
+  const validation = validateEventSettingsInput(validInput, { requireRevealAt: true });
+  assert.equal(validation.ok, false);
+  assert.match(validation.fieldErrors.revealAt, /valid reveal time/);
+
+  const valid = validateEventSettingsInput({ ...validInput, revealAt: "2026-06-22T16:00:00.000Z" }, { requireRevealAt: true });
+  assert.equal(valid.ok, true);
+});
+
 test("host-owned event settings update writes only safe fields", async () => {
   let updateArgs;
   const prisma = {
     event: {
-      findUnique: async () => ({ id: "event-1", hostId: "host-1" }),
+      findUnique: async () => ({ id: "event-1", hostId: "host-1", challenges: [] }),
       update: async (args) => {
         updateArgs = args;
         return { id: "event-1", ...args.data };
@@ -55,7 +62,7 @@ test("host-owned event settings update writes only safe fields", async () => {
   });
 
   assert.equal(event.name, "Updated Formal");
-  assert.deepEqual(Object.keys(updateArgs.data).sort(), ["description", "eventDate", "name", "photoLimitPerGuest", "revealAt"].sort());
+  assert.deepEqual(Object.keys(updateArgs.data).sort(), ["description", "name", "photoLimitPerGuest"].sort());
   assert.equal(updateArgs.data.slug, undefined);
   assert.equal(updateArgs.data.eventLink, undefined);
   assert.deepEqual(updateArgs.include, { photos: true });

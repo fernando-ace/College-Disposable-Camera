@@ -5,7 +5,7 @@ import { Link, router, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, Text, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus, UpdateEventSettingsInput } from "@eventfilm/shared";
-import { buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
 import { ActionButton, Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader, colors } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -91,8 +91,7 @@ const BETA_ISSUE_AREAS = [
 type EventSettingsForm = {
   name: string;
   description: string;
-  eventDate: Date;
-  revealAt: Date;
+  revealAt?: Date;
   photoLimitPerGuest: string;
 };
 
@@ -100,18 +99,16 @@ function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "descript
   return {
     name: event.name,
     description: event.description || "",
-    eventDate: new Date(event.eventDate),
     revealAt: new Date(event.revealAt),
     photoLimitPerGuest: String(event.photoLimitPerGuest),
   };
 }
 
-function eventSettingsInputFromForm(form: EventSettingsForm): UpdateEventSettingsInput {
+function eventSettingsInputFromForm(form: EventSettingsForm, options: { requireRevealAt?: boolean } = {}): UpdateEventSettingsInput {
   return {
     name: form.name,
     description: form.description,
-    eventDate: form.eventDate.toISOString(),
-    revealAt: form.revealAt.toISOString(),
+    ...(options.requireRevealAt && form.revealAt ? { revealAt: form.revealAt.toISOString() } : {}),
     photoLimitPerGuest: Number(form.photoLimitPerGuest),
   };
 }
@@ -186,9 +183,10 @@ export default function EventDetailScreen() {
   }
 
   async function saveSettingsEdit() {
-    if (!eventId || !settingsForm) return;
-    const input = eventSettingsInputFromForm(settingsForm);
-    const validation = validateEventSettingsInput(input);
+    if (!eventId || !event || !settingsForm) return;
+    const requiresRevealAt = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
+    const input = eventSettingsInputFromForm(settingsForm, { requireRevealAt: requiresRevealAt });
+    const validation = validateEventSettingsInput(input, { requireRevealAt: requiresRevealAt });
     if (!validation.ok) {
       setSettingsFieldErrors(validation.fieldErrors);
       setSettingsStatus(validation.error);
@@ -271,8 +269,10 @@ export default function EventDetailScreen() {
   const lifecycle = event ? deriveEventLifecycleStatus(event, analyticsSummary || undefined) : null;
   const lifecycleStatus = lifecycle?.status;
   const savedSettingsForm = event ? eventSettingsFormFromEvent(event) : null;
-  const settingsDirty = Boolean(settingsForm && savedSettingsForm && JSON.stringify({ ...settingsForm, eventDate: settingsForm.eventDate.toISOString(), revealAt: settingsForm.revealAt.toISOString() }) !== JSON.stringify({ ...savedSettingsForm, eventDate: savedSettingsForm.eventDate.toISOString(), revealAt: savedSettingsForm.revealAt.toISOString() }));
-  const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm)) : null;
+  const requiresRevealAt = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
+  const canShareRecap = Boolean(event?.recapLink && (!requiresRevealAt || lifecycle?.phase === "after"));
+  const settingsDirty = Boolean(settingsForm && savedSettingsForm && JSON.stringify(settingsForm) !== JSON.stringify(savedSettingsForm));
+  const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm, { requireRevealAt: requiresRevealAt }), { requireRevealAt: requiresRevealAt }) : null;
   const visibleSettingsFieldErrors = {
     ...(settingsDirty && liveSettingsValidation && !liveSettingsValidation.ok ? liveSettingsValidation.fieldErrors : {}),
     ...settingsFieldErrors,
@@ -323,9 +323,9 @@ export default function EventDetailScreen() {
               <SectionHeader title="Your event is ready." subtitle={event.name} action={<Badge tone="green">Event dashboard</Badge>} />
               <Body tone="muted">Start by sharing the guest upload link. Guests can add photos without an account.</Body>
               <View style={{ gap: 8 }}>
-                <Body tone="muted">1. Share the guest link before people arrive.</Body>
+                <Body tone="muted">1. Share the guest link so guests can start adding photos.</Body>
                 <Body tone="muted">2. Open the Live Wall during the event.</Body>
-                <Body tone="muted">3. Share the recap after reveal.</Body>
+                <Body tone="muted">3. Share the recap when the album is ready.</Body>
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                 <View style={{ flex: 1, minWidth: 150 }}>
@@ -342,7 +342,7 @@ export default function EventDetailScreen() {
             </Card>
           ) : null}
           <View style={{ gap: 12 }}>
-            <SectionHeader title="Share kit" subtitle={`Event: ${formatDate(event.eventDate)}. Reveal: ${formatDate(event.revealAt)}.`} />
+            <SectionHeader title="Share kit" subtitle={event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? `Memory Capsule reveal: ${formatDate(event.revealAt)}.` : "Guest photos appear in the album as soon as they upload."} />
             <LinkBlock label="Guest Upload" description="The link and QR code guests need before and during the event." url={event.eventLink} tone="accent">
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                 <View style={{ flex: 1, minWidth: 140 }}>
@@ -386,7 +386,7 @@ export default function EventDetailScreen() {
                   <Button tone="secondary" disabled={!event.recapLink} onPress={() => event.recapLink && Linking.openURL(event.recapLink)}>Open Recap</Button>
                 </View>
                 <View style={{ flex: 1, minWidth: 150 }}>
-                  <Button tone="secondary" disabled={!event.recapLink || lifecycle?.phase !== "after"} onPress={() => router.push(`/events/${event.id}/share`)}>Share recap</Button>
+                  <Button tone="secondary" disabled={!canShareRecap} onPress={() => router.push(`/events/${event.id}/share`)}>Share recap</Button>
                 </View>
               </View>
             </LinkBlock>
@@ -403,7 +403,7 @@ export default function EventDetailScreen() {
               </Card>
             ) : null}
             <Card tone="warm">
-              <SectionHeader title="Run of show" subtitle="Guest Upload before arrival. Live Wall during the event. Recap after reveal." />
+              <SectionHeader title="Run of show" subtitle={event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Guest Upload before reveal. Live Wall during the event. Recap after reveal." : "Share Guest Upload, open the Live Wall, and send the Recap whenever the album is ready."} />
               <Body tone="muted">The share kit has copy, QR, and captions when you need to send everything cleanly.</Body>
             </Card>
             {settingsForm ? (
@@ -415,8 +415,7 @@ export default function EventDetailScreen() {
                 <FieldGroup label="Description" error={visibleSettingsFieldErrors.description}>
                   <Field value={settingsForm.description} onChangeText={(value) => updateSettingsField("description", value)} multiline />
                 </FieldGroup>
-                <DateTimeField label="Event date" value={settingsForm.eventDate} onChange={(value) => updateSettingsField("eventDate", value)} error={visibleSettingsFieldErrors.eventDate} />
-                <DateTimeField label="Reveal time" helper="Guests can upload before this, but the full album stays hidden until the reveal time." value={settingsForm.revealAt} onChange={(value) => updateSettingsField("revealAt", value)} error={visibleSettingsFieldErrors.revealAt} />
+                {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && settingsForm.revealAt ? <DateTimeField label="Reveal time" helper="Memory Capsule keeps the album hidden until this reveal time." value={settingsForm.revealAt} onChange={(value) => updateSettingsField("revealAt", value)} error={visibleSettingsFieldErrors.revealAt} /> : null}
                 <FieldGroup label="Photo limit per guest" helper="Keep this high for casual events and lower for games or prompts." error={visibleSettingsFieldErrors.photoLimitPerGuest}>
                   <Field keyboardType="number-pad" value={settingsForm.photoLimitPerGuest} onChangeText={(value) => updateSettingsField("photoLimitPerGuest", value)} />
                 </FieldGroup>
@@ -564,7 +563,7 @@ function FirstEventHandoffPanel({ event }: { event: EventSummary }) {
 
   return (
     <Card tone="accent">
-      <SectionHeader title="Host checklist" subtitle="Use Guest Upload before and during the event, Live Wall during, and Recap after reveal." />
+      <SectionHeader title="Host checklist" subtitle="Use Guest Upload for photos, Live Wall for the room, and Recap when the album is ready." />
       <View style={{ gap: 10 }}>
         <Body tone="muted">Before: confirm the mode and share the QR poster or guest link.</Body>
         <Body tone="muted">During: keep Live Wall open and remind guests to use Safari or Chrome.</Body>
@@ -694,8 +693,7 @@ function RepeatEventPanel({ event, lifecycle }: { event: EventSummary; lifecycle
       const data = await api.duplicateHostEvent(event.id, {
         name: duplicateDefaults.name,
         description: duplicateDefaults.description,
-        eventDate: duplicateDefaults.eventDate,
-        revealAt: duplicateDefaults.revealAt,
+        ...(duplicateDefaults.revealAt ? { revealAt: duplicateDefaults.revealAt } : {}),
         photoLimitPerGuest: duplicateDefaults.photoLimitPerGuest,
       });
       api.trackAnalyticsEvent({
@@ -1028,7 +1026,7 @@ function RunOfShow() {
   const rows = [
     ["Before", "Create the event, verify the guest link, and place the QR code where guests will see it."],
     ["During", "Keep the Live Wall open and hide any reported or off-tone photos instead of deleting them."],
-    ["After", "Refresh the album, feature favorites, then share the Recap link after reveal."],
+    ["After", "Refresh the album, feature favorites, then share the Recap link when the album is ready."],
   ];
 
   return (

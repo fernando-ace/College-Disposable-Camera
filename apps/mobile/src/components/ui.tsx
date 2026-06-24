@@ -1,7 +1,7 @@
 import * as React from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import type { EventSummary, Photo } from "@eventfilm/shared";
-import { challengeLabel, deriveEventLifecycleStatus, photoChallengeLabel } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, challengeLabel, deriveEventLifecycleStatus, photoChallengeLabel } from "@eventfilm/shared";
 
 export const colors = {
   ink: "#1c1917",
@@ -515,8 +515,8 @@ function isLocalhostUrl(value?: string | null) {
 }
 
 export function EventCard({ event, onPress, featured = false }: { event: EventSummary; onPress?: () => void; featured?: boolean }) {
-  const eventDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.eventDate));
-  const revealDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.revealAt));
+  const isMemoryCapsule = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
+  const revealDate = isMemoryCapsule ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(event.revealAt)) : null;
   const lifecycle = deriveEventLifecycleStatus(event);
   const lifecycleTone: "amber" | "dark" | "green" | "red" | "stone" = lifecycle.tone === "green" ? "green" : lifecycle.tone === "amber" ? "amber" : lifecycle.tone === "plum" ? "dark" : "stone";
 
@@ -531,8 +531,7 @@ export function EventCard({ event, onPress, featured = false }: { event: EventSu
           {event.description ? <Body tone="muted">{event.description}</Body> : null}
         </View>
         <View style={{ gap: 5, borderRadius: 16, borderCurve: "continuous", backgroundColor: featured ? "#fffaf0" : colors.wash, padding: 11 }}>
-          <Caption>Event: {eventDate}</Caption>
-          <Caption>Reveal: {revealDate}</Caption>
+          <Caption>{isMemoryCapsule && revealDate ? `Reveal: ${revealDate}` : "Photos appear as soon as guests upload."}</Caption>
         </View>
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
           <Badge tone={lifecycleTone}>{lifecycle.label}</Badge>

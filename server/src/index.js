@@ -711,15 +711,39 @@ function addDays(date, days) {
 }
 
 function duplicateEventDefaults(event, overrides = {}) {
-  const eventDate = overrides.eventDate ? new Date(overrides.eventDate) : addDays(new Date(), 7);
-  const revealAt = overrides.revealAt ? new Date(overrides.revealAt) : addHours(eventDate, 4);
+  const isMemoryCapsule = event.challenges?.[0]?.type === CHALLENGE_TYPE_MEMORY_CAPSULE;
+  const defaultCapsuleReveal = addDays(new Date(), 1);
+  const eventDate = overrides.eventDate ? new Date(overrides.eventDate) : undefined;
+  const revealAt = overrides.revealAt ? new Date(overrides.revealAt) : isMemoryCapsule ? defaultCapsuleReveal : undefined;
   return {
     name: String(overrides.name || `${event.name} (Copy)`).trim(),
     description: typeof overrides.description === "string" ? overrides.description.trim() || null : event.description,
-    eventDate,
-    revealAt,
+    ...(eventDate ? { eventDate } : {}),
+    ...(revealAt ? { revealAt } : {}),
     photoLimitPerGuest: Number.isInteger(Number(overrides.photoLimitPerGuest)) ? Number(overrides.photoLimitPerGuest) : event.photoLimitPerGuest,
   };
+}
+
+function eventUsesMemoryCapsule(event) {
+  return event.challenges?.[0]?.type === CHALLENGE_TYPE_MEMORY_CAPSULE;
+}
+
+function publicAlbumIsLocked(event, now = new Date()) {
+  return eventUsesMemoryCapsule(event) && event.revealAt > now;
+}
+
+function publicEventIsRevealed(event, now = new Date()) {
+  return !publicAlbumIsLocked(event, now);
+}
+
+function settingsWithInternalTiming(settings, { isMemoryCapsule, now = new Date() }) {
+  const eventDate = settings.eventDate ? new Date(settings.eventDate) : now;
+  const revealAt = isMemoryCapsule
+    ? settings.revealAt
+      ? new Date(settings.revealAt)
+      : addHours(eventDate, 4)
+    : now;
+  return { ...settings, eventDate, revealAt };
 }
 
 function cleanFeedbackText(value, maxLength) {
@@ -1128,9 +1152,6 @@ app.get("/api/host/events", requireAuth, async (req, res) => {
 });
 
 app.post("/api/host/events", requireAuth, async (req, res) => {
-  const validation = validateEventSettingsInput(req.body);
-  if (!validation.ok) return res.status(400).json({ error: validation.error, fieldErrors: validation.fieldErrors });
-
   let challengeSetup;
   try {
     challengeSetup = normalizeChallengeSetup(req.body.challenge);
@@ -1138,8 +1159,12 @@ app.post("/api/host/events", requireAuth, async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
 
+  const isMemoryCapsule = challengeSetup?.type === CHALLENGE_TYPE_MEMORY_CAPSULE;
+  const validation = validateEventSettingsInput(req.body, { requireRevealAt: isMemoryCapsule });
+  if (!validation.ok) return res.status(400).json({ error: validation.error, fieldErrors: validation.fieldErrors });
+
   const slug = crypto.randomBytes(12).toString("base64url");
-  const settings = validation.value;
+  const settings = settingsWithInternalTiming(validation.value, { isMemoryCapsule });
   const event = await prisma.event.create({
     data: {
       hostId: req.user.userId,
@@ -1207,11 +1232,12 @@ app.post("/api/host/events/:eventId/duplicate", requireAuth, async (req, res) =>
   if (!source) return res.status(404).json({ error: "Event not found" });
 
   const defaults = duplicateEventDefaults(source, req.body || {});
-  const validation = validateEventSettingsInput(defaults);
-  if (!validation.ok) return res.status(400).json({ error: validation.error, fieldErrors: validation.fieldErrors });
-  const settings = validation.value;
-
   const sourceChallenge = source.challenges?.[0] || null;
+  const isMemoryCapsule = sourceChallenge?.type === CHALLENGE_TYPE_MEMORY_CAPSULE;
+  const validation = validateEventSettingsInput(defaults, { requireRevealAt: isMemoryCapsule });
+  if (!validation.ok) return res.status(400).json({ error: validation.error, fieldErrors: validation.fieldErrors });
+  const settings = settingsWithInternalTiming(validation.value, { isMemoryCapsule });
+
   let challengeSetup = null;
   if (sourceChallenge) {
     try {
@@ -1553,7 +1579,7 @@ app.get("/api/events/:slug", async (req, res) => {
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
-  const isRevealed = event.revealAt <= new Date();
+  const isRevealed = publicEventIsRevealed(event);
   res.json({
     event: {
       ...publicEventBasePayload(event, isRevealed),
@@ -1577,8 +1603,8 @@ app.get("/api/events/:slug/live-wall", async (req, res) => {
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
-  const isRevealed = event.revealAt <= new Date();
-  const isLocked = event.challenges?.[0]?.type === CHALLENGE_TYPE_MEMORY_CAPSULE && !isRevealed;
+  const isLocked = publicAlbumIsLocked(event);
+  const isRevealed = !isLocked;
   const eventLink = publicEventUrl(event.slug);
   const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 360 });
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
@@ -1615,9 +1641,10 @@ app.get("/api/events/:slug/recap", async (req, res) => {
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
-  const isRevealed = event.revealAt <= new Date();
+  const isLocked = publicAlbumIsLocked(event);
+  const isRevealed = !isLocked;
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
-  const awardVoting = isRevealed ? await loadAwardVotingSummary(event, { clientId }) : undefined;
+  const awardVoting = !isLocked ? await loadAwardVotingSummary(event, { clientId }) : undefined;
 
   if (event.challenges?.[0]?.type === CHALLENGE_TYPE_EVENT_AWARDS) {
     trackApiAnalytics("award_votes_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap" } });
@@ -1629,13 +1656,13 @@ app.get("/api/events/:slug/recap", async (req, res) => {
   res.json({
     event: {
       ...publicEventBasePayload(event, isRevealed),
-      photoCount: isRevealed ? event._count.photos : null,
+      photoCount: isLocked ? null : event._count.photos,
     },
     eventLink: publicEventUrl(event.slug),
     liveWallLink: liveWallUrl(event.slug),
     recapLink: recapUrl(event.slug),
-    isLocked: !isRevealed,
-    photos: isRevealed ? event.photos.map(photoPayload) : [],
+    isLocked,
+    photos: isLocked ? [] : event.photos.map(photoPayload),
     ...(awardVoting ? { awardVoting } : {}),
   });
 });
@@ -1861,10 +1888,13 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
 app.get("/api/events/:slug/photos", async (req, res) => {
   const event = await prisma.event.findUnique({
     where: { slug: req.params.slug },
-    include: { photos: { where: visiblePhotoWhere(), orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }], include: { guest: true, challengeParticipant: true } } },
+    include: {
+      photos: { where: visiblePhotoWhere(), orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }], include: { guest: true, challengeParticipant: true } },
+      challenges: activeChallengeInclude(),
+    },
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
-  if (event.revealAt > new Date()) {
+  if (publicAlbumIsLocked(event)) {
     return res.status(403).json({ error: `Photos are locked until ${event.revealAt.toISOString()}`, revealAt: event.revealAt });
   }
   res.json({ photos: event.photos.map(photoPayload) });

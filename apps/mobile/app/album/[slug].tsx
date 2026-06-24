@@ -15,6 +15,7 @@ export default function AlbumScreen() {
   const [reportStatus, setReportStatus] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
+  const isAlbumLocked = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !event.isRevealed;
 
   React.useEffect(() => {
     if (!slug) return;
@@ -22,7 +23,7 @@ export default function AlbumScreen() {
     api.getPublicEventBySlug(slug)
       .then(async (data) => {
         setEvent(data.event);
-        if (data.event.isRevealed) {
+        if (data.event.challenge?.type !== CHALLENGE_TYPES.MEMORY_CAPSULE || data.event.isRevealed) {
           const photoData = await api.getAlbumPhotos(slug);
           setPhotos(photoData.photos);
         }
@@ -55,15 +56,15 @@ export default function AlbumScreen() {
       <TaskHeader
         eyebrow="Guest album"
         title={event?.name || "Album"}
-        body={event?.isRevealed ? "The reveal is live. Browse the moments people shared." : capsuleCopy?.revealNote || "The album is tucked away until the host reveal time."}
-        action={event ? <Badge tone={event.isRevealed ? "green" : "amber"}>{event.isRevealed ? "Revealed" : "Locked"}</Badge> : undefined}
+        body={isAlbumLocked ? capsuleCopy?.revealNote || "The Memory Capsule is tucked away until reveal time." : "Browse the moments people shared."}
+        action={event ? <Badge tone={isAlbumLocked ? "amber" : "green"}>{isAlbumLocked ? "Locked" : "Live"}</Badge> : undefined}
       />
 
       {loading ? <LoadingState label="Loading album..." /> : null}
       {error ? <ErrorState message={error} /> : null}
       {reportStatus ? <SuccessState message={reportStatus} /> : null}
 
-      {event && !event.isRevealed ? (
+      {event && isAlbumLocked ? (
         <EmptyState
           title="Album reveal is locked"
           body={capsuleCopy?.revealNote || `Photos unlock at ${new Date(event.revealAt).toLocaleString()}. Guests can still upload before then.`}
@@ -75,9 +76,9 @@ export default function AlbumScreen() {
         </Link>
       ) : null}
 
-      {event?.isRevealed ? (
+      {event && !isAlbumLocked ? (
         <>
-          <SectionHeader title="Shared photos" subtitle={`${photos.length} revealed photos.`} />
+          <SectionHeader title="Shared photos" subtitle={`${photos.length} ${photos.length === 1 ? "photo" : "photos"}.`} />
           {photos.length ? photos.map((photo) => (
             <View key={photo.id} style={{ gap: 10 }}>
               <PhotoCard photo={photo} />

@@ -431,7 +431,6 @@ export default function CreateEventScreen() {
   const [step, setStep] = React.useState(0);
   const [name, setName] = React.useState("");
   const [description, setDescription] = React.useState("");
-  const [eventDate, setEventDate] = React.useState(() => new Date());
   const [revealAt, setRevealAt] = React.useState(() => new Date(Date.now() + 3 * 60 * 60 * 1000));
   const [photoLimitPerGuest, setPhotoLimitPerGuest] = React.useState("10");
   const [challengeDraft, setChallengeDraft] = React.useState<ChallengeDraft>(() => createEmptyChallengeDraft());
@@ -514,8 +513,7 @@ export default function CreateEventScreen() {
       const data = await api.createEvent({
         name: name.trim(),
         description: description.trim() || null,
-        eventDate: eventDate.toISOString(),
-        revealAt: revealAt.toISOString(),
+        ...(challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? { revealAt: revealAt.toISOString() } : {}),
         photoLimitPerGuest: photoLimit,
         eventTemplateSlug: challengeDraft.eventTemplateSlug,
         promptPackSlug: challengeDraft.promptPackSlug,
@@ -575,9 +573,8 @@ export default function CreateEventScreen() {
 
       {step === 2 ? (
         <Card>
-          <SectionHeader title="Timing and uploads" subtitle="Set when the event happens and when guests can see the album." />
-          <DateTimeField label="Event date and time" helper="This helps hosts spot upcoming and active events." value={eventDate} onChange={setEventDate} />
-          <DateTimeField label="Reveal date and time" helper="Guests can upload before reveal, but the album stays locked until this time." value={revealAt} onChange={setRevealAt} />
+          <SectionHeader title="Uploads" subtitle="Set a friendly cap. Normal event photos appear as soon as guests upload." />
+          {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <DateTimeField label="Reveal date and time" helper="Only Memory Capsule keeps the album locked until this time." value={revealAt} onChange={setRevealAt} /> : null}
           <FieldGroup label="Photo limit per guest" helper="A friendly cap keeps the album useful without blocking the best moments.">
             <Field keyboardType="number-pad" value={photoLimitPerGuest} onChangeText={setPhotoLimitPerGuest} />
           </FieldGroup>
@@ -624,8 +621,7 @@ export default function CreateEventScreen() {
             <ReviewRow label="Event" value={name.trim() || "Untitled event"} />
             <ReviewRow label="Template" value={EVENT_TEMPLATES.find((template) => template.slug === challengeDraft.eventTemplateSlug)?.name || "Custom event"} />
             <ReviewRow label="Mode" value={challengeTypeName(challengeDraft.type)} />
-            <ReviewRow label="Event date" value={formatDateTime(eventDate)} />
-            <ReviewRow label="Reveal" value={formatDateTime(revealAt)} />
+            {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <ReviewRow label="Reveal" value={formatDateTime(revealAt)} /> : null}
             <ReviewRow label="Uploads" value={`${photoLimitPerGuest || "0"} per guest`} />
           </View>
           {challengeDraft.type === CHALLENGE_TYPES.COLOR_HUNT ? (

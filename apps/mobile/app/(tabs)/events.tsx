@@ -107,7 +107,7 @@ export default function EventsScreen() {
       />
 
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-        <StatTile label="Upcoming" value={upcomingEvents} tone="accent" />
+        <StatTile label="Ready" value={upcomingEvents} tone="accent" />
         <StatTile label="Photos" value={totalPhotos} />
         <StatTile label="Recaps ready" value={recapsReady} />
       </View>
@@ -118,7 +118,7 @@ export default function EventsScreen() {
       {!events.length && !loading ? (
         <EmptyState
           title="Create your first EventFilm album"
-          body="Start with the event name and reveal time. The guest link, QR code, Live Wall, and Recap links appear right after setup."
+          body="Start with the event name and photo setup. The guest link, QR code, Live Wall, and Recap links appear right after setup."
           action={(
             <Link href="/create-event" asChild>
               <Button>Create your first event</Button>
@@ -129,14 +129,14 @@ export default function EventsScreen() {
 
       {featuredEvent ? (
         <View style={{ gap: 12 }}>
-          <SectionHeader title="Next up" subtitle="Open this event to share links, check uploads, or prep the room display." />
+          <SectionHeader title="Featured album" subtitle="Open this event to share links, check uploads, or prep the room display." />
           <EventCard event={featuredEvent} featured onPress={() => router.push(`/events/${featuredEvent.id}`)} />
         </View>
       ) : null}
 
       {remainingEvents.length ? (
         <View style={{ gap: 12 }}>
-          <SectionHeader title="Other events" subtitle="Sorted by the event closest to now." />
+          <SectionHeader title="Other events" subtitle="Open any album to manage links, uploads, and sharing." />
           {remainingEvents.map((event) => (
             <EventCard key={event.id} event={event} onPress={() => router.push(`/events/${event.id}`)} />
           ))}

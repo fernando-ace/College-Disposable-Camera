@@ -4,7 +4,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Image, Linking, Share, View } from "react-native";
 import type { LaunchLinkVerification } from "@eventfilm/api-client";
 import type { AnalyticsEventName, EventSummary, Photo } from "@eventfilm/shared";
-import { buildHostShareAssets, deriveEventLifecycleStatus } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, buildHostShareAssets, deriveEventLifecycleStatus } from "@eventfilm/shared";
 import { Badge, Body, Button, Card, ErrorState, LinkBlock, LoadingState, Screen, SectionHeader, SuccessState, TaskHeader, colors } from "../../../src/components/ui";
 import { useAuth } from "../../../src/auth";
 
@@ -82,17 +82,18 @@ export default function ShareEventScreen() {
 
   const shareAssets = event ? buildHostShareAssets(event) : null;
   const lifecycle = event ? deriveEventLifecycleStatus(event) : null;
-  const isRecapReady = Boolean(event?.recapLink && lifecycle?.phase === "after");
+  const isMemoryCapsule = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
+  const isRecapReady = Boolean(event?.recapLink && (!isMemoryCapsule || lifecycle?.phase === "after"));
   const recapUnavailableCopy = lifecycle?.phase === "after"
     ? "The recap link is not available yet. Refresh this event before sharing it."
-    : "The recap will be ready after the reveal time.";
+    : "The recap will be ready after the Memory Capsule reveal time.";
 
   return (
     <Screen>
       <TaskHeader
         eyebrow="Share kit"
         title={event ? event.name : "Preparing share links"}
-        body="Send the guest link before the event, open the Live Wall during it, and share the recap after reveal."
+        body={isMemoryCapsule ? "Send the guest link before reveal, open the Live Wall during it, and share the recap after reveal." : "Send the guest link, open the Live Wall, and share the recap whenever the album is ready."}
       />
       {error ? <ErrorState message={error} /> : null}
       {!event ? <LoadingState label="Loading sharing details..." /> : null}
@@ -102,7 +103,7 @@ export default function ShareEventScreen() {
             <>
               <Card tone="warm">
                 <SectionHeader title="Event status" subtitle={lifecycle?.description || "Use the right link for the moment."} action={lifecycle ? <Badge>{lifecycle.label}</Badge> : undefined} />
-                <Body tone="muted">Next step: {lifecycle?.phase === "during" ? "Open the Live Wall and keep the QR code visible." : lifecycle?.phase === "after" ? "Share the recap with everyone." : "Send the guest upload link before people arrive."}</Body>
+                <Body tone="muted">Next step: {lifecycle?.phase === "during" ? "Open the Live Wall and keep the QR code visible." : lifecycle?.phase === "after" || !isMemoryCapsule ? "Share the recap with everyone." : "Send the guest upload link before reveal time."}</Body>
                 {lifecycle?.phase === "during" ? (
                   <Button disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
                 ) : lifecycle?.phase === "after" ? (
@@ -113,7 +114,7 @@ export default function ShareEventScreen() {
               </Card>
 
               <Card>
-                <SectionHeader title="Before the event" subtitle="Send this in the group chat before people arrive." />
+                <SectionHeader title="Guest link" subtitle="Send this in the group chat so guests can start adding photos." />
                 <ShareLinkCard
                   title="Guest upload link"
                   subtitle="No account needed."
@@ -149,7 +150,7 @@ export default function ShareEventScreen() {
               </Card>
 
               <Card>
-                <SectionHeader title="After the event" subtitle={isRecapReady ? "Send the recap when the reveal is open." : recapUnavailableCopy} />
+                <SectionHeader title="Recap" subtitle={isRecapReady ? (isMemoryCapsule ? "Send the recap when the reveal is open." : "Send the recap whenever the album is ready.") : recapUnavailableCopy} />
                 {isRecapReady ? (
                   <>
                     <ShareLinkCard

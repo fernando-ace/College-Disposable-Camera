@@ -857,8 +857,8 @@ export type ChallengeSubmission = {
 export type CreateEventInput = {
   name: string;
   description?: string | null;
-  eventDate: ISODateString;
-  revealAt: ISODateString;
+  eventDate?: ISODateString;
+  revealAt?: ISODateString;
   photoLimitPerGuest: number;
   eventTemplateSlug?: EventTemplateSlug | string | null;
   promptPackSlug?: PromptPackSlug | string | null;
@@ -875,12 +875,17 @@ export const EVENT_SETTINGS_LIMITS = {
 export type UpdateEventSettingsInput = {
   name: string;
   description?: string | null;
-  eventDate: ISODateString;
-  revealAt: ISODateString;
+  eventDate?: ISODateString;
+  revealAt?: ISODateString;
   photoLimitPerGuest: number;
 };
 
 export type EventSettingsFieldErrors = Partial<Record<keyof UpdateEventSettingsInput, string>>;
+
+export type EventSettingsValidationOptions = {
+  requireEventDate?: boolean;
+  requireRevealAt?: boolean;
+};
 
 export type EventSettingsValidationResult =
   | { ok: true; value: UpdateEventSettingsInput }
@@ -893,10 +898,12 @@ function parseEventSettingsDate(value: unknown) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInput> = {}): EventSettingsValidationResult {
+export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInput> = {}, options: EventSettingsValidationOptions = {}): EventSettingsValidationResult {
   const fieldErrors: EventSettingsFieldErrors = {};
   const name = String(input.name ?? "").trim();
   const description = input.description == null ? "" : String(input.description).trim();
+  const hasEventDate = input.eventDate !== undefined && input.eventDate !== null && input.eventDate !== "";
+  const hasRevealAt = input.revealAt !== undefined && input.revealAt !== null && input.revealAt !== "";
   const eventDate = parseEventSettingsDate(input.eventDate);
   const revealAt = parseEventSettingsDate(input.revealAt);
   const photoLimitPerGuest = Number(input.photoLimitPerGuest);
@@ -911,11 +918,15 @@ export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInp
     fieldErrors.description = `Description must be ${EVENT_SETTINGS_LIMITS.descriptionMaxLength} characters or fewer.`;
   }
 
-  if (!eventDate) {
+  if (options.requireEventDate && !eventDate) {
+    fieldErrors.eventDate = "Enter a valid event date.";
+  } else if (hasEventDate && !eventDate) {
     fieldErrors.eventDate = "Enter a valid event date.";
   }
 
-  if (!revealAt) {
+  if (options.requireRevealAt && !revealAt) {
+    fieldErrors.revealAt = "Enter a valid reveal time.";
+  } else if (hasRevealAt && !revealAt) {
     fieldErrors.revealAt = "Enter a valid reveal time.";
   }
 
@@ -929,17 +940,14 @@ export function validateEventSettingsInput(input: Partial<UpdateEventSettingsInp
     return { ok: false, error: "Check the highlighted event settings.", fieldErrors };
   }
 
-  const validEventDate = eventDate as Date;
-  const validRevealAt = revealAt as Date;
-
   return {
     ok: true,
     value: {
       name,
       description: description || null,
-      eventDate: validEventDate.toISOString(),
-      revealAt: validRevealAt.toISOString(),
       photoLimitPerGuest,
+      ...(eventDate ? { eventDate: eventDate.toISOString() } : {}),
+      ...(revealAt ? { revealAt: revealAt.toISOString() } : {}),
     },
   };
 }
@@ -1966,9 +1974,34 @@ export function deriveEventLifecycleStatus(
   const revealAt = new Date(event.revealAt);
   const totalPhotos = counts.totalPhotos ?? event.photoCount ?? 0;
   const visibleCount = counts.visiblePhotos ?? totalPhotos;
-  const isRevealLocked = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && revealAt.getTime() > now.getTime();
+  const isMemoryCapsule = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
+  const isRevealLocked = isMemoryCapsule && revealAt.getTime() > now.getTime();
   const happeningSoonAt = addHours(now, 24);
   const archiveCutoff = addDays(revealAt, 14);
+
+  if (!isMemoryCapsule) {
+    if (totalPhotos > 0) {
+      return {
+        status: "collecting_photos",
+        label: "Live album",
+        description: "Photos appear as guests upload them. Keep the Photo Wall and photo review close.",
+        phase: "during",
+        tone: "green",
+        shouldShowRepeatCta: false,
+        shouldAskFeedback: false,
+      };
+    }
+
+    return {
+      status: "draft_or_upcoming",
+      label: "Ready to share",
+      description: "Share the guest link so people can start adding photos.",
+      phase: "before",
+      tone: "stone",
+      shouldShowRepeatCta: false,
+      shouldAskFeedback: false,
+    };
+  }
 
   if (revealAt.getTime() <= now.getTime() && archiveCutoff.getTime() < now.getTime()) {
     return {
@@ -2047,7 +2080,7 @@ export function buildHostNextStep(
   now: Date = new Date(),
 ) {
   const lifecycle = deriveEventLifecycleStatus(event, counts, now);
-  if (lifecycle.status === "draft_or_upcoming") return "Share the guest link before people arrive.";
+  if (lifecycle.status === "draft_or_upcoming") return event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Share the guest link before reveal time." : "Share the guest link.";
   if (lifecycle.status === "live_or_happening_soon") return "Share the guest link.";
   if (lifecycle.status === "collecting_photos") return "Open the Photo Wall.";
   if (lifecycle.status === "reveal_locked") return "Keep collecting photos until reveal time.";
@@ -2056,20 +2089,18 @@ export function buildHostNextStep(
 }
 
 export function buildDuplicateEventInput(event: Pick<EventSummary, "name" | "description" | "photoLimitPerGuest" | "eventTemplateSlug" | "promptPackSlug" | "challenge">, now: Date = new Date()): CreateEventInput {
-  const eventDate = addDays(now, 7);
-  const revealAt = addHours(eventDate, 4);
   const draft = draftFromChallenge(event.challenge);
   const challenge = buildChallengePayload({
     ...draft,
     eventTemplateSlug: (event.eventTemplateSlug as EventTemplateSlug | null) || draft.eventTemplateSlug,
     promptPackSlug: (event.promptPackSlug as PromptPackSlug | null) || draft.promptPackSlug,
   });
+  const memoryCapsuleRevealAt = challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? addDays(now, 1).toISOString() : undefined;
 
   return {
     name: `${event.name} (Copy)`,
     description: event.description || null,
-    eventDate: eventDate.toISOString(),
-    revealAt: revealAt.toISOString(),
+    ...(memoryCapsuleRevealAt ? { revealAt: memoryCapsuleRevealAt } : {}),
     photoLimitPerGuest: event.photoLimitPerGuest,
     eventTemplateSlug: event.eventTemplateSlug || null,
     promptPackSlug: event.promptPackSlug || null,

@@ -95,15 +95,6 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-.event-photo-strip-track {
-  animation: event-photo-strip-scroll 22s linear infinite;
-  width: max-content;
-}
-
-.event-photo-strip-frame {
-  aspect-ratio: 3 / 4;
-}
-
 .landing-faq summary::-webkit-details-marker {
   display: none;
 }
@@ -119,15 +110,6 @@ textarea {
   }
 }
 
-@keyframes event-photo-strip-scroll {
-  from {
-    transform: translateX(0);
-  }
-
-  to {
-    transform: translateX(calc(-1 * var(--strip-shift, 25%)));
-  }
-}
 
 @media print {
   @page {

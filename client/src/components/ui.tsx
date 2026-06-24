@@ -126,6 +126,7 @@ export function AppShell({ children, userEmail, canViewFounder = false }: { chil
           {navItems.map((item) => (
             <NavLink
               className={({ isActive }) => cx("flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-semibold transition", isActive ? "bg-coral-soft text-coral" : "text-muted hover:bg-stone-100 hover:text-ink")}
+              end={item.to === "/dashboard"}
               to={item.to}
               key={item.to}
             >

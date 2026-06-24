@@ -19,10 +19,12 @@ function parseEventDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function validateEventSettingsInput(input = {}) {
+function validateEventSettingsInput(input = {}, options = {}) {
   const fieldErrors = {};
   const name = String(input.name ?? "").trim();
   const description = typeof input.description === "string" ? input.description.trim() : input.description == null ? "" : String(input.description).trim();
+  const hasEventDate = input.eventDate !== undefined && input.eventDate !== null && input.eventDate !== "";
+  const hasRevealAt = input.revealAt !== undefined && input.revealAt !== null && input.revealAt !== "";
   const eventDate = parseEventDate(input.eventDate);
   const revealAt = parseEventDate(input.revealAt);
   const photoLimitPerGuest = Number(input.photoLimitPerGuest);
@@ -37,11 +39,15 @@ function validateEventSettingsInput(input = {}) {
     fieldErrors.description = `Description must be ${MAX_EVENT_DESCRIPTION_LENGTH} characters or fewer.`;
   }
 
-  if (!eventDate) {
+  if (options.requireEventDate && !eventDate) {
+    fieldErrors.eventDate = "Enter a valid event date.";
+  } else if (hasEventDate && !eventDate) {
     fieldErrors.eventDate = "Enter a valid event date.";
   }
 
-  if (!revealAt) {
+  if (options.requireRevealAt && !revealAt) {
+    fieldErrors.revealAt = "Enter a valid reveal time.";
+  } else if (hasRevealAt && !revealAt) {
     fieldErrors.revealAt = "Enter a valid reveal time.";
   }
 
@@ -64,9 +70,9 @@ function validateEventSettingsInput(input = {}) {
     value: {
       name,
       description: description || null,
-      eventDate,
-      revealAt,
       photoLimitPerGuest,
+      ...(eventDate ? { eventDate } : {}),
+      ...(revealAt ? { revealAt } : {}),
     },
   };
 }
@@ -74,7 +80,11 @@ function validateEventSettingsInput(input = {}) {
 async function updateHostEventSettings(prisma, { eventId, userId, input, include }) {
   const existing = await prisma.event.findUnique({
     where: { id: eventId },
-    select: { id: true, hostId: true },
+    select: {
+      id: true,
+      hostId: true,
+      challenges: { where: { isActive: true }, take: 1, select: { type: true } },
+    },
   });
 
   if (!existing) {
@@ -84,7 +94,7 @@ async function updateHostEventSettings(prisma, { eventId, userId, input, include
     throw new EventSettingsError("You do not have access to edit this event.", 403);
   }
 
-  const validation = validateEventSettingsInput(input);
+  const validation = validateEventSettingsInput(input, { requireRevealAt: existing.challenges?.[0]?.type === "MEMORY_CAPSULE" });
   if (!validation.ok) {
     throw new EventSettingsError(validation.error, 400, validation.fieldErrors);
   }

@@ -56,7 +56,6 @@ import {
   Icon as CleanIcon,
   PrimaryButton,
   SecondaryButton as CleanSecondaryButton,
-  Stepper,
 } from "./components/ui";
 import "./styles.css";
 
@@ -68,7 +67,9 @@ if (!API_URL) {
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
 const API_ORIGIN = new URL(API_BASE_URL).origin;
-const LANDING_DEMO_PATH = "/e/eventfilm-beta-demo-storage-smoke";
+const DEFAULT_LANDING_DEMO_SLUG = "eventfilm-beta-demo-storage-smoke";
+const LANDING_DEMO_SLUG = (import.meta.env.VITE_LANDING_DEMO_SLUG || DEFAULT_LANDING_DEMO_SLUG).trim() || DEFAULT_LANDING_DEMO_SLUG;
+const LANDING_DEMO_PATH = "/demo";
 const LANDING_USE_CASES = [
   { label: "Pregames", icon: "cup", image: "/landing/pregames.jpg" },
   { label: "Birthdays", icon: "cake", image: "/landing/birthdays.jpg" },
@@ -263,8 +264,7 @@ function toDateTimeLocal(date = new Date()) {
 type EventSettingsForm = {
   name: string;
   description: string;
-  eventDate: string;
-  revealAt: string;
+  revealAt?: string;
   photoLimitPerGuest: string;
 };
 
@@ -272,7 +272,6 @@ function eventSettingsFormFromEvent(event: Pick<EventSummary, "name" | "descript
   return {
     name: event.name,
     description: event.description || "",
-    eventDate: toDateTimeLocal(new Date(event.eventDate)),
     revealAt: toDateTimeLocal(new Date(event.revealAt)),
     photoLimitPerGuest: String(event.photoLimitPerGuest),
   };
@@ -284,12 +283,11 @@ function safeDateInputToIso(value: string) {
   return Number.isNaN(date.getTime()) ? value : date.toISOString();
 }
 
-function eventSettingsInputFromForm(form: EventSettingsForm): UpdateEventSettingsInput {
+function eventSettingsInputFromForm(form: EventSettingsForm, options: { requireRevealAt?: boolean } = {}): UpdateEventSettingsInput {
   return {
     name: form.name,
     description: form.description,
-    eventDate: safeDateInputToIso(form.eventDate),
-    revealAt: safeDateInputToIso(form.revealAt),
+    ...(options.requireRevealAt ? { revealAt: safeDateInputToIso(form.revealAt || "") } : {}),
     photoLimitPerGuest: Number(form.photoLimitPerGuest),
   };
 }
@@ -406,14 +404,6 @@ function recordGuestUploadMetadata(slug: string, photo: Photo) {
   const existing = loadGuestUploadMetadata(slug).filter((item) => item.photoId !== photo.id);
   saveGuestUploadMetadata(slug, [nextItem, ...existing]);
   return [nextItem, ...existing];
-}
-
-function guestChallengeHint(event: PublicEvent) {
-  if (event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT) return "Find your color and upload your best photos.";
-  if (event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) return "Pick a prompt and upload a matching photo.";
-  if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) return "Submit photos for the award categories.";
-  if (event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE) return "Add photos now. Everyone sees them after the reveal.";
-  return "Add any photos you want the host to have.";
 }
 
 function uploadLimitCopy(remaining: number | null, limit: number) {
@@ -693,25 +683,30 @@ function templateDisplayName(template: { slug: EventTemplateSlug; name: string }
 
 function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; onSelect: (slug: EventTemplateSlug) => void; onSkip: () => void }) {
   return (
-    <section className="rounded-xl border border-line bg-white p-5 shadow-sm sm:p-6">
+    <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="font-serif-display text-3xl font-bold text-ink">What are you making?</h2>
-          <p className="mt-2 max-w-2xl text-sm text-muted">Pick the event type that fits best. You can customize everything later.</p>
+          <h2 className="text-lg font-bold text-ink">Event type</h2>
+          <p className="mt-1 max-w-2xl text-sm text-muted">Pick a starter, or keep it custom. This only changes the defaults.</p>
         </div>
       </div>
-      <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 flex max-w-full min-w-0 gap-3 overflow-x-auto pb-1 sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
         {CREATE_EVENT_TYPE_CARDS.map((template) => {
           const selected = draft.eventTemplateSlug === template.slug;
           return (
-            <article className={cx("rounded-xl border p-5 transition", selected ? "border-coral bg-coral-soft" : "border-line bg-white hover:border-coral/40")} key={template.slug}>
-              <h3 className="text-xl font-bold text-ink">{template.title}</h3>
-              <p className="mt-2 min-h-12 text-sm leading-6 text-muted">{template.body}</p>
-              <p className="mt-4 rounded-lg bg-stone-50 px-3 py-2 text-xs font-semibold text-muted">Recommended: {template.recommended}</p>
-              <button type="button" className={cx("mt-4 min-h-10 w-full rounded-lg px-4 py-2 text-sm font-bold", selected ? "bg-ink text-white" : "bg-coral text-white hover:bg-coral-strong")} onClick={() => template.custom ? onSkip() : onSelect(template.slug)}>
-                {selected ? "Selected" : "Start with this"}
-              </button>
-            </article>
+            <button
+              type="button"
+              className={cx(
+                "min-w-[220px] rounded-lg border p-4 text-left transition sm:min-w-0",
+                selected ? "border-coral bg-coral-soft text-ink" : "border-line bg-white text-ink hover:border-coral/40",
+              )}
+              onClick={() => template.custom ? onSkip() : onSelect(template.slug)}
+              key={template.slug}
+            >
+              <span className="block text-base font-bold">{template.title}</span>
+              <span className="mt-1 block text-sm leading-5 text-muted">{template.body}</span>
+              <span className="mt-3 inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-muted ring-1 ring-line">{template.recommended}</span>
+            </button>
           );
         })}
       </div>
@@ -719,9 +714,50 @@ function TemplateLibrary({ draft, onSelect, onSkip }: { draft: ChallengeDraft; o
   );
 }
 
-function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, compactForCreate = false }: { draft: ChallengeDraft; onChange: (draft: ChallengeDraft) => void; promptLibraryInitiallyOpen?: boolean; compactForCreate?: boolean }) {
+function PhotoStylePicker({ draft, onSelect }: { draft: ChallengeDraft; onSelect: (type: ChallengeDraft["type"]) => void }) {
+  return (
+    <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
+      <h2 className="text-lg font-bold text-ink">Photo style</h2>
+      <p className="mt-1 text-sm text-muted">Simple Album is fastest. Add a lightweight game only if it helps the room.</p>
+      <div className="mt-4 flex max-w-full min-w-0 gap-3 overflow-x-auto pb-1 lg:grid lg:grid-cols-5 lg:overflow-visible">
+        {CHALLENGE_PACKS.map((pack) => {
+          const selected = draft.type === pack.mode;
+          return (
+            <button
+              type="button"
+              className={cx(
+                "min-w-[180px] rounded-lg border p-4 text-left text-sm transition lg:min-w-0",
+                selected ? "border-coral bg-coral-soft text-ink" : "border-line bg-white text-ink hover:border-coral/40",
+              )}
+              onClick={() => onSelect(pack.mode)}
+              key={pack.slug}
+            >
+              <span className="block font-bold">{plainModeLabel(pack.mode)}</span>
+              <span className="mt-1 block leading-5 text-muted">{pack.shortDescription}</span>
+              <span className="mt-3 block text-xs font-semibold text-muted">{pack.setupComplexity} setup</span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function ChallengeSetup({
+  draft,
+  onChange,
+  promptLibraryInitiallyOpen = false,
+  compactForCreate = false,
+  advancedOnly = false,
+}: {
+  draft: ChallengeDraft;
+  onChange: (draft: ChallengeDraft) => void;
+  promptLibraryInitiallyOpen?: boolean;
+  compactForCreate?: boolean;
+  advancedOnly?: boolean;
+}) {
   const [isPromptLibraryOpen, setIsPromptLibraryOpen] = useState(promptLibraryInitiallyOpen);
-  const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState(!compactForCreate);
+  const [isMoreOptionsOpen, setIsMoreOptionsOpen] = useState(advancedOnly || !compactForCreate);
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [isAwardEditorOpen, setIsAwardEditorOpen] = useState(false);
   const selectedPack = getChallengePack(draft.type);
@@ -863,7 +899,8 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, c
   }
 
   return (
-    <div className="rounded-xl bg-stone-50 p-5">
+    <div className={cx(advancedOnly ? "rounded-lg bg-white" : "rounded-xl bg-stone-50 p-5")}>
+      {!advancedOnly && (
       <div className="grid gap-3">
         <div>
           <h2 className="font-serif-display text-3xl font-bold text-ink">How should photos work?</h2>
@@ -883,8 +920,9 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, c
           ))}
         </div>
       </div>
+      )}
 
-      {compactForCreate && (
+      {compactForCreate && !advancedOnly && (
         <div className="mt-5 rounded-xl bg-white p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -897,11 +935,11 @@ function ChallengeSetup({ draft, onChange, promptLibraryInitiallyOpen = false, c
       )}
 
       {isMoreOptionsOpen ? (
-      <div className="mt-5 rounded-xl bg-white p-5">
+      <div className={cx(advancedOnly ? "mt-4 rounded-lg border border-line bg-stone-50 p-4" : "mt-5 rounded-xl bg-white p-5")}>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-bold uppercase text-stone-500">Photo prompts</p>
-            <h3 className="mt-1 font-display text-lg font-bold">Selected: {selectedPromptPack.name}</h3>
+            <p className="text-sm font-semibold text-stone-500">Photo prompts</p>
+            <h3 className="mt-1 text-lg font-bold text-ink">Selected: {selectedPromptPack.name}</h3>
             <p className="mt-1 text-sm text-stone-600">Includes {selectedPromptPack.items.length} ideas. You can change these later.</p>
           </div>
           <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setIsPromptLibraryOpen((current) => !current)}>{isPromptLibraryOpen ? "Hide prompts" : "Customize prompts"}</SecondaryButton>
@@ -1413,8 +1451,7 @@ function RepeatEventActions({ event, lifecycle, compact = false, onDuplicated }:
         {
           name: duplicateDefaults.name,
           description: duplicateDefaults.description,
-          eventDate: duplicateDefaults.eventDate,
-          revealAt: duplicateDefaults.revealAt,
+          ...(duplicateDefaults.revealAt ? { revealAt: duplicateDefaults.revealAt } : {}),
           photoLimitPerGuest: duplicateDefaults.photoLimitPerGuest,
         },
         auth.token,
@@ -1735,10 +1772,15 @@ function LandingRedesign() {
             <a className="hover:text-[#ff5a4f]" href="#use-cases">Use cases</a>
             <a className="hover:text-[#ff5a4f]" href="#faq">FAQ</a>
           </nav>
-          <div className="justify-self-end">
-            <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event nav")}>
-              Create your first event
+          <div className="flex items-center gap-2 justify-self-end">
+            <LandingButtonLink variant="secondary" to="/dashboard" onClick={() => trackCta("Dashboard nav")}>
+              Dashboard
             </LandingButtonLink>
+            <span className="hidden sm:block">
+              <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event nav")}>
+                Create your first event
+              </LandingButtonLink>
+            </span>
           </div>
         </div>
       </header>
@@ -1856,6 +1898,78 @@ function LandingRedesign() {
   );
 }
 
+function LandingDemoGate() {
+  const [status, setStatus] = useState<"checking" | "ready" | "fallback">("checking");
+
+  useEffect(() => {
+    let isMounted = true;
+
+    eventFilmApi
+      .getPublicEventBySlug(LANDING_DEMO_SLUG)
+      .then(() => {
+        if (isMounted) setStatus("ready");
+      })
+      .catch(() => {
+        if (isMounted) setStatus("fallback");
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  function trackDemoCta(label: string) {
+    trackAnalytics("cta_clicked", { metadata: { label, surface: "landing_demo" } });
+  }
+
+  if (status === "ready") {
+    return <Navigate to={`/e/${encodeURIComponent(LANDING_DEMO_SLUG)}`} replace />;
+  }
+
+  return (
+    <main className="landing-page min-h-screen bg-[#fffdfb] text-[#171717]">
+      <header className="mx-auto flex max-w-[1040px] items-center justify-between gap-4 px-5 py-4 md:px-10">
+        <LandingBrand />
+        <LandingButtonLink variant="secondary" to="/dashboard" onClick={() => trackDemoCta("Dashboard fallback nav")}>
+          Dashboard
+        </LandingButtonLink>
+      </header>
+      <section className="mx-auto grid max-w-[1040px] items-center gap-8 px-5 py-10 md:grid-cols-[0.86fr_1.14fr] md:px-10 md:py-16">
+        <div>
+          <p className="text-sm font-semibold text-[#e85d3f]">{status === "checking" ? "Finding the demo" : "Demo preview"}</p>
+          <h1 className="mt-3 font-serif-display text-5xl font-bold leading-tight text-[#171717] md:text-[3.5rem]">
+            See how guests add photos.
+          </h1>
+          <p className="mt-5 max-w-[430px] text-base leading-7 text-[#69645f]">
+            {status === "checking"
+              ? "Opening the live guest demo now."
+              : "The live demo event is not available in this environment, but the preview below shows the guest upload flow."}
+          </p>
+          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
+            <LandingButtonLink to="/signup" onClick={() => trackDemoCta("Create your first event fallback")}>
+              Create your first event
+            </LandingButtonLink>
+            <LandingButtonLink variant="secondary" to="/dashboard" onClick={() => trackDemoCta("Dashboard fallback")}>
+              Dashboard
+            </LandingButtonLink>
+          </div>
+        </div>
+        <video
+          className="w-full rounded-lg border border-[#eadfce] bg-white shadow-sm"
+          controls
+          muted
+          playsInline
+          poster="/demo/guest-upload-poster.webp"
+          preload="metadata"
+        >
+          <source src="/demo/guest-upload-demo.webm" type="video/webm" />
+          <source src="/demo/guest-upload-demo.mp4" type="video/mp4" />
+        </video>
+      </section>
+    </main>
+  );
+}
+
 
 function TrustPage({ kind }: { kind: "privacy" | "terms" | "support" }) {
   const content = {
@@ -1967,33 +2081,6 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return children;
 }
 
-function EventPhotoBanner({ photos, eventName }: { photos: Photo[]; eventName: string }) {
-  if (!photos.length) {
-    return null;
-  }
-
-  const visible = photos.slice(0, 3);
-  const remaining = Math.max(photos.length - visible.length, 0);
-
-  return (
-    <div className="grid grid-cols-3 gap-2 bg-[#fffaf6] p-3">
-        {visible.map((photo, index) => (
-          <div className="relative event-photo-strip-frame h-28 overflow-hidden rounded-xl bg-white p-1.5 shadow-sm" key={`${photo.id}-${index}`}>
-            <img
-              className="h-full w-full rounded-lg object-cover"
-              src={photoImageSrc(photo)}
-              alt={`${eventName} upload preview ${index % photos.length + 1}`}
-              onError={(event) => {
-                event.currentTarget.style.visibility = "hidden";
-              }}
-            />
-            {index === visible.length - 1 && remaining > 0 ? <span className="absolute inset-1.5 grid place-items-center rounded-lg bg-stone-950/55 text-sm font-bold text-white">+{remaining} more</span> : null}
-          </div>
-        ))}
-    </div>
-  );
-}
-
 function Dashboard() {
   const auth = useAuth();
   const [events, setEvents] = useState<EventSummary[]>([]);
@@ -2001,7 +2088,6 @@ function Dashboard() {
   const [canViewFounder, setCanViewFounder] = useState(false);
   const [copyStatus, setCopyStatus] = useState("");
   const [error, setError] = useState("");
-  const previewLoadIds = useRef(new Set<string>());
 
   useEffect(() => {
     trackAnalytics("host_dashboard_opened");
@@ -2010,27 +2096,6 @@ function Dashboard() {
       .catch((err) => setError((err as Error).message));
     setCanViewFounder(Boolean(auth.user?.isFounder));
   }, [auth.token, auth.user?.isFounder]);
-
-  useEffect(() => {
-    const missingPreviewEvents = events.filter((event) => event.photoCount > 0 && !event.previewPhotos?.length && !previewLoadIds.current.has(event.id));
-    if (!missingPreviewEvents.length) return;
-
-    missingPreviewEvents.forEach((event) => previewLoadIds.current.add(event.id));
-    Promise.all(
-      missingPreviewEvents.map((event) =>
-        api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${event.id}`, { token: auth.token })
-          .then((data) => ({ id: event.id, photos: data.event.photos.slice(0, 6) }))
-          .catch(() => ({ id: event.id, photos: [] })),
-      ),
-    ).then((previews) => {
-      setEvents((currentEvents) =>
-        currentEvents.map((event) => {
-          const preview = previews.find((item) => item.id === event.id);
-          return preview ? { ...event, previewPhotos: preview.photos } : event;
-        }),
-      );
-    });
-  }, [auth.token, events]);
 
   const eventRows = events.map((event) => ({ event, lifecycle: deriveEventLifecycleStatus(event) }));
   const upcomingEvents = eventRows.filter((row) => row.lifecycle.status === "draft_or_upcoming").length;
@@ -2088,7 +2153,7 @@ function Dashboard() {
       {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <div className="mt-6 grid gap-4 sm:grid-cols-3">
         {[
-          ["Upcoming", upcomingEvents],
+          ["Ready", upcomingEvents],
           ["Photos", totalPhotos],
           ["Recaps", recapReady],
         ].map(([label, value]) => (
@@ -2104,7 +2169,7 @@ function Dashboard() {
           <div className="overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
             <div className="flex min-w-max gap-2">
               {[
-                ["upcoming", "Upcoming"],
+                ["upcoming", "Ready"],
                 ["live", "Live now"],
                 ["recap", "Recap ready"],
                 ["past", "Past"],
@@ -2118,13 +2183,12 @@ function Dashboard() {
         <div className="grid gap-5 lg:grid-cols-2">
           {filteredRows.map(({ event, lifecycle }) => (
             <div className="overflow-hidden rounded-xl border border-line bg-white shadow-sm transition hover:border-coral/40" key={event.id}>
-              {event.photoCount > 0 ? <Link className="group block" to={`/dashboard/events/${event.id}`}><EventPhotoBanner photos={event.previewPhotos || []} eventName={event.name} /></Link> : null}
               <div className="p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <LifecycleBadge lifecycle={lifecycle} />
                     <Link to={`/dashboard/events/${event.id}`}><h3 className="mt-3 text-xl font-bold text-ink">{event.name}</h3></Link>
-                    <p className="mt-1 text-sm text-stone-600">Event: {formatDateTime(event.eventDate)}</p>
+                    <p className="mt-1 text-sm text-stone-600">Photo setup: {plainModeLabel(event.challenge?.type || "NONE")}</p>
                   </div>
                   <div className="rounded-lg bg-coral-soft px-4 py-3 text-center">
                     <p className="text-2xl font-bold text-coral">{event.photoCount}</p>
@@ -2132,7 +2196,7 @@ function Dashboard() {
                   </div>
                 </div>
                 <p className="mt-3 text-sm font-semibold text-stone-600">{buildHostNextStep(event)}</p>
-                {lifecycle.status === "draft_or_upcoming" ? <p className="mt-1 text-sm font-semibold text-[#653e00]">Share this before people arrive.</p> : null}
+                {lifecycle.status === "draft_or_upcoming" ? <p className="mt-1 text-sm font-semibold text-[#653e00]">Share this so guests can start adding photos.</p> : null}
                 <div className="mt-4 flex flex-wrap gap-2">
                   {primaryAction(event, lifecycle)}
                   <details className="relative">
@@ -2681,13 +2745,12 @@ function CreateEvent() {
   const [form, setForm] = useState({
     name: "",
     description: "",
-    eventDate: toDateTimeLocal(),
     revealAt: toDateTimeLocal(new Date(Date.now() + 24 * 60 * 60 * 1000)),
     photoLimitPerGuest: "10",
   });
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = useState("");
-  const [createStep, setCreateStep] = useState(0);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -2704,45 +2767,57 @@ function CreateEvent() {
     if (template?.suggestedUploadLimit) {
       setForm((current) => ({ ...current, photoLimitPerGuest: String(template.suggestedUploadLimit) }));
     }
+    setAdvancedOpen(false);
+    setError("");
     trackAnalytics("event_template_selected", { path: "/dashboard/events/new", metadata: { templateSlug, mode: template?.recommendedMode || "NONE", promptPackSlug: template?.promptPackSlug || null } });
   }
 
   function skipTemplate() {
-    setChallengeDraft((current) => ({ ...current, eventTemplateSlug: "open-custom-event", promptPackSlug: "custom" }));
+    setChallengeDraft({ ...createEmptyChallengeDraft(), eventTemplateSlug: "open-custom-event", promptPackSlug: "custom" });
+    setAdvancedOpen(false);
+    setError("");
     trackAnalytics("template_skipped", { path: "/dashboard/events/new", metadata: { templateSlug: "open-custom-event" } });
   }
 
   const selectedTemplate = getEventTemplate(challengeDraft.eventTemplateSlug);
-  const createSteps = ["What are you making?", "How should photos work?", "Event details"];
-  const stepCanContinue = true;
+  const selectedMode = getChallengePack(challengeDraft.type);
+  const selectedPromptPack = getPromptPack(challengeDraft.promptPackSlug);
+  const photoLimit = Number(form.photoLimitPerGuest);
+  const challengeValidationError = validateChallengeDraft(challengeDraft);
+  const disabledReason = !form.name.trim()
+    ? "Add an event name to create your event."
+    : !Number.isInteger(photoLimit) || photoLimit < 1
+      ? "Set a photo limit of at least 1."
+      : challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE && Number.isNaN(new Date(form.revealAt).getTime())
+        ? "Choose a valid reveal time."
+        : challengeValidationError;
+  const canCreate = !disabledReason;
 
-  function goNextCreateStep() {
-    if (!stepCanContinue) {
-      setError("Choose a template or start with Custom.");
-      return;
-    }
+  function selectPhotoStyle(type: ChallengeDraft["type"]) {
+    setChallengeDraft((current) => ({ ...current, type }));
+    setAdvancedOpen(false);
     setError("");
-    setCreateStep((current) => Math.min(current + 1, createSteps.length - 1));
-  }
-
-  function goBackCreateStep() {
-    setError("");
-    setCreateStep((current) => Math.max(current - 1, 0));
+    trackAnalytics("event_mode_selected", { path: "/dashboard/events/new", metadata: { mode: type } });
   }
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
     setError("");
     try {
+      if (disabledReason) {
+        setError(disabledReason);
+        return;
+      }
       const challenge = buildChallengePayload(challengeDraft);
       const data = await api<{ event: EventSummary }>("/api/host/events", {
         method: "POST",
         token: auth.token,
         body: JSON.stringify({
           ...form,
-          eventDate: new Date(form.eventDate).toISOString(),
-          revealAt: new Date(form.revealAt).toISOString(),
-          photoLimitPerGuest: Number(form.photoLimitPerGuest),
+          name: form.name.trim(),
+          description: form.description.trim(),
+          ...(challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? { revealAt: new Date(form.revealAt).toISOString() } : {}),
+          photoLimitPerGuest: photoLimit,
           eventTemplateSlug: challengeDraft.eventTemplateSlug,
           promptPackSlug: challengeDraft.promptPackSlug,
           challenge,
@@ -2765,85 +2840,114 @@ function CreateEvent() {
 
   return (
     <AppShell userEmail={auth.user?.email} canViewFounder={Boolean(auth.user?.isFounder)}>
-      <div className="max-w-3xl">
-        <h1 className="font-serif-display text-5xl font-bold text-ink">Create an event</h1>
-        <p className="mt-3 text-lg text-muted">Make a shared album for a hangout, party, club event, graduation night, or weekend trip.</p>
-        <p className="mt-2 text-sm font-semibold text-muted">You can change these later.</p>
-      </div>
-      <form className="mx-auto mt-8 grid max-w-4xl gap-5" onSubmit={submit}>
-        <Stepper steps={createSteps} activeStep={createStep} onStepClick={setCreateStep} />
-
-        {createStep === 0 ? <TemplateLibrary draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} /> : null}
-
-        {createStep === 1 ? (
-          <Card className="lg:p-8">
-            {selectedTemplate ? (
-              <p className="mb-4 rounded-[1rem] bg-[#fff3ee] px-4 py-3 text-sm font-bold text-[#653e00]">{templateDisplayName(selectedTemplate)} starts with {plainModeLabel(selectedTemplate.recommendedMode)}. You can keep it simple.</p>
-            ) : (
-              <p className="mb-4 rounded-[1rem] bg-[#fff3ee] px-4 py-3 text-sm font-bold text-[#653e00]">Default: Simple Album. The easiest way to collect everyone's photos.</p>
-            )}
-            <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} compactForCreate />
-          </Card>
-        ) : null}
-
-        {createStep === 2 ? (
-          <Card className="lg:p-8">
-            <div>
-              <h2 className="font-serif-display text-3xl font-bold text-ink">Event details</h2>
-              <p className="mt-1 text-sm text-muted">These are the only details needed before EventFilm creates your links.</p>
-            </div>
-            <div className="mt-5 grid gap-5">
-              <label className="grid gap-2 text-sm font-bold text-stone-700">
-                Event name
-                <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
-              </label>
-              <div className="grid gap-5 sm:grid-cols-2">
-                <label className="grid gap-2 text-sm font-bold text-stone-700">
-                  Event date
-                  <TextInput type="datetime-local" value={form.eventDate} onChange={(event) => update("eventDate", event.target.value)} required />
-                </label>
-                <label className="grid gap-2 text-sm font-bold text-stone-700">
-                  Reveal time
-                  <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
-                </label>
-              </div>
-              <label className="grid gap-2 text-sm font-bold text-stone-700">
-                Photo limit
-                <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
-              </label>
-              <label className="grid gap-2 text-sm font-bold text-stone-700">
-                Description
-                <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
-              </label>
-              <div className="rounded-[1.25rem] bg-[#fffaf6] p-4 text-sm text-stone-700">
-                <p><strong className="text-stone-950">Template:</strong> {selectedTemplate ? templateDisplayName(selectedTemplate) : "Custom"}</p>
-                <p className="mt-1"><strong className="text-stone-950">Photo setup:</strong> {plainModeLabel(challengeDraft.type)}</p>
-                {challengeDraft.type !== "NONE" ? <p className="mt-1"><strong className="text-stone-950">Photo prompts:</strong> {getPromptPack(challengeDraft.promptPackSlug).name}</p> : null}
-                <p className="mt-3 font-semibold text-stone-600">You can change the details later.</p>
-              </div>
-            </div>
-          </Card>
-        ) : null}
-
-        {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        <div className="flex flex-col gap-3 rounded-[1.35rem] border border-[#eadfce] bg-white p-4 shadow-sm sm:flex-row sm:justify-between">
-          <SecondaryButton type="button" disabled={createStep === 0} onClick={goBackCreateStep}>Back</SecondaryButton>
-          {createStep < createSteps.length - 1 ? (
-            <Button type="button" onClick={goNextCreateStep}>Continue</Button>
-          ) : (
-            <Button className="sm:px-12">Create event</Button>
-          )}
+      <div className="mx-auto max-w-6xl pb-28 lg:pb-0">
+        <div className="max-w-2xl">
+          <h1 className="font-serif-display text-4xl font-bold leading-tight text-ink sm:text-5xl">Create an event</h1>
+          <p className="mt-2 text-base text-muted">Name it, create the guest link, then tune the vibe only if you need to.</p>
         </div>
-      </form>
+        <form id="create-event-form" className="mt-5 grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start" onSubmit={submit}>
+          <div className="grid min-w-0 gap-4">
+            <Card className="min-w-0 p-4 sm:p-5">
+              <div>
+                <h2 className="text-lg font-bold text-ink">Event basics</h2>
+                <p className="mt-1 text-sm text-muted">These are the only required details before EventFilm creates your links.</p>
+              </div>
+              <div className="mt-4 grid gap-4">
+                <label className="grid gap-2 text-sm font-bold text-stone-700">
+                  Event name
+                  <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
+                </label>
+                <label className="grid gap-2 text-sm font-bold text-stone-700">
+                  Description <span className="font-semibold text-stone-500">(optional)</span>
+                  <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
+                </label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <label className="grid gap-2 text-sm font-bold text-stone-700">
+                    Photo limit per guest
+                    <TextInput type="number" min="1" value={form.photoLimitPerGuest} onChange={(event) => update("photoLimitPerGuest", event.target.value)} required />
+                  </label>
+                  {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? (
+                    <label className="grid gap-2 text-sm font-bold text-stone-700">
+                      Reveal time
+                      <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
+                      <span className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this time.</span>
+                    </label>
+                  ) : null}
+                </div>
+                {error ? <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}
+                <div className="rounded-lg bg-[#fffaf6] p-3 text-sm font-semibold text-stone-700 lg:hidden">
+                  {disabledReason || "Ready to create. You will get the guest link, QR poster, Photo Wall, and recap next."}
+                </div>
+              </div>
+            </Card>
+
+            <TemplateLibrary draft={challengeDraft} onSelect={selectTemplate} onSkip={skipTemplate} />
+            <PhotoStylePicker draft={challengeDraft} onSelect={selectPhotoStyle} />
+
+            <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-bold text-ink">Optional setup</h2>
+                  <p className="mt-1 text-sm text-muted">
+                    {challengeDraft.type === "NONE"
+                      ? "Simple Album is ready. Guests can add photos without extra choices."
+                      : `${plainModeLabel(challengeDraft.type)} uses ${selectedPromptPack.name}. You can customize it now or after creating the event.`}
+                  </p>
+                </div>
+                {challengeDraft.type !== "NONE" ? (
+                  <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={() => setAdvancedOpen((open) => !open)}>
+                    {advancedOpen ? "Hide setup" : "Customize"}
+                  </SecondaryButton>
+                ) : null}
+              </div>
+              {challengeDraft.type !== "NONE" && !advancedOpen ? (
+                <div className="mt-4 rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-700">
+                  <p>{selectedMode.name}: {selectedMode.shortDescription}</p>
+                  {challengeValidationError ? <p className="mt-2 text-red-700">{challengeValidationError}</p> : null}
+                </div>
+              ) : null}
+              {challengeDraft.type !== "NONE" && advancedOpen ? (
+                <ChallengeSetup draft={challengeDraft} onChange={setChallengeDraft} advancedOnly />
+              ) : null}
+            </section>
+          </div>
+
+          <aside className="hidden lg:sticky lg:top-24 lg:block">
+            <Card className="p-5">
+              <h2 className="text-lg font-bold text-ink">Launch summary</h2>
+              <div className="mt-4 grid gap-3 text-sm text-stone-700">
+                <p><strong className="text-stone-950">Event:</strong> {form.name.trim() || "Untitled event"}</p>
+                <p><strong className="text-stone-950">Template:</strong> {selectedTemplate ? templateDisplayName(selectedTemplate) : "Custom"}</p>
+                <p><strong className="text-stone-950">Photo style:</strong> {plainModeLabel(challengeDraft.type)}</p>
+                {challengeDraft.type !== "NONE" ? <p><strong className="text-stone-950">Prompts:</strong> {selectedPromptPack.name}</p> : null}
+                {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <p><strong className="text-stone-950">Reveal:</strong> {formatDateTime(form.revealAt)}</p> : null}
+                <p><strong className="text-stone-950">Uploads:</strong> {form.photoLimitPerGuest || "0"} per guest</p>
+              </div>
+              <div className={cx("mt-5 rounded-lg p-3 text-sm font-semibold", canCreate ? "bg-green-50 text-green-800" : "bg-[#fffaf6] text-[#653e00]")}>
+                {disabledReason || "Ready to create. You can share the QR link after setup."}
+              </div>
+              {error ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}
+              <Button className="mt-4 w-full" disabled={!canCreate}>Create event</Button>
+            </Card>
+          </aside>
+        </form>
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 p-3 shadow-sm backdrop-blur lg:hidden">
+          <div className="mx-auto max-w-md">
+            <Button type="submit" form="create-event-form" className="w-full" disabled={!canCreate}>{canCreate ? "Create event" : "Add event name"}</Button>
+            <p className="mt-2 text-center text-xs font-semibold text-stone-600">{disabledReason || "Guest link, QR poster, Photo Wall, and recap are created next."}</p>
+          </div>
+        </div>
+      </div>
     </AppShell>
   );
 }
 
 function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss }: { event: EventSummary; shareAssets: HostShareAssets; onCopyGuestLink: () => void; onDismiss: () => void }) {
+  const isMemoryCapsule = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
   const steps = [
-    ["Share the guest link", "Send this before people arrive. Guests can add photos without an account."],
+    ["Share the guest link", "Send this in the group chat. Guests can add photos without an account."],
     ["Use the Photo Wall if you want it", "Put it on a TV, laptop, or iPad during the event. For small hangouts, the guest link is enough."],
-    ["Share the recap after the event", "Send it after reveal so everyone has the photos in one place."],
+    ["Share the recap", isMemoryCapsule ? "Send it after reveal so everyone has the photos in one place." : "Send it whenever you want everyone to revisit the album."],
   ];
 
   return (
@@ -3030,8 +3134,8 @@ function ManageEvent() {
     saveEvent.preventDefault();
     if (!event || !eventId || !settingsForm) return;
 
-    const input = eventSettingsInputFromForm(settingsForm);
-    const validation = validateEventSettingsInput(input);
+    const input = eventSettingsInputFromForm(settingsForm, { requireRevealAt: event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE });
+    const validation = validateEventSettingsInput(input, { requireRevealAt: event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE });
     if (!validation.ok) {
       setSettingsFieldErrors(validation.fieldErrors);
       setSettingsStatus(validation.error);
@@ -3081,7 +3185,7 @@ function ManageEvent() {
   const canViewFounderTools = Boolean(auth.user?.isFounder);
   const savedSettingsForm = event ? eventSettingsFormFromEvent(event) : null;
   const settingsDirty = Boolean(settingsForm && savedSettingsForm && JSON.stringify(settingsForm) !== JSON.stringify(savedSettingsForm));
-  const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm)) : null;
+  const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm, { requireRevealAt: event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE }), { requireRevealAt: event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE }) : null;
   const visibleSettingsFieldErrors = {
     ...(settingsDirty && liveSettingsValidation && !liveSettingsValidation.ok ? liveSettingsValidation.fieldErrors : {}),
     ...settingsFieldErrors,
@@ -3176,9 +3280,8 @@ function ManageEvent() {
               <h1 className="mt-3 font-serif-display text-5xl font-bold text-ink">{event.name}</h1>
               <p className="mt-2 max-w-2xl text-base font-semibold text-stone-700">{buildHostNextStep(event, eventAnalytics || undefined)}</p>
               <div className="mt-3 flex flex-wrap gap-3 text-sm text-stone-600">
-                <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">calendar_today</Icon>{formatDateTime(event.eventDate)}</span>
                 <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">photo_library</Icon>{event.photoCount} photos</span>
-                <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">lock</Icon>Reveal time: {formatDateTime(event.revealAt)}</span>
+                {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <span className="inline-flex items-center gap-1"><Icon className="text-[#653e00]">lock</Icon>Reveal time: {formatDateTime(event.revealAt)}</span> : null}
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -3309,9 +3412,13 @@ function ManageEvent() {
             <Card className="lg:p-8">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                 <div>
-                  <StatusPill tone={lifecycle?.phase === "after" ? "green" : "stone"}>{lifecycle?.phase === "after" ? "Ready after the event" : "After the event"}</StatusPill>
+                  <StatusPill tone={lifecycle?.phase === "after" || event.challenge?.type !== CHALLENGE_TYPES.MEMORY_CAPSULE ? "green" : "stone"}>
+                    {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && lifecycle?.phase !== "after" ? "Ready after reveal" : "Ready to share"}
+                  </StatusPill>
                   <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Shared Recap</h2>
-                  <p className="mt-2 max-w-2xl text-stone-600">Send this after the event so everyone can see the photos in one place.</p>
+                  <p className="mt-2 max-w-2xl text-stone-600">
+                    {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Send this after reveal so everyone can see the photos in one place." : "Send this whenever you want everyone to revisit the album."}
+                  </p>
                 </div>
                 <div className="grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-bold text-stone-700">
                   <span>{visiblePhotos.length} visible photos</span>
@@ -3403,19 +3510,14 @@ function ManageEvent() {
                     <TextArea rows={3} value={settingsForm.description} onChange={(formEvent) => updateSettingsField("description", formEvent.target.value)} maxLength={1000} placeholder="Tell guests what this album is for." />
                     {visibleSettingsFieldErrors.description ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.description}</span> : null}
                   </label>
-                  <div className="grid gap-5 sm:grid-cols-2">
-                    <label className="grid gap-2 text-sm font-bold text-stone-700">
-                      Event date
-                      <TextInput type="datetime-local" value={settingsForm.eventDate} onChange={(formEvent) => updateSettingsField("eventDate", formEvent.target.value)} required />
-                      {visibleSettingsFieldErrors.eventDate ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.eventDate}</span> : null}
-                    </label>
+                  {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? (
                     <label className="grid gap-2 text-sm font-bold text-stone-700">
                       Reveal time
-                      <TextInput type="datetime-local" value={settingsForm.revealAt} onChange={(formEvent) => updateSettingsField("revealAt", formEvent.target.value)} required />
-                      <span className="text-xs font-semibold text-stone-500">Guests can upload before this, but the full album stays hidden until the reveal time.</span>
+                      <TextInput type="datetime-local" value={settingsForm.revealAt || ""} onChange={(formEvent) => updateSettingsField("revealAt", formEvent.target.value)} required />
+                      <span className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this reveal time.</span>
                       {visibleSettingsFieldErrors.revealAt ? <span className="text-xs font-bold text-red-700">{visibleSettingsFieldErrors.revealAt}</span> : null}
                     </label>
-                  </div>
+                  ) : null}
                   <label className="grid gap-2 text-sm font-bold text-stone-700">
                     Photo limit per guest
                     <TextInput type="number" min="1" max="100" value={settingsForm.photoLimitPerGuest} onChange={(formEvent) => updateSettingsField("photoLimitPerGuest", formEvent.target.value)} required />
@@ -4071,6 +4173,10 @@ function GuestEvent() {
   const [awardVoting, setAwardVoting] = useState<AwardVotingSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
+  const [activeGuestTab, setActiveGuestTab] = useState<"photos" | "people" | "highlights">("photos");
+  const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const navigate = useNavigate();
 
   async function load() {
     const eventData = await api<{ event: PublicEvent }>(`/api/events/${slug}`);
@@ -4290,6 +4396,7 @@ function GuestEvent() {
 
   function resetForAnotherUpload() {
     trackUploadSuccessAction("add_another_photo");
+    setUploadSheetOpen(true);
     setUploadSuccess(null);
     setUploadSuccessPhoto(null);
     setMessage("");
@@ -4308,336 +4415,396 @@ function GuestEvent() {
     trackAnalytics("photo_reported", { eventId: event?.id, eventSlug: event?.slug, metadata: { photoId: selectedPhoto.id, reason } });
   }
 
+  function openUploadSheet() {
+    setUploadSheetOpen(true);
+    setOptionsOpen(false);
+  }
+
+  function goBackFromGuestAlbum() {
+    if (window.history.length > 1) navigate(-1);
+    else navigate("/");
+  }
+
+  const isMemoryCapsuleLocked = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !event.isRevealed;
+  const visibleAlbumPhotos = isMemoryCapsuleLocked ? [] : photos;
+  const displayedPhotoCount = event?.photoCount ?? visibleAlbumPhotos.length;
+  const guestSubtitle = isMemoryCapsuleLocked ? "Photos locked" : `${displayedPhotoCount} ${displayedPhotoCount === 1 ? "photo" : "photos"}`;
+  const highlightPhotos = (visibleAlbumPhotos.filter((photo) => photo.isFeatured).length ? visibleAlbumPhotos.filter((photo) => photo.isFeatured) : visibleAlbumPhotos).slice(0, 8);
+  const contributorTiles = contributorSummary.topContributors.map((contributor) => ({
+    ...contributor,
+    photos: visibleAlbumPhotos
+      .filter((photo) => sanitizeGuestDisplayName(photo.challengeParticipantName || photo.guestNickname).toLowerCase() === contributor.displayName.toLowerCase())
+      .slice(0, 3),
+  }));
+  const guestTabs: Array<{ key: "photos" | "people" | "highlights"; label: string }> = [
+    { key: "photos", label: "Photos" },
+    { key: "people", label: "People" },
+    { key: "highlights", label: "Highlights" },
+  ];
+
   return (
-    <Shell>
-      {!event && (
-        <div className="mx-auto mb-5 max-w-2xl text-center">
-          <StatusPill>No app download. No account needed.</StatusPill>
+    <main className="min-h-screen bg-white text-[#171717]">
+      <div className="mx-auto min-h-screen max-w-[430px] bg-white pb-28">
+      {!event && !error && (
+        <div className="grid min-h-screen place-items-center px-6 text-center">
+          <div>
+            <div className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[#fff0ed] text-[#e85d3f]">
+              <CleanIcon name="image" className="h-5 w-5" />
+            </div>
+            <p className="mt-4 text-sm font-semibold text-stone-600">Loading event...</p>
+          </div>
+        </div>
+      )}
+      {error && !event && (
+        <div className="grid min-h-screen place-items-center px-6 text-center">
+          <div className="rounded-xl border border-red-100 bg-red-50 p-5 text-sm font-semibold text-red-700">{error}</div>
         </div>
       )}
       {event && (
-        <div className="mx-auto max-w-2xl pb-24 sm:pb-8">
-          <section className="overflow-hidden rounded-xl border border-line bg-white p-5 text-center shadow-sm sm:p-8">
-            <p className="text-sm font-bold text-coral">EventFilm</p>
-            <h1 className="mx-auto mt-6 max-w-[12ch] font-serif-display text-5xl font-bold leading-none text-ink">{event.name}</h1>
-            <p className="mt-5 text-sm font-semibold text-muted">No account needed</p>
-            {event.description && <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-muted">{event.description}</p>}
-            <a className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong sm:w-auto" href="#guest-upload-card">
-              <CleanIcon name="upload" />
-              Add photos
-            </a>
-            {!event.isRevealed && <p className="mt-4 text-sm font-semibold text-muted">The full album unlocks after {formatDateTime(event.revealAt)}.</p>}
-            <p className="mt-5 rounded-xl bg-coral-soft p-4 text-sm font-semibold text-ink">{guestChallengeHint(event)}</p>
-          </section>
-
-          {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && (
-            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
-              <StatusPill>Color Hunt</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Find your color.</h2>
-              <p className="mt-2 text-stone-700">Pick your name or team so the photo lands in the right Color Hunt lane.</p>
-              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-                Pick your color
-                <select ref={participantSelectRef} className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedParticipantId} onChange={(selectEvent) => saveSelectedParticipant(selectEvent.target.value)} required>
-                  <option value="">Select a participant</option>
-                  {event.challenge.participants.map((participant) => (
-                    <option value={participant.id} key={participant.id}>{participant.displayName} - {participant.colorName}</option>
-                  ))}
-                </select>
-              </label>
-              {selectedParticipant && (
-                <div className="mt-4 flex flex-col gap-3 rounded-2xl bg-white p-3 text-sm font-bold text-stone-800 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span>Your color:</span>
-                    <ColorChip participant={selectedParticipant} />
+        <>
+          <header className="sticky top-0 z-20 bg-white/96 px-3 pt-3 backdrop-blur">
+            <div className="relative flex min-h-16 items-center justify-between">
+              <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-stone-700 hover:bg-stone-100" aria-label="Go back" onClick={goBackFromGuestAlbum}>
+                <CleanIcon name="chevronLeft" className="h-5 w-5" />
+              </button>
+              <div className="absolute left-12 right-12 top-1/2 -translate-y-1/2 text-center">
+                <h1 className="truncate text-xl font-bold leading-6 text-stone-950">{event.name}</h1>
+                <p className="mt-1 text-xs font-semibold text-stone-500">{guestSubtitle}</p>
+              </div>
+              <div className="relative">
+                <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-stone-700 hover:bg-stone-100" aria-label="Open event options" onClick={() => setOptionsOpen((open) => !open)}>
+                  <CleanIcon name="more" className="h-5 w-5" />
+                </button>
+                {optionsOpen ? (
+                  <div className="absolute right-0 top-11 z-30 w-40 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
+                    <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/wall/${event.slug}`}>Photo Wall</a>
+                    <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/recap/${event.slug}`}>Shared Recap</a>
+                    <button type="button" className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50" onClick={openUploadSheet}>Add photos</button>
                   </div>
-                  <button type="button" className="self-start rounded-full border border-stone-200 px-3 py-2 text-xs font-bold text-stone-700 hover:border-amber-400 hover:bg-amber-50 sm:self-auto" onClick={switchParticipant}>Switch participant</button>
-                </div>
-              )}
-            </section>
-          )}
-
-          {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (
-            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
-              <StatusPill>Photo Prompts</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Pick a prompt.</h2>
-              <p className="mt-2 text-stone-700">Choose one idea before uploading. The photo will be connected to that prompt.</p>
-              <div className="mt-5 grid gap-2">
-                {compactPromptItems.map((prompt, index) => {
-                  const promptId = prompt.id || `prompt-${prompt.order ?? index}`;
-                  return (
-                  <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm font-bold transition", selectedPromptId === promptId ? "border-[#e85d3f] bg-white text-[#653e00] shadow-sm" : "border-amber-200 bg-white/70 text-stone-800 hover:border-[#e85d3f]")} onClick={() => saveSelectedPrompt(promptId)} key={promptId}>
-                    {prompt.text}
-                  </button>
-                  );
-                })}
-                {!showAllChallengeItems && guestPrompts.length > 3 && <SecondaryButton type="button" className="min-h-10 justify-self-start px-4 py-2" onClick={() => expandChallengeItems("show_more_prompts")}>Show more prompts</SecondaryButton>}
+                ) : null}
               </div>
-              {selectedPrompt && (
-                <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-stone-800">
-                  <p className="text-xs font-bold uppercase text-stone-500">Current prompt</p>
-                  <p className="mt-1 font-display text-xl font-bold text-[#653e00]">{selectedPrompt.text}</p>
-                </div>
-              )}
-            </section>
-          )}
-
-          {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
-            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
-              <StatusPill>Awards</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">Choose an award category.</h2>
-              <p className="mt-2 text-stone-700">Pick the category that fits the photo. Voting stays on the Shared Recap.</p>
-              <div className="mt-5 grid gap-2">
-                {compactAwardItems.map((category, index) => {
-                  const categoryId = category.id || `award-${category.order ?? index}`;
-                  return (
-                  <button type="button" className={cx("rounded-2xl border p-4 text-left text-sm font-bold transition", selectedItemId === categoryId ? "border-[#e85d3f] bg-white text-[#653e00] shadow-sm" : "border-amber-200 bg-white/70 text-stone-800 hover:border-[#e85d3f]")} onClick={() => saveSelectedItem(categoryId)} key={categoryId}>
-                    {category.label}
-                  </button>
-                  );
-                })}
-                {!showAllChallengeItems && guestAwards.length > 3 && <SecondaryButton type="button" className="min-h-10 justify-self-start px-4 py-2" onClick={() => expandChallengeItems("show_more_awards")}>Show more categories</SecondaryButton>}
-              </div>
-              {selectedAward && (
-                <div className="mt-4 rounded-2xl bg-white p-4 text-sm text-stone-800">
-                  <p className="text-xs font-bold uppercase text-stone-500">Current award</p>
-                  <p className="mt-1 font-display text-xl font-bold text-[#653e00]">{selectedAward.label}</p>
-                </div>
-              )}
-            </section>
-          )}
-
-          {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && capsuleCopy && (
-            <section className="mt-6 rounded-[1.5rem] border border-amber-200 bg-amber-50 p-5">
-              <StatusPill>Memory Capsule</StatusPill>
-              <h2 className="mt-3 font-display text-2xl font-bold text-[#653e00]">{capsuleCopy.revealTitle}</h2>
-              <p className="mt-2 text-stone-700">{capsuleCopy.revealNote}</p>
-            </section>
-          )}
-
-          <form id="guest-upload-card" ref={uploadCardRef} className="mt-4 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:mt-6 sm:p-6" onSubmit={uploadPhoto}>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <h2 className="font-display text-3xl font-bold text-stone-950">Add photos</h2>
-                <p className="mt-2 text-stone-600">Choose from your phone or take a new photo. No sign-in, app download, or guest account.</p>
-              </div>
-              <span className="rounded-full bg-[#fff3ee] px-3 py-2 text-xs font-bold uppercase text-[#653e00]">No account needed</span>
             </div>
-            {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && selectedParticipant && (
-              <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p>
-            )}
-            {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && selectedPrompt && (
-              <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Uploading for: {selectedPrompt.text}</p>
-            )}
-            {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && selectedAward && (
-              <p className="mt-4 rounded-2xl bg-stone-50 p-3 text-sm font-bold text-stone-800">Submitting for: {selectedAward.label}</p>
-            )}
-            {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && (
-              <label className="mt-5 grid gap-2 text-sm font-bold text-stone-700">
-                Display name <span className="font-semibold text-stone-500">(optional)</span>
-                <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="Optional" />
-                <span className="text-xs font-semibold text-stone-500">Add your name if you want the host to know who uploaded it. Leave blank to post as Anonymous guest.</span>
-              </label>
-            )}
-            {shouldMentionLimit && <p className="mt-4 rounded-[1rem] bg-[#fffaf6] p-3 text-sm font-bold text-stone-700">{uploadLimitCopy(remaining, event.photoLimitPerGuest)}</p>}
-            {remaining === 0 && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm font-bold text-red-700">You have used all uploads for this event.</p>}
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full bg-amber-500 px-5 py-3 text-sm font-bold text-stone-950 shadow-sm transition hover:bg-amber-400">
-                <Icon>photo_camera</Icon>
-                Take a photo
-                <input ref={fileInputRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="Take a photo" onChange={(event) => {
-                  setFile(event.target.files?.[0] || null);
-                  setUploadSuccess(null);
-                  setUploadSuccessPhoto(null);
-                }} />
-              </label>
-              <label className="flex min-h-14 cursor-pointer items-center justify-center gap-2 rounded-full border border-stone-300 bg-white px-5 py-3 text-sm font-bold text-stone-900 transition hover:border-amber-500 hover:bg-amber-50">
-                <Icon>photo_library</Icon>
-                Choose from phone
-                <input className="sr-only" type="file" accept="image/*" aria-label="Choose from phone" onChange={(event) => {
-                  setFile(event.target.files?.[0] || null);
-                  setUploadSuccess(null);
-                  setUploadSuccessPhoto(null);
-                }} />
-              </label>
-            </div>
-            {file && photoPreviewUrl && (
-              <div className="mt-4 flex items-center gap-4 rounded-3xl border border-stone-200 bg-stone-50 p-3">
-                <img className="h-24 w-24 rounded-2xl object-cover" src={photoPreviewUrl} alt="Selected photo preview" />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-bold text-stone-900">{file.name || "Selected photo"}</p>
-                  <p className="mt-1 text-sm text-stone-600">Ready to upload - {formatBytes(file.size)} {file.type || "image"}</p>
-                </div>
-              </div>
-            )}
-            {uploadSuccess && (
-              <section className="mt-4 rounded-[1.35rem] border border-green-100 bg-green-50 p-4 text-green-950" role="status" aria-live="polite">
-                <div className="grid gap-4 sm:grid-cols-[6rem_1fr] sm:items-center">
-                  {uploadSuccessPhoto ? <img className="aspect-square w-full rounded-2xl object-cover" src={photoImageSrc(uploadSuccessPhoto)} alt={`Uploaded photo by ${uploadSuccess.guestDisplayName}`} /> : null}
-                  <div>
-                    <p className="text-xs font-bold uppercase text-green-700">Photo added.</p>
-                    <h3 className="mt-2 font-display text-2xl font-bold">Thanks, {uploadSuccess.guestDisplayName}.</h3>
-                    <p className="mt-2 text-sm font-bold text-green-900">{uploadSuccess.detail}</p>
-                    {uploadSuccess.revealNote ? <p className="mt-2 text-sm font-semibold text-green-900">{uploadSuccess.revealNote}</p> : !event.isRevealed ? <p className="mt-2 text-sm font-semibold text-green-900">The full album unlocks after {formatDateTime(event.revealAt)}.</p> : null}
-                    <p className="mt-2 text-sm font-semibold text-green-900">The host can review event photos.</p>
+            <nav className="mt-1 grid grid-cols-3 border-b border-stone-200 text-sm font-semibold">
+              {guestTabs.map((tab) => (
+                <button
+                  type="button"
+                  className={cx("border-b-2 px-2 py-3 transition", activeGuestTab === tab.key ? "border-[#e85d3f] text-[#e85d3f]" : "border-transparent text-stone-500 hover:text-stone-950")}
+                  onClick={() => setActiveGuestTab(tab.key)}
+                  key={tab.key}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </header>
+
+          <section id="event-album" ref={albumRef} className="scroll-mt-24 px-2 pt-2">
+            {activeGuestTab === "photos" ? (
+              isMemoryCapsuleLocked ? (
+                <div className="mx-2 mt-10 rounded-lg border border-amber-200 bg-amber-50 p-5 text-center">
+                  <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-white text-[#653e00]">
+                    <CleanIcon name="lock" className="h-5 w-5" />
                   </div>
+                  <h2 className="mt-4 text-lg font-bold text-[#653e00]">{capsuleCopy?.revealTitle || "Album reveal is locked"}</h2>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-amber-900">{capsuleCopy?.revealNote || `Photos unlock after ${formatDateTime(event.revealAt)}.`}</p>
                 </div>
-                <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                  <SecondaryButton type="button" onClick={resetForAnotherUpload}>Add another photo</SecondaryButton>
-                  <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" href="#my-uploads" onClick={() => {
-                    trackUploadSuccessAction("view_my_uploads");
-                    setTimeout(() => myUploadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                  }}>View my uploads</a>
-                  <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" href="#event-album" onClick={() => {
-                    trackUploadSuccessAction("back_to_event_album");
-                    setTimeout(() => albumRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-                  }}>Back to event album</a>
-                </div>
-              </section>
-            )}
-            {message && !uploadSuccess && <p className="mt-4 rounded-2xl bg-green-50 p-3 text-sm text-green-700">{message}</p>}
-            {message && !uploadSuccess && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
-              <Link className="mt-3 inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] border border-[#e1d4c5] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-[0_10px_24px_rgba(101,62,0,0.06)]" to={`/recap/${slug}`}>Vote on awards</Link>
-            )}
-            {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error} {file ? "Try again or choose a smaller image." : ""}</p>}
-            {error && file && <SecondaryButton type="button" className="mt-3 w-full" onClick={() => {
-              trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
-              setError("");
-            }}>Try again</SecondaryButton>}
-            <Button className="mt-5 w-full" disabled={loading || remaining === 0}>{loading ? "Adding..." : "Add photos"}</Button>
-          </form>
-
-          {guestProgress && (
-            <section className="mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <StatusPill>{guestProgress.modeLabel}</StatusPill>
-                  <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{guestProgress.headline}</h2>
-                  <p className="mt-2 text-sm font-semibold text-stone-600">{guestProgress.note}</p>
-                </div>
-                <div className="rounded-2xl bg-[#fffaf6] p-4 text-center">
-                  <p className="text-xs font-bold uppercase text-[#653e00]">Contributed</p>
-                  <p className="font-display text-3xl font-bold text-stone-950">{guestProgress.totalPhotos}</p>
-                </div>
-              </div>
-              {guestProgress.rows.length ? (
-                <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                  {guestProgress.rows.slice(0, 6).map((row) => (
-                    <div className="rounded-2xl bg-stone-50 p-4" key={row.id}>
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="min-w-0 truncate text-sm font-bold text-stone-900">{row.label}</p>
-                        <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#653e00]">{row.count}</span>
-                      </div>
-                      {row.colorHex ? <div className="mt-3 h-2 rounded-full" style={{ backgroundColor: row.colorHex }} /> : null}
-                    </div>
+              ) : visibleAlbumPhotos.length ? (
+                <div className="columns-2 gap-1.5">
+                  {visibleAlbumPhotos.map((photo) => (
+                    <button
+                      type="button"
+                      className="mb-1.5 block w-full break-inside-avoid overflow-hidden rounded-lg bg-stone-100 text-left"
+                      onClick={() => {
+                        setSelectedPhoto(photo);
+                        setReportStatus("");
+                        trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
+                      }}
+                      key={photo.id}
+                    >
+                      <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                    </button>
                   ))}
                 </div>
               ) : (
-                <p className="mt-4 rounded-2xl bg-stone-50 p-4 text-sm font-bold text-stone-600">No challenge steps to track. Every photo counts.</p>
-              )}
-            </section>
-          )}
+                <div className="mx-2 mt-10 rounded-lg border border-dashed border-stone-200 bg-white p-6 text-center">
+                  <div className="mx-auto grid h-11 w-11 place-items-center rounded-full bg-[#fff0ed] text-[#e85d3f]">
+                    <CleanIcon name="upload" className="h-5 w-5" />
+                  </div>
+                  <h2 className="mt-4 text-lg font-bold text-stone-950">No photos yet.</h2>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-stone-500">Add the first photo and it will appear here right away.</p>
+                </div>
+              )
+            ) : null}
 
-          <section id="my-uploads" ref={myUploadsRef} className="mt-6 scroll-mt-6 rounded-[1.75rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)] sm:p-6">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-              <div>
-                <StatusPill>My Uploads</StatusPill>
-                <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">Your uploads on this device</h2>
-                <p className="mt-2 text-sm font-semibold text-stone-600">Photos you add from this browser on this device will appear here.</p>
+            {activeGuestTab === "people" ? (
+              <div className="px-2 pt-4">
+                {contributorTiles.length ? (
+                  <div className="grid gap-3">
+                    {contributorTiles.map((contributor) => (
+                      <div className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white p-3" key={contributor.displayName}>
+                        <div className="flex h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+                          {contributor.photos.length ? contributor.photos.map((photo) => (
+                            <img className="h-full min-w-0 flex-1 object-cover" src={photoImageSrc(photo)} alt="" key={photo.id} />
+                          )) : <CleanIcon name="users" className="m-auto h-5 w-5 text-stone-400" />}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-bold text-stone-950">{contributor.displayName}</p>
+                          <p className="mt-1 text-xs font-semibold text-stone-500">{contributor.photoCount} {contributor.photoCount === 1 ? "photo" : "photos"}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-8 rounded-lg border border-dashed border-stone-200 p-5 text-center">
+                    <h2 className="text-lg font-bold text-stone-950">No named contributors yet.</h2>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-stone-500">Guests can add a name when they upload, or stay anonymous.</p>
+                  </div>
+                )}
               </div>
-              <span className="rounded-full bg-stone-100 px-4 py-2 text-sm font-bold text-stone-700">{myUploads.length} visible here</span>
-            </div>
-            {myUploads.length ? (
-              <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {myUploads.map((photo) => (
-                  <figure className="overflow-hidden rounded-3xl border border-[#eadfce] bg-[#fffaf6] p-2" key={photo.id}>
-                    <img className="aspect-square w-full rounded-2xl object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                    <figcaption className="p-2 text-xs font-bold text-stone-700">
-                      <span className="block truncate">{photo.challengeParticipantName || photo.guestNickname || "Anonymous guest"}</span>
-                      <span className="mt-1 block text-stone-500">{formatDateTime(photo.createdAt)}</span>
-                      {photoChallengeLabel(photo) ? <span className="mt-1 block truncate text-[#653e00]">{photoChallengeLabel(photo)}</span> : null}
-                    </figcaption>
-                  </figure>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-5 rounded-2xl bg-stone-50 p-4 text-sm font-bold text-stone-600">
-                <p>No uploads from this device yet.</p>
-                <p className="mt-1 font-semibold">Add a photo and it will show up here.</p>
-              </div>
-            )}
-            {unavailableUploads.length ? (
-              <div className="mt-4 grid gap-2">
-                {unavailableUploads.slice(0, 4).map((item) => (
-                  <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-amber-900" key={item.photoId}>
-                    {item.challengeLabel || "This photo"} is only visible to the host right now.
-                  </p>
-                ))}
+            ) : null}
+
+            {activeGuestTab === "highlights" ? (
+              <div className="px-2 pt-4">
+                {awardVoting ? <AwardVotingPanel event={event} photos={visibleAlbumPhotos} awardVoting={awardVoting} clientId={session.clientId} surface="guest_album" onVoteComplete={load} /> : null}
+                {highlightPhotos.length ? (
+                  <div className="mt-4 columns-2 gap-1.5">
+                    {highlightPhotos.map((photo) => (
+                      <button
+                        type="button"
+                        className="mb-1.5 block w-full break-inside-avoid overflow-hidden rounded-lg bg-stone-100 text-left"
+                        onClick={() => {
+                          setSelectedPhoto(photo);
+                          setReportStatus("");
+                          trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_highlights", photoId: photo.id } });
+                        }}
+                        key={photo.id}
+                      >
+                        <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-8 rounded-lg border border-dashed border-stone-200 p-5 text-center">
+                    <h2 className="text-lg font-bold text-stone-950">Highlights will build here.</h2>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-stone-500">Featured and recent photos appear as the album grows.</p>
+                  </div>
+                )}
               </div>
             ) : null}
           </section>
 
-          {!event.isRevealed && (
-            <section id="event-album" ref={albumRef} className="mt-8 scroll-mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
-              <h2 className="font-display text-2xl font-bold text-[#653e00]">Photos are being collected.</h2>
-              <p className="mt-2 text-sm font-semibold text-amber-900">The album unlocks after {formatDateTime(event.revealAt)}.</p>
-              <a className="mt-4 inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white sm:w-auto" href="#guest-upload-card">Add your photos</a>
-            </section>
-          )}
-
-          {event.isRevealed && (
-            <section id="event-album" ref={albumRef} className="mt-8 scroll-mt-6">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h2 className="font-display text-2xl font-bold">Album</h2>
-                  <p className="mt-1 text-sm font-semibold text-stone-600">{photos.length} revealed photos from {contributorSummary.contributorCount || "the"} {contributorSummary.contributorCount === 1 ? "contributor" : "contributors"}.</p>
-                </div>
-                {contributorSummary.topContributors.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {contributorSummary.topContributors.map((contributor) => (
-                      <span className="rounded-full bg-[#fffaf6] px-3 py-2 text-xs font-bold text-[#653e00]" key={contributor.displayName}>{contributor.displayName}: {contributor.photoCount}</span>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-              {awardVoting && (
-                <div className="mt-4">
-                  <AwardVotingPanel event={event} photos={photos} awardVoting={awardVoting} clientId={session.clientId} surface="guest_album" onVoteComplete={load} />
-                </div>
-              )}
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
-                {photos.map((photo) => (
-                  <div className="overflow-hidden rounded-3xl bg-white p-2 shadow-sm" key={photo.id}>
-                    <button type="button" className="block w-full text-left" onClick={() => {
-                      setSelectedPhoto(photo);
-                      setReportStatus("");
-                      trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_album", photoId: photo.id } });
-                    }}>
-                      <img className="aspect-square w-full rounded-2xl object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                    </button>
-                    {photo.challengeParticipantName && (
-                      <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photo.challengeParticipantName} - {photo.challengeColorName}</p>
-                    )}
-                    {photoChallengeLabel(photo) && <p className="mt-2 truncate px-1 text-xs font-bold text-stone-700">{photoChallengeLabel(photo)}</p>}
-                    <button type="button" className="mt-2 w-full rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-200" onClick={() => {
-                      setSelectedPhoto(photo);
-                      setReportStatus("");
-                      trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_album", photoId: photo.id } });
-                    }}>View / report</button>
-                  </div>
-                ))}
-              </div>
-              {!photos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet.</h3><p className="mt-2 font-semibold text-stone-600">Add your photos and help start the album.</p><a className="mt-4 inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href="#guest-upload-card">Add your photos</a></Card>}
-            </section>
-          )}
           <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
-          <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[#eadfce] bg-white/95 p-3 shadow-[0_-12px_30px_rgba(101,62,0,0.08)] backdrop-blur sm:hidden">
-            <a className="inline-flex min-h-12 w-full items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href="#guest-upload-card">Add photos</a>
+
+          <div className="fixed inset-x-0 bottom-7 z-30 flex justify-center px-4 pointer-events-none">
+            <button type="button" className="pointer-events-auto inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-7 py-3 text-base font-bold text-white shadow-[0_6px_16px_rgba(232,93,63,0.24)] transition hover:bg-[#d84d32]" onClick={openUploadSheet}>
+              <CleanIcon name="upload" className="h-5 w-5" />
+              Add photos
+            </button>
           </div>
-        </div>
+
+          {uploadSheetOpen ? (
+            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/25 px-0 sm:px-4" role="dialog" aria-modal="true" aria-label="Add photos">
+              <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload sheet" onClick={() => setUploadSheetOpen(false)} />
+              <div className="relative max-h-[88vh] w-full max-w-[430px] overflow-y-auto rounded-t-xl bg-white p-4 shadow-sm">
+                <div className="sticky top-0 z-10 -mx-4 -mt-4 flex items-center justify-between border-b border-stone-100 bg-white px-4 py-3">
+                  <div>
+                    <h2 className="text-xl font-bold text-stone-950">Add photos</h2>
+                    <p className="mt-1 text-xs font-semibold text-stone-500">No account needed.</p>
+                  </div>
+                  <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-stone-600 hover:bg-stone-100" aria-label="Close upload sheet" onClick={() => setUploadSheetOpen(false)}>
+                    <Icon>close</Icon>
+                  </button>
+                </div>
+
+                {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && (
+                  <section className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <h3 className="text-base font-bold text-[#653e00]">Find your color.</h3>
+                    <p className="mt-1 text-sm font-semibold text-stone-700">Pick your name or team so the photo lands in the right lane.</p>
+                    <label className="mt-4 grid gap-2 text-sm font-bold text-stone-700">
+                      Pick your color
+                      <select ref={participantSelectRef} className="h-12 rounded-lg border border-stone-200 bg-white px-3 text-base font-bold text-stone-900 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={selectedParticipantId} onChange={(selectEvent) => saveSelectedParticipant(selectEvent.target.value)} required>
+                        <option value="">Select a participant</option>
+                        {event.challenge.participants.map((participant) => (
+                          <option value={participant.id} key={participant.id}>{participant.displayName} - {participant.colorName}</option>
+                        ))}
+                      </select>
+                    </label>
+                    {selectedParticipant ? (
+                      <div className="mt-3 flex flex-wrap items-center gap-2 text-sm font-bold text-stone-800">
+                        <span>Your color:</span>
+                        <ColorChip participant={selectedParticipant} />
+                        <button type="button" className="rounded-full border border-stone-200 px-3 py-2 text-xs font-bold text-stone-700 hover:border-amber-400 hover:bg-amber-50" onClick={switchParticipant}>Switch participant</button>
+                      </div>
+                    ) : null}
+                  </section>
+                )}
+
+                {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && (
+                  <section className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <h3 className="text-base font-bold text-[#653e00]">Pick a prompt.</h3>
+                    <p className="mt-1 text-sm font-semibold text-stone-700">Choose one idea before uploading.</p>
+                    <div className="mt-4 grid gap-2">
+                      {compactPromptItems.map((prompt, index) => {
+                        const promptId = prompt.id || `prompt-${prompt.order ?? index}`;
+                        return (
+                          <button type="button" className={cx("rounded-lg border p-3 text-left text-sm font-bold transition", selectedPromptId === promptId ? "border-[#e85d3f] bg-white text-[#653e00]" : "border-amber-200 bg-white/70 text-stone-800 hover:border-[#e85d3f]")} onClick={() => saveSelectedPrompt(promptId)} key={promptId}>
+                            {prompt.text}
+                          </button>
+                        );
+                      })}
+                      {!showAllChallengeItems && guestPrompts.length > 3 ? <SecondaryButton type="button" className="min-h-10 justify-self-start px-4 py-2" onClick={() => expandChallengeItems("show_more_prompts")}>Show more prompts</SecondaryButton> : null}
+                    </div>
+                  </section>
+                )}
+
+                {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && (
+                  <section className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <h3 className="text-base font-bold text-[#653e00]">Choose an award.</h3>
+                    <p className="mt-1 text-sm font-semibold text-stone-700">Pick the category that fits the photo.</p>
+                    <div className="mt-4 grid gap-2">
+                      {compactAwardItems.map((category, index) => {
+                        const categoryId = category.id || `award-${category.order ?? index}`;
+                        return (
+                          <button type="button" className={cx("rounded-lg border p-3 text-left text-sm font-bold transition", selectedItemId === categoryId ? "border-[#e85d3f] bg-white text-[#653e00]" : "border-amber-200 bg-white/70 text-stone-800 hover:border-[#e85d3f]")} onClick={() => saveSelectedItem(categoryId)} key={categoryId}>
+                            {category.label}
+                          </button>
+                        );
+                      })}
+                      {!showAllChallengeItems && guestAwards.length > 3 ? <SecondaryButton type="button" className="min-h-10 justify-self-start px-4 py-2" onClick={() => expandChallengeItems("show_more_awards")}>Show more categories</SecondaryButton> : null}
+                    </div>
+                  </section>
+                )}
+
+                {event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && capsuleCopy ? (
+                  <section className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4">
+                    <h3 className="text-base font-bold text-[#653e00]">{capsuleCopy.revealTitle}</h3>
+                    <p className="mt-1 text-sm font-semibold text-stone-700">{capsuleCopy.revealNote}</p>
+                  </section>
+                ) : null}
+
+                <form id="guest-upload-card" ref={uploadCardRef} className="mt-4" onSubmit={uploadPhoto}>
+                  {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && selectedParticipant ? <p className="rounded-lg bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p> : null}
+                  {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && selectedPrompt ? <p className="rounded-lg bg-stone-50 p-3 text-sm font-bold text-stone-800">Uploading for: {selectedPrompt.text}</p> : null}
+                  {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && selectedAward ? <p className="rounded-lg bg-stone-50 p-3 text-sm font-bold text-stone-800">Submitting for: {selectedAward.label}</p> : null}
+                  {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT ? (
+                    <label className="mt-4 grid gap-2 text-sm font-bold text-stone-700">
+                      Display name <span className="font-semibold text-stone-500">(optional)</span>
+                      <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="Optional" />
+                      <span className="text-xs font-semibold text-stone-500">Leave blank to post as Anonymous guest.</span>
+                    </label>
+                  ) : null}
+                  {shouldMentionLimit ? <p className="mt-4 rounded-lg bg-[#fffaf6] p-3 text-sm font-bold text-stone-700">{uploadLimitCopy(remaining, event.photoLimitPerGuest)}</p> : null}
+                  {remaining === 0 ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">You have used all uploads for this event.</p> : null}
+                  <div className="mt-4 grid gap-3 grid-cols-2">
+                    <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#d84d32]">
+                      <Icon>photo_camera</Icon>
+                      Take photo
+                      <input ref={fileInputRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="Take a photo" onChange={(event) => {
+                        setFile(event.target.files?.[0] || null);
+                        setUploadSuccess(null);
+                        setUploadSuccessPhoto(null);
+                      }} />
+                    </label>
+                    <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-[#e85d3f] hover:bg-[#fff0ed]">
+                      <Icon>photo_library</Icon>
+                      Library
+                      <input className="sr-only" type="file" accept="image/*" aria-label="Choose from phone" onChange={(event) => {
+                        setFile(event.target.files?.[0] || null);
+                        setUploadSuccess(null);
+                        setUploadSuccessPhoto(null);
+                      }} />
+                    </label>
+                  </div>
+                  {file && photoPreviewUrl ? (
+                    <div className="mt-4 flex items-center gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3">
+                      <img className="h-20 w-20 rounded-lg object-cover" src={photoPreviewUrl} alt="Selected photo preview" />
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-stone-900">{file.name || "Selected photo"}</p>
+                        <p className="mt-1 text-sm text-stone-600">Ready to upload - {formatBytes(file.size)} {file.type || "image"}</p>
+                      </div>
+                    </div>
+                  ) : null}
+                  {uploadSuccess ? (
+                    <section className="mt-4 rounded-lg border border-green-100 bg-green-50 p-4 text-green-950" role="status" aria-live="polite">
+                      {uploadSuccessPhoto ? <img className="aspect-square w-full rounded-lg object-cover" src={photoImageSrc(uploadSuccessPhoto)} alt={`Uploaded photo by ${uploadSuccess.guestDisplayName}`} /> : null}
+                      <h3 className="mt-3 text-xl font-bold">Thanks, {uploadSuccess.guestDisplayName}.</h3>
+                      <p className="mt-2 text-sm font-bold text-green-900">{uploadSuccess.detail}</p>
+                      {uploadSuccess.revealNote ? <p className="mt-2 text-sm font-semibold text-green-900">{uploadSuccess.revealNote}</p> : null}
+                      <div className="mt-4 grid gap-2">
+                        <SecondaryButton type="button" onClick={resetForAnotherUpload}>Add another photo</SecondaryButton>
+                        <a className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" href="#my-uploads" onClick={() => {
+                          trackUploadSuccessAction("view_my_uploads");
+                          setTimeout(() => myUploadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                        }}>View my uploads</a>
+                        <button type="button" className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" onClick={() => {
+                          trackUploadSuccessAction("back_to_event_album");
+                          setUploadSheetOpen(false);
+                          setTimeout(() => albumRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+                        }}>Back to album</button>
+                      </div>
+                    </section>
+                  ) : null}
+                  {message && !uploadSuccess ? <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p> : null}
+                  {message && !uploadSuccess && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}`}>Vote on awards</Link> : null}
+                  {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error} {file ? "Try again or choose a smaller image." : ""}</p> : null}
+                  {error && file ? <SecondaryButton type="button" className="mt-3 w-full" onClick={() => {
+                    trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
+                    setError("");
+                  }}>Try again</SecondaryButton> : null}
+                  <Button className="mt-5 w-full rounded-lg" disabled={loading || remaining === 0}>{loading ? "Adding..." : "Add photos"}</Button>
+                </form>
+
+                {guestProgress ? (
+                  <section className="mt-5 rounded-lg border border-stone-200 p-4">
+                    <h3 className="text-base font-bold text-stone-950">{guestProgress.headline}</h3>
+                    <p className="mt-1 text-sm font-semibold text-stone-600">{guestProgress.note}</p>
+                    {guestProgress.rows.length ? (
+                      <div className="mt-4 grid gap-2">
+                        {guestProgress.rows.slice(0, 4).map((row) => (
+                          <div className="rounded-lg bg-stone-50 p-3" key={row.id}>
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="min-w-0 truncate text-sm font-bold text-stone-900">{row.label}</p>
+                              <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[#653e00]">{row.count}</span>
+                            </div>
+                            {row.colorHex ? <div className="mt-2 h-2 rounded-full" style={{ backgroundColor: row.colorHex }} /> : null}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
+
+                <section id="my-uploads" ref={myUploadsRef} className="mt-5 scroll-mt-5 rounded-lg border border-stone-200 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-base font-bold text-stone-950">Your uploads</h3>
+                    <span className="rounded-full bg-stone-100 px-3 py-1 text-xs font-bold text-stone-700">{myUploads.length}</span>
+                  </div>
+                  {myUploads.length ? (
+                    <div className="mt-4 grid grid-cols-3 gap-2">
+                      {myUploads.map((photo) => (
+                        <img className="aspect-square w-full rounded-lg object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} key={photo.id} />
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="mt-3 rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-600">No uploads from this device yet.</p>
+                  )}
+                  {unavailableUploads.length ? (
+                    <div className="mt-3 grid gap-2">
+                      {unavailableUploads.slice(0, 4).map((item) => (
+                        <p className="rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900" key={item.photoId}>
+                          {item.challengeLabel || "This photo"} is only visible to the host right now.
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </section>
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
-      {!event && !error && <p>Loading event...</p>}
-      {error && !event && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-    </Shell>
+      </div>
+    </main>
   );
 }
 
@@ -4648,6 +4815,7 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/" element={<LandingRedesign />} />
+            <Route path="/demo" element={<LandingDemoGate />} />
             <Route path="/privacy" element={<TrustPage kind="privacy" />} />
             <Route path="/terms" element={<TrustPage kind="terms" />} />
             <Route path="/support" element={<TrustPage kind="support" />} />
