@@ -14,9 +14,6 @@ import {
   buildHostLaunchKit,
   buildHostNextStep,
   buildHostShareAssets,
-  buildLiveWallChallengeDisplaySummary,
-  buildLiveWallDisplayLinks,
-  buildLiveWallUrl,
   buildPostEventHostSummary,
   buildChallengeProgressSummary,
   buildAwardVotingSummary,
@@ -31,11 +28,9 @@ import {
   getHostVisibleEventTemplates,
   getEventTemplate,
   getPromptPack,
-  getLiveWallModeLabel,
   plainModeLabel,
   isAnonymousGuestDisplayName,
   normalizeReportReason,
-  parseLiveWallMode,
   sanitizeGuestDisplayName,
   deriveEventLifecycleStatus,
   validateUploadFile,
@@ -115,21 +110,6 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("invite_poster_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("invite_poster_printed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("guest_link_shared"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_copied"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_link_shared"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_opened"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_viewed"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_viewed"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_switched"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_mode_changed"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_fullscreen_clicked"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_slideshow_paused"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_slideshow_resumed"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_qr_display_opened"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_qr_toggled"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_upload_link_clicked"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_challenge_display_opened"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_awards_leaders_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_copied"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_link_shared"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_share_clicked"), true);
@@ -165,7 +145,6 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("beta_issue_submitted"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_support_link_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("qr_poster_viewed_from_beta_handoff"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("live_wall_opened_from_beta_handoff"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_opened_from_beta_handoff"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("repeat_event_cta_clicked"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_shared_after_event"), true);
@@ -175,91 +154,6 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_event_opened_from_dashboard"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_metrics_exported"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
-});
-
-test("live wall mode helpers parse and build stable display links", () => {
-  assert.equal(parseLiveWallMode("slideshow"), "slideshow");
-  assert.equal(parseLiveWallMode("JOIN"), "join");
-  assert.equal(parseLiveWallMode("missing"), "grid");
-  assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "grid"), "https://eventfilm.test/wall/spring");
-  assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring", "join"), "https://eventfilm.test/wall/spring?mode=join");
-  assert.equal(buildLiveWallUrl("https://eventfilm.test/wall/spring?presenter=1", "challenge"), "https://eventfilm.test/wall/spring?presenter=1&mode=challenge");
-  assert.deepEqual(["grid", "slideshow", "join", "challenge", "awards"].map((mode) => getLiveWallModeLabel(mode as Parameters<typeof getLiveWallModeLabel>[0])), ["Photo Wall", "Slideshow", "Join screen", "Prompts", "Awards"]);
-
-  const event = {
-    liveWallLink: "https://eventfilm.test/wall/spring",
-    challenge: {
-      id: "challenge",
-      type: CHALLENGE_TYPES.EVENT_AWARDS,
-      title: "Awards",
-      instructions: "Vote on favorite moments.",
-      participants: [],
-      config: { categories: createDefaultAwardCategories() },
-    },
-  } satisfies Pick<EventSummary, "liveWallLink" | "challenge">;
-
-  assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.key), ["grid", "join", "slideshow", "challenge", "awards"]);
-  assert.deepEqual(buildLiveWallDisplayLinks(event).map((link) => link.label), ["Photo Wall", "Join screen", "Slideshow", "Prompts", "Awards"]);
-  assert.equal(buildHostShareAssets({ ...event, id: "event", name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
-  assert.equal(buildHostLaunchKit({ ...event, name: "Spring", eventLink: "https://eventfilm.test/e/spring", recapLink: "https://eventfilm.test/recap/spring", eventTemplateSlug: null }).liveWallDisplayLinks.length, 5);
-});
-
-test("live wall challenge display summary handles awards and visible-only progress", () => {
-  const challenge: EventChallenge = {
-    id: "challenge",
-    type: CHALLENGE_TYPES.EVENT_AWARDS,
-    title: "Awards",
-    instructions: "Submit award photos.",
-    participants: [],
-    config: { categories: createDefaultAwardCategories().slice(0, 2) },
-  };
-  const photos = [
-    {
-      id: "visible-photo",
-      url: "https://example.com/visible.jpg",
-      originalFilename: "visible.jpg",
-      mimeType: "image/jpeg",
-      sizeBytes: 100,
-      createdAt: "2026-06-22T00:00:00.000Z",
-      visibilityStatus: "VISIBLE",
-      challengeItemId: "award-1",
-      challengeItemKind: "award",
-    },
-    {
-      id: "hidden-photo",
-      url: "https://example.com/hidden.jpg",
-      originalFilename: "hidden.jpg",
-      mimeType: "image/jpeg",
-      sizeBytes: 100,
-      createdAt: "2026-06-22T00:00:00.000Z",
-      visibilityStatus: "HIDDEN",
-      challengeItemId: "award-2",
-      challengeItemKind: "award",
-    },
-  ] satisfies Photo[];
-
-  const summary = buildLiveWallChallengeDisplaySummary(challenge, photos, {
-    votingEnabled: true,
-    categories: [
-      {
-        categoryId: "award-1",
-        categoryLabel: "Funniest Photo",
-        submissionCount: 1,
-        totalVotes: 3,
-        voteTotals: [{ photoId: "visible-photo", voteCount: 3 }],
-        leaderPhotoIds: ["visible-photo"],
-        isTie: false,
-        noSubmissions: false,
-        noVotes: false,
-      },
-    ],
-  });
-
-  assert.equal(summary.totalPhotos, 1);
-  assert.equal(summary.rows.find((row) => row.id === "award-1")?.count, 1);
-  assert.equal(summary.rows.find((row) => row.id === "award-2")?.count, 0);
-  assert.equal(summary.leaders[0]?.leaderPhotoId, "visible-photo");
-  assert.match(summary.leaders[0]?.status || "", /3 votes/);
 });
 
 test("template and prompt pack registries expose requested presets", () => {
@@ -339,7 +233,6 @@ test("every event template resolves to a valid prompt pack and editable copy", (
     assert.ok(template.bestFor);
     assert.ok(template.revealTiming);
     assert.ok(template.inviteCopy);
-    assert.ok(template.liveWallCopy);
     assert.ok(template.recapFraming);
     assert.ok(template.icon);
     assert.ok(template.badge);
@@ -413,7 +306,7 @@ test("host next step copy follows the simplified lifecycle hierarchy", () => {
 
   assert.equal(buildHostNextStep(base, {}, now), "Share the guest link.");
   assert.equal(buildHostNextStep({ ...base, eventDate: "2020-01-01T11:00:00.000Z" }, {}, now), "Share the guest link.");
-  assert.equal(buildHostNextStep(base, { totalPhotos: 3 }, now), "Open the Photo Wall.");
+  assert.equal(buildHostNextStep(base, { totalPhotos: 3 }, now), "Review incoming photos.");
   assert.equal(
     buildHostNextStep({ ...base, revealAt: "2026-06-22T11:00:00.000Z", challenge: { id: "challenge", type: CHALLENGE_TYPES.MEMORY_CAPSULE, title: "Capsule", instructions: "Upload.", participants: [] } }, { visiblePhotos: 3 }, now),
     "Share the recap.",
@@ -506,7 +399,6 @@ test("post-event host summary combines visible photos, contributors, analytics, 
     ],
     {
       guestJoins: 8,
-      liveWallOpens: 3,
       recapOpens: 5,
       eventAwardsVoting: {
         votingEnabled: true,
@@ -1047,7 +939,7 @@ test("recap story handles old events, templates, and memory capsule locked copy"
   assert.equal(oldStory.emptyCopy, "No photos yet. Share the guest link so people can add theirs.");
 });
 
-test("host launch kit separates guest, live wall, and recap jobs", () => {
+test("host launch kit separates guest and recap jobs", () => {
   const kit = buildHostLaunchKit({
     id: "event",
     name: "Spring Formal",
@@ -1056,7 +948,6 @@ test("host launch kit separates guest, live wall, and recap jobs", () => {
     revealAt: "2026-01-02T00:00:00.000Z",
     photoLimitPerGuest: 5,
     eventLink: "https://example.com/e/spring-formal",
-    liveWallLink: "https://example.com/wall/spring-formal",
     recapLink: "https://example.com/recap/spring-formal",
     photoCount: 0,
     eventTemplateSlug: "birthday-party",
@@ -1064,10 +955,10 @@ test("host launch kit separates guest, live wall, and recap jobs", () => {
     challenge: null,
   });
 
-  assert.deepEqual(kit.links.map((link) => link.key), ["guest", "live-wall", "recap"]);
+  assert.deepEqual(kit.links.map((link) => link.key), ["guest", "recap"]);
   assert.match(kit.inviteText, /birthday/i);
-  assert.match(kit.links[1].instruction, /birthday energy/);
-  assert.equal(kit.checklist.length, 5);
+  assert.match(kit.links[1].instruction, /birthday recap/i);
+  assert.equal(kit.checklist.length, 4);
 });
 
 test("host share assets generate poster and share card metadata", () => {
@@ -1079,7 +970,6 @@ test("host share assets generate poster and share card metadata", () => {
     revealAt: "2026-01-02T00:00:00.000Z",
     photoLimitPerGuest: 5,
     eventLink: "https://example.com/e/spring-formal",
-    liveWallLink: "https://example.com/wall/spring-formal",
     recapLink: "https://example.com/recap/spring-formal",
     photoCount: 0,
     eventTemplateSlug: "birthday-party",
@@ -1093,14 +983,12 @@ test("host share assets generate poster and share card metadata", () => {
   assert.match(assets.poster.modeHint, /Awards/);
   assert.match(assets.guestInviteMessage, /No account needed/);
   assert.match(assets.recapMessage, /Here are the photos from Spring Formal/);
-  assert.match(assets.liveWallSetupTip, /Photo Wall/);
   assert.match(assets.qrPosterHint, /scan to add photos/);
   assert.match(assets.inviteText, /birthday/i);
   assert.match(assets.socialPostCopy, /birthday recap/i);
   assert.match(assets.winnerShareText, /Awards/i);
   assert.deepEqual(assets.links.map((link) => [link.key, link.audience, link.timing]), [
     ["guest", "Guests", "Before event"],
-    ["live-wall", "Host display", "During event"],
     ["recap", "Everyone", "After reveal"],
   ]);
 });
@@ -1114,7 +1002,6 @@ test("host share assets keep fallback copy useful for old events", () => {
     revealAt: "2026-01-02T00:00:00.000Z",
     photoLimitPerGuest: 5,
     eventLink: "https://example.com/e/legacy-night",
-    liveWallLink: "",
     recapLink: "https://example.com/recap/legacy-night",
     photoCount: 0,
     eventTemplateSlug: null,
@@ -1125,7 +1012,6 @@ test("host share assets keep fallback copy useful for old events", () => {
   assert.match(assets.inviteText, /legacy-night/);
   assert.match(assets.inviteText, /No account needed/);
   assert.match(assets.poster.modeHint, /Simple Album/);
-  assert.match(assets.liveWallDisplayPrompt, /Photo Wall/);
   assert.match(assets.emptyRecapCopy, /No photos yet/);
 });
 
@@ -1147,7 +1033,6 @@ test("host share assets use template-aware copy for common event presets", () =>
       revealAt: "2026-01-02T00:00:00.000Z",
       photoLimitPerGuest: 5,
       eventLink: `https://example.com/e/${eventTemplateSlug}`,
-      liveWallLink: `https://example.com/wall/${eventTemplateSlug}`,
       recapLink: `https://example.com/recap/${eventTemplateSlug}`,
       photoCount: 0,
       eventTemplateSlug,

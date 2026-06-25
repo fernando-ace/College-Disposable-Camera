@@ -93,7 +93,7 @@ export default function ShareEventScreen() {
       <TaskHeader
         eyebrow="Share kit"
         title={event ? event.name : "Preparing share links"}
-        body={isMemoryCapsule ? "Send the guest link before reveal, open the Live Wall during it, and share the recap after reveal." : "Send the guest link, open the Live Wall, and share the recap whenever the album is ready."}
+        body={isMemoryCapsule ? "Send the guest link before reveal, keep the QR poster visible during it, and share the recap after reveal." : "Send the guest link, keep the QR poster visible, and share the recap whenever the album is ready."}
       />
       {error ? <ErrorState message={error} /> : null}
       {!event ? <LoadingState label="Loading sharing details..." /> : null}
@@ -103,9 +103,9 @@ export default function ShareEventScreen() {
             <>
               <Card tone="warm">
                 <SectionHeader title="Event status" subtitle={lifecycle?.description || "Use the right link for the moment."} action={lifecycle ? <Badge>{lifecycle.label}</Badge> : undefined} />
-                <Body tone="muted">Next step: {lifecycle?.phase === "during" ? "Open the Live Wall and keep the QR code visible." : lifecycle?.phase === "after" || !isMemoryCapsule ? "Share the recap with everyone." : "Send the guest upload link before reveal time."}</Body>
+                <Body tone="muted">Next step: {lifecycle?.phase === "during" ? "Keep the guest link and QR code visible while guests upload." : lifecycle?.phase === "after" || !isMemoryCapsule ? "Share the recap with everyone." : "Send the guest upload link before reveal time."}</Body>
                 {lifecycle?.phase === "during" ? (
-                  <Button disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
+                  <Button onPress={() => copyLink("Guest upload link", event.eventLink, "guest_link_copied")}>Copy guest upload link</Button>
                 ) : lifecycle?.phase === "after" ? (
                   <Button disabled={!isRecapReady} onPress={() => copyLink("Recap link", event.recapLink, "recap_link_copied")}>Copy recap link</Button>
                 ) : (
@@ -134,11 +134,8 @@ export default function ShareEventScreen() {
               </Card>
 
               <Card>
-                <SectionHeader title="During the event" subtitle={shareAssets.liveWallSetupTip} />
+                <SectionHeader title="During the event" subtitle="Keep the guest link and QR poster handy while you review incoming photos." />
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                  <View style={{ flex: 1, minWidth: 150 }}>
-                    <Button disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
-                  </View>
                   <View style={{ flex: 1, minWidth: 150 }}>
                     <Button tone="secondary" onPress={() => shareLink("Guest upload link", event.eventLink, shareAssets.guestInviteMessage, "guest_link_shared")}>Share guest link</Button>
                   </View>
@@ -146,7 +143,7 @@ export default function ShareEventScreen() {
                     <Button tone="secondary" onPress={() => copyLink("Guest upload link", event.eventLink, "guest_link_copied")}>Copy guest link</Button>
                   </View>
                 </View>
-                <Body tone="muted">{shareAssets.liveWallSetupTip}</Body>
+                <Body tone="muted">Use the event hub to review uploads, hide off-tone photos, and keep the album clean before the recap goes out.</Body>
               </Card>
 
               <Card>

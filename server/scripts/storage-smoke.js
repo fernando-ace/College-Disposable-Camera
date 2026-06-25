@@ -197,14 +197,6 @@ async function main() {
     const album = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/photos`);
     assertPhotoInList(album.data.photos, state.photoId, "guest album response");
 
-    setStep("Live Wall route");
-    const liveWall = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/live-wall`);
-    if (liveWall.data.isLocked) {
-      console.log("Live Wall is locked by reveal rules; skipping visible-photo assertion for this route.");
-    } else {
-      assertPhotoInList(liveWall.data.photos, state.photoId, "Live Wall response");
-    }
-
     setStep("Recap route");
     const recap = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/recap`);
     if (recap.data.isLocked) {
@@ -249,8 +241,6 @@ async function main() {
     setStep("Hidden photo public visibility");
     const hiddenAlbum = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/photos`);
     assertPhotoNotInList(hiddenAlbum.data.photos, state.photoId, "guest album response");
-    const hiddenLiveWall = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/live-wall`);
-    assertPhotoNotInList(hiddenLiveWall.data.photos, state.photoId, "Live Wall response");
     const hiddenRecap = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/recap`);
     assertPhotoNotInList(hiddenRecap.data.photos, state.photoId, "Recap response");
     await expectStatus(apiUrl, `/api/photos/${encodeURIComponent(state.photoId)}/file`, 404);
@@ -293,7 +283,7 @@ async function main() {
   }
 
   if (state.smokeAssertionsPassed && state.cleanupSucceeded) {
-    console.log("\nStorage smoke passed: upload, record, album, Live Wall, Recap, feature/unfeature, report, hide/restore, public visibility, analytics, and cleanup.");
+    console.log("\nStorage smoke passed: upload, record, album, Recap, feature/unfeature, report, hide/restore, public visibility, analytics, and cleanup.");
   }
 }
 

@@ -6,14 +6,14 @@ Use this for the first real EventFilm host tests. Keep the first event small, fr
 
 - A host Fernando can reach quickly by text or phone.
 - A casual event with 10 to 40 guests.
-- A host who is comfortable opening a laptop or tablet for the Live Wall.
+- A host who is comfortable using a QR poster or guest link.
 - Avoid weddings, paid client events, or anything where photos are mission-critical until deployed smoke has passed.
 
 ## Best First Event
 
 - Birthday dinner, graduation hangout, club social, tailgate, house party, or family gathering.
 - Strong Wi-Fi or reliable cell coverage.
-- At least one display device available for Live Wall.
+- A printed QR poster or display device for the guest link.
 - A host who can remind guests to scan the QR code early.
 
 ## Before The Event
@@ -24,14 +24,13 @@ Use this for the first real EventFilm host tests. Keep the first event small, fr
 - If the event name, description, date, or reveal time changes, update it from the host event Settings tab before sharing links.
 - Open the guest link in a logged-out phone browser.
 - Upload one test photo and clean it up or hide it.
-- Open Live Wall on the display device.
 - Open Recap and confirm reveal timing.
-- Save the guest link, QR code, Live Wall link, and Recap link where the host can find them.
+- Save the guest link, QR code, and Recap link where the host can find them.
 
 ## During The Event
 
 - Share the QR code and guest link early.
-- Keep Live Wall open on a laptop, TV, projector, or iPad.
+- Keep the QR poster visible on a laptop, TV, projector, iPad, or printout.
 - Ask guests to upload one photo in the first 15 minutes.
 - Keep the host dashboard available for hide/restore if needed.
 - If upload fails, try phone browser refresh, then check connection, then have Fernando run API/storage smoke.
@@ -48,7 +47,6 @@ Use this for the first real EventFilm host tests. Keep the first event small, fr
 ## Links To Share
 
 - Guest upload link: for guests and QR code.
-- Live Wall link: for the display device during the event.
 - Recap link: for after reveal.
 - Host dashboard link: only for the host or Fernando.
 
@@ -65,7 +63,7 @@ What I would love feedback on:
 
 - whether guests understand the upload page
 - whether the QR/link is easy to share
-- whether Live Wall and Recap feel useful
+- whether the QR/link and Recap feel useful
 - anything confusing or stressful for you as the host
 
 If anything breaks, text me and I will help right away. This is still a beta, so we should use it for a casual event where a backup plan is okay.
@@ -78,7 +76,7 @@ QR poster: [QR poster link or attachment]
 
 - Did guests understand what to do from the QR page?
 - Did anyone fail to upload from a phone?
-- Did the host know where to find Live Wall and Recap?
+- Did the host know where to find the guest link, QR poster, and Recap?
 - Were challenge modes clear enough?
 - Did moderation feel easy?
 - Would the host use this again for another event?
@@ -88,7 +86,6 @@ QR poster: [QR poster link or attachment]
 - Event type and approximate guest count.
 - Number of guest joins.
 - Number of successful uploads.
-- Number of Live Wall opens.
 - Number of Recap opens.
 - Number of hidden, reported, and featured photos.
 - Time from link sharing to first upload.

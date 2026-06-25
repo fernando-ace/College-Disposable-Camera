@@ -7,7 +7,6 @@ import type {
   FounderOverview,
   HostFeedbackInput,
   GuestStatus,
-  LiveWallMode,
   AwardVotingSummary,
   Photo,
   PhotoReportReason,
@@ -55,30 +54,12 @@ export type ReportPhotoInput = {
   reporterId?: string;
 };
 
-export type LiveWallResponse = {
-  event: PublicEvent & {
-    eventLink: string;
-    liveWallLink: string;
-    recapLink: string;
-    qrCodeDataUrl?: string;
-  };
-  eventLink: string;
-  liveWallLink: string;
-  recapLink: string;
-  qrCodeDataUrl?: string;
-  isLocked: boolean;
-  photos: Photo[];
-  awardVoting?: AwardVotingSummary;
-};
-
 export type EventRecapResponse = {
   event: PublicEvent & {
     eventLink: string;
-    liveWallLink: string;
     recapLink: string;
   };
   eventLink: string;
-  liveWallLink: string;
   recapLink: string;
   isLocked: boolean;
   photos: Photo[];
@@ -109,7 +90,6 @@ export type AnalyticsSummary = {
   eventsCreated: number;
   guestJoins: number;
   uploads: number;
-  liveWallOpens: number;
   recapOpens: number;
   activeHosts: number;
   activeGuests: number;
@@ -125,7 +105,6 @@ export type EventAnalyticsSummary = {
   featuredPhotos: number;
   guestJoins: number;
   uploads: number;
-  liveWallOpens: number;
   recapOpens: number;
   activeGuests: number;
   eventAwardsVoting?: AwardVotingSummary;
@@ -157,7 +136,7 @@ export type DuplicateEventOverrides = {
 };
 
 export type LaunchLinkVerification = {
-  key: "guest" | "live-wall" | "recap";
+  key: "guest" | "recap";
   label: string;
   url: string;
   ok: boolean;
@@ -412,19 +391,11 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     getHostEventDownloadUrl(eventId: string) {
       return `${baseUrl}/api/host/events/${encodeURIComponent(eventId)}/download`;
     },
-    getLiveWallUrl(slug: string, mode?: LiveWallMode) {
-      const query = mode && mode !== "grid" ? `?mode=${encodeURIComponent(mode)}` : "";
-      return `/wall/${encodeURIComponent(slug)}${query}`;
-    },
     getRecapUrl(slug: string) {
       return `/recap/${encodeURIComponent(slug)}`;
     },
     getPublicEventBySlug(slug: string) {
       return request<{ event: PublicEvent }>(`/api/events/${encodeURIComponent(slug)}`);
-    },
-    getLiveWallData(slug: string, clientId?: string) {
-      const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
-      return request<LiveWallResponse>(`/api/events/${encodeURIComponent(slug)}/live-wall${query}`);
     },
     getRecapData(slug: string, clientId?: string) {
       const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";

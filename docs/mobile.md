@@ -181,7 +181,7 @@ Before giving a preview build to a beta host, verify:
 - Share the guest link.
 - Open the guest link in the phone browser.
 - Upload a photo.
-- Open Live Wall on a laptop.
+- Keep the QR poster visible on a laptop or printout.
 - Open Recap.
 - Hide, restore, feature, unfeature, and report one test photo.
 - Verify the analytics summary changes.
@@ -191,7 +191,7 @@ Before giving a preview build to a beta host, verify:
 These are planning placeholders for internal/beta review notes, not public launch claims:
 
 - Short description: `Host private event photo albums from a mobile command center.`
-- Long description: `EventFilm lets hosts create QR-based private photo albums, share guest upload links, open a Live Wall, review photos, and share a recap after the event. Guests upload from the web and do not need accounts.`
+- Long description: `EventFilm lets hosts create QR-based private photo albums, share guest upload links, review photos, and share a recap after the event. Guests upload from the web and do not need accounts.`
 - Beta review note: `This build is for internal host testing. Use the provided beta API environment and create a test event before inviting guests.`
 - Known beta limitations: no in-app payments, no guest accounts, no public app-store availability claim, and manual production environment review required before real events.
 - Before store submission, replace placeholder icon, splash, screenshots, privacy URL, support URL, and final app name if needed. Do not submit to app stores from the beta rehearsal workflow.
@@ -226,10 +226,10 @@ Use this on a real phone or small simulator after mobile UI changes:
 - Sign in as a host.
 - Confirm the dashboard shows the Create event action, compact stats, next-up event, and event cards without crowding.
 - Create an event and inspect each wizard step: template cards, details, timing, mode choice, customization, review, back/continue behavior, validation, keyboard scroll, and submit loading state.
-- Open event detail and confirm Guest Upload, Live Wall, and Recap are visually distinct and ordered by when the host uses them.
+- Open event detail and confirm Guest Upload, photo review, and Recap are visually distinct and ordered by when the host uses them.
 - Open the share kit and confirm QR, share, copy, invite text, host notes, and caption are easy to scan on a small screen.
 - Open guest upload from a phone browser and confirm challenge instructions, upload CTA, selected-photo preview, success, retry, and upload-limit states are clear.
-- Open the Live Wall link on a display-sized browser and confirm it feels presentation-ready.
+- Open the QR poster on a display-sized browser and confirm it is easy to scan.
 - Open the Recap link after reveal and confirm highlights, stats, challenge recap, empty states, and full album feel polished.
 - View the mobile album after reveal and confirm photo spacing, report action, and empty states look intentional.
 - Hide and restore one photo from the host event detail screen.

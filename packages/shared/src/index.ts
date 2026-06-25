@@ -9,7 +9,6 @@ export const CHALLENGE_TYPES = {
 
 export type ChallengeType = (typeof CHALLENGE_TYPES)[keyof typeof CHALLENGE_TYPES];
 export type ChallengeMode = "NONE" | ChallengeType;
-export type LiveWallMode = "grid" | "slideshow" | "join" | "challenge" | "awards";
 export type ChallengeItemKind = "color" | "prompt" | "award" | "capsule";
 export type UploadMetadataRequirement = "none" | "participant" | "prompt" | "award";
 export type SetupComplexity = "None" | "Easy" | "Medium";
@@ -195,28 +194,6 @@ export type ChallengeProgressSummary = {
   rows: ChallengeProgressRow[];
 };
 
-export type LiveWallDisplayLink = {
-  key: LiveWallMode;
-  label: string;
-  url: string;
-  purpose: string;
-  instruction: string;
-  analyticsName: AnalyticsEventName;
-};
-
-export type LiveWallChallengeDisplaySummary = ChallengeProgressSummary & {
-  headline: string;
-  note: string;
-  leaders: {
-    categoryId: string;
-    categoryLabel: string;
-    leaderPhotoId?: string;
-    voteCount: number;
-    isTie: boolean;
-    status: string;
-  }[];
-};
-
 export type GuestChallengeProgress = ChallengeProgressSummary & {
   headline: string;
   note: string;
@@ -332,7 +309,6 @@ export type PostEventHostSummary = {
   totalContributors: number;
   topContributors: ContributorSummaryItem[];
   guestJoins: number;
-  liveWallOpens: number;
   recapOpens: number;
   uploadsOverTime: UploadTrendBucket[];
   challengeCompletion: ChallengeProgressSummary;
@@ -340,16 +316,16 @@ export type PostEventHostSummary = {
 };
 
 export type HostLaunchKitLink = {
-  key: "guest" | "live-wall" | "recap" | `live-wall-${LiveWallMode}`;
+  key: "guest" | "recap";
   label: string;
   url: string;
   purpose: string;
   instruction: string;
 };
 
-export type HostShareLinkTiming = "Before event" | "During event" | "After reveal";
+export type HostShareLinkTiming = "Before event" | "After reveal";
 
-export type HostShareLinkAudience = "Guests" | "Host display" | "Everyone";
+export type HostShareLinkAudience = "Guests" | "Everyone";
 
 export type HostShareLinkCard = HostLaunchKitLink & {
   audience: HostShareLinkAudience;
@@ -380,14 +356,11 @@ export type HostShareAssets = {
   templateName?: string;
   poster: HostInvitePoster;
   links: HostShareLinkCard[];
-  liveWallDisplayLinks: LiveWallDisplayLink[];
   inviteText: string;
   guestInviteMessage: string;
   recapMessage: string;
-  liveWallSetupTip: string;
   qrPosterHint: string;
   socialPostCopy: string;
-  liveWallDisplayPrompt: string;
   recapShareText: string;
   winnerShareText: string;
   memoryCapsuleRevealCopy?: string;
@@ -395,7 +368,7 @@ export type HostShareAssets = {
 };
 
 export type HostLaunchKitChecklistItem = {
-  key: "create-event" | "choose-mode" | "copy-guest-link" | "open-live-wall" | "share-recap";
+  key: "create-event" | "choose-mode" | "copy-guest-link" | "share-recap";
   label: string;
   complete: boolean;
 };
@@ -408,7 +381,6 @@ export type HostLaunchKit = {
   hostInstructions: string;
   socialCaption: string;
   modeInstructions: string;
-  liveWallDisplayLinks: LiveWallDisplayLink[];
   checklist: HostLaunchKitChecklistItem[];
 };
 
@@ -428,8 +400,6 @@ export const ANALYTICS_EVENT_NAMES = [
   "invite_poster_printed",
   "guest_link_copied",
   "guest_link_shared",
-  "live_wall_link_copied",
-  "live_wall_link_shared",
   "recap_link_copied",
   "recap_link_shared",
   "recap_share_clicked",
@@ -441,19 +411,6 @@ export const ANALYTICS_EVENT_NAMES = [
   "recap_photo_opened",
   "recap_create_event_cta_clicked",
   "native_share_opened",
-  "live_wall_opened",
-  "live_wall_viewed",
-  "live_wall_mode_viewed",
-  "live_wall_mode_switched",
-  "live_wall_mode_changed",
-  "live_wall_fullscreen_clicked",
-  "live_wall_slideshow_paused",
-  "live_wall_slideshow_resumed",
-  "live_wall_qr_display_opened",
-  "live_wall_qr_toggled",
-  "live_wall_upload_link_clicked",
-  "live_wall_challenge_display_opened",
-  "live_wall_awards_leaders_viewed",
   "recap_opened",
   "guest_upload_page_viewed",
   "guest_joined_event",
@@ -499,7 +456,6 @@ export const ANALYTICS_EVENT_NAMES = [
   "beta_issue_submitted",
   "host_support_link_clicked",
   "qr_poster_viewed_from_beta_handoff",
-  "live_wall_opened_from_beta_handoff",
   "recap_opened_from_beta_handoff",
   "repeat_event_cta_clicked",
   "recap_shared_after_event",
@@ -513,7 +469,7 @@ export const ANALYTICS_EVENT_NAMES = [
 export type AnalyticsEventName = (typeof ANALYTICS_EVENT_NAMES)[number];
 export type AnalyticsSource = "web" | "mobile" | "api";
 export type HostFeedbackKind = "post_event" | "beta_issue";
-export type HostIssueArea = "guest_upload" | "live_wall" | "recap" | "qr_poster" | "moderation" | "analytics" | "other";
+export type HostIssueArea = "guest_upload" | "recap" | "qr_poster" | "moderation" | "analytics" | "other";
 
 export type AwardVoteTotal = {
   photoId: string;
@@ -567,7 +523,6 @@ export const BETA_METRIC_DEFINITIONS = {
   activeHost: "A signed-in host who opens the host dashboard in the last 30 days.",
   guestJoin: "A guest upload route visit that records guest_joined_event for an event.",
   photoUpload: "A successfully stored event photo that has not been deleted.",
-  liveWallOpen: "A Live Wall route visit that records live_wall_opened for an event.",
   recapOpen: "A Recap route visit that records recap_opened for an event.",
 } as const;
 
@@ -584,7 +539,6 @@ export type FounderOverviewMetrics = {
   uploadsLast7Days: number;
   totalContributors: number;
   totalRecapOpens: number;
-  totalLiveWallOpens: number;
   totalFeedbackSubmissions: number;
   totalReportedPhotos: number;
   hiddenPhotoCount: number;
@@ -595,7 +549,6 @@ export type FounderFunnelMetrics = {
   events: number;
   guestJoins: number;
   uploads: number;
-  liveWallOpens: number;
   recapOpens: number;
   feedbackSubmissions: number;
 };
@@ -618,7 +571,6 @@ export type FounderEventSummary = {
   guestCount: number;
   reportCount: number;
   eventLink: string;
-  liveWallLink: string;
   recapLink: string;
   hostEventPath?: string | null;
 };
@@ -634,7 +586,6 @@ export type FounderUploadSummary = {
   challengeItemLabel?: string | null;
   previewUrl?: string | null;
   eventLink?: string | null;
-  liveWallLink?: string | null;
   recapLink?: string | null;
 };
 
@@ -677,7 +628,6 @@ export type FounderReportedPhotoSummary = {
   hiddenReason?: string | null;
   previewUrl?: string | null;
   eventLink?: string | null;
-  liveWallLink?: string | null;
   recapLink?: string | null;
 };
 
@@ -733,7 +683,6 @@ export type EventSummary = {
   eventTemplateSlug?: EventTemplateSlug | string | null;
   promptPackSlug?: PromptPackSlug | string | null;
   eventLink: string;
-  liveWallLink?: string;
   recapLink?: string;
   qrCodeDataUrl?: string;
   photoCount: number;
@@ -978,7 +927,6 @@ export type EventTemplateDefinition = {
   promptPackSlug: PromptPackSlug;
   revealTiming: string;
   inviteCopy: string;
-  liveWallCopy: string;
   recapFraming: string;
   icon: string;
   badge: string;
@@ -1095,7 +1043,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "birthday",
     revealTiming: "Reveal later that night or the next morning.",
     inviteCopy: "Help capture the birthday from every angle. Upload your funniest, sweetest, and most main-character photos here:",
-    liveWallCopy: "Keep the birthday energy on screen while guests add their favorite moments.",
     recapFraming: "A birthday recap full of the people, outfits, candids, and chaos that made it feel like the night.",
     icon: "celebration",
     badge: "Most social",
@@ -1109,7 +1056,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "wedding-engagement",
     revealTiming: "Reveal after the reception or the next day.",
     inviteCopy: "Share your favorite candid photos from the celebration. No account needed:",
-    liveWallCopy: "Open the Photo Wall during the reception so guests can watch the celebration build.",
     recapFraming: "A guest-made celebration story with candids, dance-floor moments, family photos, and details.",
     icon: "favorite",
     badge: "Polished",
@@ -1123,7 +1069,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "greek-life",
     revealTiming: "Reveal after the event or at the next chapter moment.",
     inviteCopy: "Drop your best photos from the event here so the chapter recap is ready:",
-    liveWallCopy: "Show the best group shots, fits, and candid moments as they come in.",
     recapFraming: "A chapter recap built from group shots, spirit moments, candids, and favorite fits.",
     icon: "groups",
     badge: "Chapter ready",
@@ -1137,7 +1082,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "student-org",
     revealTiming: "Reveal after the event wrap-up.",
     inviteCopy: "Help document the event. Upload team photos, speaker moments, and behind-the-scenes shots here:",
-    liveWallCopy: "Use the Photo Wall to make the event feel active and shared.",
     recapFraming: "A campus-event recap with the people, activities, and behind-the-scenes details that mattered.",
     icon: "school",
     badge: "Campus",
@@ -1151,7 +1095,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "graduation",
     revealTiming: "Reveal after the party when everyone can relive the day.",
     inviteCopy: "Add your favorite graduation photos here so everyone can see the full album after the reveal:",
-    liveWallCopy: "Let family and friends watch graduation memories appear during the party.",
     recapFraming: "A graduation story with family, friends, campus photos, candids, and final group moments.",
     icon: "workspace_premium",
     badge: "Milestone",
@@ -1165,7 +1108,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "friend-trip",
     revealTiming: "Reveal on the last night or after everyone gets home.",
     inviteCopy: "Drop the trip photos here so nobody has to chase the group chat afterward:",
-    liveWallCopy: "Keep the trip album alive with food, views, candids, and chaotic moments.",
     recapFraming: "A trip recap that feels like the group chat turned into a polished album.",
     icon: "travel_explore",
     badge: "Trip mode",
@@ -1179,7 +1121,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "camp-retreat",
     revealTiming: "Reveal at the closing session or after checkout.",
     inviteCopy: "Capture retreat moments as they happen. Upload photos for the final recap here:",
-    liveWallCopy: "Use the Photo Wall between sessions to show the retreat taking shape.",
     recapFraming: "A retreat recap with teams, activities, nature moments, and the final group story.",
     icon: "forest",
     badge: "Group weekend",
@@ -1193,7 +1134,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "club-banquet",
     revealTiming: "Reveal after awards or the morning after.",
     inviteCopy: "Upload your banquet photos here so the full recap is ready after the event:",
-    liveWallCopy: "Show table photos, award moments, and celebration shots during the banquet.",
     recapFraming: "A banquet recap with outfits, tables, award moments, speakers, and final celebration photos.",
     icon: "emoji_events",
     badge: "Awards night",
@@ -1207,7 +1147,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "custom",
     revealTiming: "Reveal during or after the gathering.",
     inviteCopy: "Add your favorite family photos here so everyone can enjoy the shared album:",
-    liveWallCopy: "Keep the shared family album visible while people add photos.",
     recapFraming: "A warm family album from everyone who was there.",
     icon: "diversity_1",
     badge: "Warm and easy",
@@ -1221,7 +1160,6 @@ export const EVENT_TEMPLATES: EventTemplateDefinition[] = [
     promptPackSlug: "custom",
     revealTiming: "Choose the reveal timing that fits the event.",
     inviteCopy: "Upload your favorite photos from the event here:",
-    liveWallCopy: "Open the Photo Wall while guests upload photos.",
     recapFraming: "A shared recap from the people who were there.",
     icon: "auto_awesome",
     badge: "Fully editable",
@@ -1402,105 +1340,19 @@ function buildPosterModeHint(challenge: Pick<EventChallenge, "type"> | null | un
   return "Simple Album: Add any photos you want the host to have.";
 }
 
-export const LIVE_WALL_MODES = ["grid", "slideshow", "join", "challenge", "awards"] as const satisfies readonly LiveWallMode[];
-
-export const LIVE_WALL_MODE_LABELS: Record<LiveWallMode, string> = {
-  grid: "Photo Wall",
-  slideshow: "Slideshow",
-  join: "Join screen",
-  challenge: "Prompts",
-  awards: "Awards",
-};
-
-export function getLiveWallModeLabel(mode: LiveWallMode) {
-  return LIVE_WALL_MODE_LABELS[mode];
-}
-
-export function parseLiveWallMode(value: unknown): LiveWallMode {
-  const normalized = String(value || "").trim().toLowerCase();
-  return (LIVE_WALL_MODES as readonly string[]).includes(normalized) ? (normalized as LiveWallMode) : "grid";
-}
-
-export function buildLiveWallUrl(baseUrl: string | undefined | null, mode?: LiveWallMode | string | null) {
-  const url = eventLinkOrFallback(baseUrl);
-  const parsedMode = parseLiveWallMode(mode);
-  if (!url || parsedMode === "grid") return url;
-  const separator = url.includes("?") ? "&" : "?";
-  return `${url}${separator}mode=${encodeURIComponent(parsedMode)}`;
-}
-
-export function buildLiveWallDisplayLinks(
-  event: Pick<EventSummary, "liveWallLink" | "challenge">,
-): LiveWallDisplayLink[] {
-  const liveWallLink = eventLinkOrFallback(event.liveWallLink);
-  const links: LiveWallDisplayLink[] = [
-    {
-      key: "grid",
-      label: getLiveWallModeLabel("grid"),
-      url: buildLiveWallUrl(liveWallLink, "grid"),
-      purpose: "Use this during the event so guests know where to add photos and can see pictures appear live.",
-      instruction: "Open this on a TV or projector while guests upload.",
-      analyticsName: "live_wall_mode_viewed",
-    },
-    {
-      key: "join",
-      label: getLiveWallModeLabel("join"),
-      url: buildLiveWallUrl(liveWallLink, "join"),
-      purpose: "Use this at the start of the event so guests know exactly how to upload.",
-      instruction: "Put this on screen while guests arrive or whenever uploads slow down.",
-      analyticsName: "live_wall_qr_display_opened",
-    },
-    {
-      key: "slideshow",
-      label: getLiveWallModeLabel("slideshow"),
-      url: buildLiveWallUrl(liveWallLink, "slideshow"),
-      purpose: "Use this once photos are flowing and the room wants a showpiece moment.",
-      instruction: "Rotate through visible photos with event branding and safe metadata.",
-      analyticsName: "live_wall_mode_viewed",
-    },
-  ];
-
-  if (event.challenge) {
-    links.push({
-      key: "challenge",
-      label: getLiveWallModeLabel("challenge"),
-      url: buildLiveWallUrl(liveWallLink, "challenge"),
-      purpose: "Use this to show prompt progress, Color Hunt context, or reveal messaging.",
-      instruction: "Switch here when you want guests to know what to capture next.",
-      analyticsName: "live_wall_challenge_display_opened",
-    });
-  }
-
-  if (event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
-    links.push({
-      key: "awards",
-      label: getLiveWallModeLabel("awards"),
-      url: buildLiveWallUrl(liveWallLink, "awards"),
-      purpose: "Use this to celebrate Awards leaders and winners.",
-      instruction: "Open this after guests have submitted and voted on award categories.",
-      analyticsName: "live_wall_awards_leaders_viewed",
-    });
-  }
-
-  return links;
-}
-
 export function buildHostShareAssets(
-  event: Pick<EventSummary, "id" | "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge" | "eventTemplateSlug">,
+  event: Pick<EventSummary, "id" | "name" | "eventLink" | "recapLink" | "challenge" | "eventTemplateSlug">,
 ): HostShareAssets {
   const pack = getChallengePack(event.challenge?.type || "NONE");
   const template = getEventTemplate(event.eventTemplateSlug);
   const guestLink = eventLinkOrFallback(event.eventLink);
-  const liveWallLink = eventLinkOrFallback(event.liveWallLink);
   const recapLink = eventLinkOrFallback(event.recapLink);
-  const liveWallDisplayLinks = buildLiveWallDisplayLinks(event);
   const challengeInstruction = event.challenge?.instructions || pack.guestInstructions;
   const guestInviteMessage = `Add your photos here: ${guestLink}\nNo account needed.`;
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : guestInviteMessage;
   const socialPostCopy = template ? `${template.recapFraming} Add yours: ${guestLink}` : `Drop your favorite photos from ${event.name} here: ${guestLink}`;
   const recapMessage = `Here are the photos from ${event.name}: ${recapLink}`;
   const recapShareText = template ? `${template.recapFraming} Photos are in one place here: ${recapLink}` : recapMessage;
-  const liveWallSetupTip = "Open the Photo Wall during the event so people can scan the QR code and watch photos appear. For small hangouts, you can also just share the guest link.";
   const qrPosterHint = "Print this or show it on a phone so guests can scan to add photos.";
   const winnerShareText =
     event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS
@@ -1524,19 +1376,6 @@ export function buildHostShareAssets(
       shareText: inviteText,
       copyAnalyticsName: "guest_link_copied",
       shareAnalyticsName: "guest_link_shared",
-    },
-    {
-      key: "live-wall",
-      label: "Photo Wall link",
-      url: liveWallLink,
-      purpose: "Use this during the event so guests know where to add photos and can see pictures appear live.",
-      instruction: template ? template.liveWallCopy : "Open this on a TV, laptop, or iPad during the event.",
-      audience: "Host display",
-      timing: "During event",
-      copyText: liveWallLink,
-      shareText: `Open the ${event.name} Photo Wall during the event: ${liveWallLink}`,
-      copyAnalyticsName: "live_wall_link_copied",
-      shareAnalyticsName: "live_wall_link_shared",
     },
     {
       key: "recap",
@@ -1571,14 +1410,11 @@ export function buildHostShareAssets(
       inviteText: guestInviteMessage,
     },
     links,
-    liveWallDisplayLinks,
     inviteText,
     guestInviteMessage,
     recapMessage,
-    liveWallSetupTip,
     qrPosterHint,
     socialPostCopy,
-    liveWallDisplayPrompt: template ? template.liveWallCopy : "Open the Photo Wall while guests upload photos.",
     recapShareText,
     winnerShareText,
     memoryCapsuleRevealCopy,
@@ -1586,13 +1422,11 @@ export function buildHostShareAssets(
   };
 }
 
-export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink" | "liveWallLink" | "recapLink" | "challenge" | "eventTemplateSlug">): HostLaunchKit {
+export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink" | "recapLink" | "challenge" | "eventTemplateSlug">): HostLaunchKit {
   const pack = getChallengePack(event.challenge?.type || "NONE");
   const template = getEventTemplate(event.eventTemplateSlug);
   const guestLink = event.eventLink;
-  const liveWallLink = event.liveWallLink || "";
   const recapLink = event.recapLink || "";
-  const liveWallDisplayLinks = buildLiveWallDisplayLinks(event);
   const inviteText = template ? `${template.inviteCopy} ${guestLink}` : "Upload your photos from tonight here: " + guestLink + ". No account needed.";
   const socialCaption = template ? `${template.recapFraming} Add yours: ${guestLink}` : "Drop your favorite photos from " + event.name + " here: " + guestLink;
 
@@ -1608,13 +1442,6 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
         instruction: inviteText,
       },
       {
-        key: "live-wall",
-        label: "Photo Wall link",
-        url: liveWallLink,
-        purpose: "Open this during the event so the room can see photos appear.",
-        instruction: template ? template.liveWallCopy : "Open this on a laptop, TV, projector, or iPad during the event so guests can scan the QR code and watch photos appear.",
-      },
-      {
         key: "recap",
         label: "Shared Recap link",
         url: recapLink,
@@ -1624,16 +1451,14 @@ export function buildHostLaunchKit(event: Pick<EventSummary, "name" | "eventLink
     ],
     inviteText,
     hostInstructions: template
-      ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, open the Photo Wall during the event, then share the Shared Recap afterward.`
-      : "Create the event, copy the guest link or QR code, open the Photo Wall during the event, then share the Shared Recap afterward.",
+      ? `Start from the ${template.name} setup, confirm the editable prompts, copy the guest link or QR code, then share the Shared Recap afterward.`
+      : "Create the event, copy the guest link or QR code, then share the Shared Recap afterward.",
     socialCaption,
     modeInstructions: pack.guestInstructions,
-    liveWallDisplayLinks,
     checklist: [
       { key: "create-event", label: "Create event", complete: true },
       { key: "choose-mode", label: "Choose photo setup", complete: true },
       { key: "copy-guest-link", label: "Copy guest link or QR code", complete: false },
-      { key: "open-live-wall", label: "Open Photo Wall", complete: false },
       { key: "share-recap", label: "Share Shared Recap after event", complete: false },
     ],
   };
@@ -1942,7 +1767,7 @@ export function deriveEventLifecycleStatus(
       return {
         status: "collecting_photos",
         label: "Live album",
-        description: "Photos appear as guests upload them. Keep the Photo Wall and photo review close.",
+        description: "Photos appear as guests upload them. Keep photo review close.",
         phase: "during",
         tone: "green",
         shouldShowRepeatCta: false,
@@ -2001,7 +1826,7 @@ export function deriveEventLifecycleStatus(
     return {
       status: "collecting_photos",
       label: "Collecting photos",
-      description: "Guests have started uploading. Keep the Photo Wall and photo review close.",
+      description: "Guests have started uploading. Keep photo review close.",
       phase: "during",
       tone: "green",
       shouldShowRepeatCta: false,
@@ -2028,7 +1853,7 @@ export function buildHostNextStep(
   const lifecycle = deriveEventLifecycleStatus(event, counts, now);
   if (lifecycle.status === "draft_or_upcoming") return event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Share the guest link before reveal time." : "Share the guest link.";
   if (lifecycle.status === "live_or_happening_soon") return "Share the guest link.";
-  if (lifecycle.status === "collecting_photos") return "Open the Photo Wall.";
+  if (lifecycle.status === "collecting_photos") return "Review incoming photos.";
   if (lifecycle.status === "reveal_locked") return "Keep collecting photos until reveal time.";
   if (lifecycle.status === "recap_ready") return "Share the recap.";
   return "Your recap is ready to share again.";
@@ -2077,7 +1902,6 @@ export function buildPostEventHostSummary(
   photos: Photo[],
   analytics: {
     guestJoins?: number | null;
-    liveWallOpens?: number | null;
     recapOpens?: number | null;
     featuredPhotos?: number | null;
     eventAwardsVoting?: AwardVotingSummary | null;
@@ -2109,7 +1933,6 @@ export function buildPostEventHostSummary(
     totalContributors: contributorSummary.contributorCount,
     topContributors: contributorSummary.topContributors,
     guestJoins: analytics.guestJoins ?? 0,
-    liveWallOpens: analytics.liveWallOpens ?? 0,
     recapOpens: analytics.recapOpens ?? 0,
     uploadsOverTime: buildUploadTrend(photos),
     challengeCompletion: buildChallengeProgressSummary(event.challenge, visible),
@@ -2124,7 +1947,7 @@ function cleanFeedbackText(value: unknown, maxLength: number) {
 
 export function validateHostFeedback(input: HostFeedbackInput): HostFeedbackValidationResult {
   const kind: HostFeedbackKind = input.kind === "beta_issue" ? "beta_issue" : "post_event";
-  const issueAreas: HostIssueArea[] = ["guest_upload", "live_wall", "recap", "qr_poster", "moderation", "analytics", "other"];
+  const issueAreas: HostIssueArea[] = ["guest_upload", "recap", "qr_poster", "moderation", "analytics", "other"];
   const issueArea = issueAreas.includes(input.issueArea as HostIssueArea) ? (input.issueArea as HostIssueArea) : null;
   const skipped = Boolean(input.skipped);
   if (skipped) {
@@ -2309,58 +2132,6 @@ export function buildChallengeProgressSummary(challenge: EventChallenge | null |
   };
 }
 
-export function buildLiveWallChallengeDisplaySummary(
-  challenge: EventChallenge | null | undefined,
-  photos: Photo[],
-  awardVoting?: AwardVotingSummary | null,
-): LiveWallChallengeDisplaySummary {
-  const summary = buildChallengeProgressSummary(challenge, visiblePhotos(photos));
-  const pack = getChallengePack(summary.mode);
-  const completedRows = summary.rows.filter((row) => row.complete).length;
-  const leaders = (awardVoting?.categories || []).map((category) => {
-    const leaderPhotoId = category.leaderPhotoIds[0];
-    const voteCount = leaderPhotoId ? category.voteTotals.find((vote) => vote.photoId === leaderPhotoId)?.voteCount || 0 : 0;
-    const status = leaderPhotoId
-      ? `${voteCount} ${voteCount === 1 ? "vote" : "votes"}${category.isTie ? " - tie" : ""}`
-      : category.noSubmissions
-        ? "No submissions yet"
-        : category.noVotes
-          ? "No votes yet"
-          : "Leader pending";
-    return {
-      categoryId: category.categoryId,
-      categoryLabel: category.categoryLabel,
-      leaderPhotoId,
-      voteCount,
-      isTie: category.isTie,
-      status,
-    };
-  });
-
-  let headline = pack.name;
-  let note = summary.instructions;
-
-  if (!challenge) {
-    headline = "Open photo wall";
-    note = summary.totalPhotos ? "Recent uploads are ready for the room." : "Share the QR code so the first photos can land here.";
-  } else if (challenge.type === CHALLENGE_TYPES.COLOR_HUNT) {
-    headline = `${completedRows}/${summary.rows.length} color teams on the board`;
-    note = "Show guests which colors need more photos.";
-  } else if (challenge.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT) {
-    headline = `${completedRows}/${summary.rows.length} prompts captured`;
-    note = "Point the room toward the prompts still waiting for a photo.";
-  } else if (challenge.type === CHALLENGE_TYPES.EVENT_AWARDS) {
-    const activeLeaders = leaders.filter((leader) => leader.leaderPhotoId).length;
-    headline = activeLeaders ? `${activeLeaders} award ${activeLeaders === 1 ? "leader" : "leaders"} live` : "Awards are ready for submissions";
-    note = activeLeaders ? "Celebrate the categories getting votes right now." : "Invite guests to submit and vote from the recap after reveal.";
-  } else if (challenge.type === CHALLENGE_TYPES.MEMORY_CAPSULE) {
-    const capsule = memoryCapsuleFromChallenge(challenge);
-    headline = capsule.revealTitle;
-    note = capsule.revealNote;
-  }
-
-  return { ...summary, headline, note, leaders };
-}
 
 export function buildGuestChallengeProgress(
   challenge: EventChallenge | null | undefined,

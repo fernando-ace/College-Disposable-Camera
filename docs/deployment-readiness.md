@@ -176,8 +176,8 @@ After signing in with an allowlisted host account, open `/dashboard/founder`.
 
 Use it to check:
 
-- overview metrics: hosts, active hosts in the last 30 days, events, guest joins, uploads, contributors, Recap opens, Live Wall opens, feedback submissions, reports, and hidden photos.
-- recent activity: event creation, guest joins, uploads, Live Wall/Recap opens, host feedback, reported photos, duplicate events, and Event Awards votes when tracked.
+- overview metrics: hosts, active hosts in the last 30 days, events, guest joins, uploads, contributors, Recap opens, feedback submissions, reports, and hidden photos.
+- recent activity: event creation, guest joins, uploads, Recap opens, host feedback, reported photos, duplicate events, and Event Awards votes when tracked.
 - founder inboxes: recent host feedback and read-only reported photo review.
 - product usage: event modes, event templates, prompt packs, Event Awards votes, Color Hunt usage, and Memory Capsule usage.
 - Unlock Alabama reporting: export the summarized CSV from the dashboard and report the metric definitions shown on the page.
@@ -332,13 +332,13 @@ $env:DEPLOYED_SMOKE_HOST_PASSWORD="target-environment-password"
 npm run smoke:deployed:storage
 ```
 
-`smoke:deployed:api` verifies API health, analytics write, optional host-auth database route, guest event route, guest upload route shell, Live Wall, and Recap. If the event slug or host credentials are missing, it prints documented skips rather than pretending full coverage passed.
+`smoke:deployed:api` verifies API health, analytics write, optional host-auth database route, guest event route, guest upload route shell, and Recap. If the event slug or host credentials are missing, it prints documented skips rather than pretending full coverage passed.
 
 `smoke:deployed:browser` runs the Playwright browser smoke against `DEPLOYED_WEB_URL` or `BROWSER_SMOKE_BASE_URL`, using `DEPLOYED_API_URL` or `BROWSER_SMOKE_API_URL` for API checks. For deployed host login, it requires `BROWSER_SMOKE_HOST_EMAIL` and `BROWSER_SMOKE_HOST_PASSWORD`; the wrapper also accepts existing `DEPLOYED_SMOKE_HOST_EMAIL` and `DEPLOYED_SMOKE_HOST_PASSWORD` values and passes them through without printing them.
 
 Raw `npm run smoke:browser` also accepts `BROWSER_SMOKE_BASE_URL` and `BROWSER_SMOKE_API_URL` for deployed-style browser checks. If `BROWSER_SMOKE_BASE_URL` is not localhost, `BROWSER_SMOKE_API_URL` must include `https://` and `BROWSER_SMOKE_HOST_EMAIL` plus `BROWSER_SMOKE_HOST_PASSWORD` must be set.
 
-`smoke:deployed:storage` reuses the real storage smoke. It uploads a tiny PNG through the deployed guest API, verifies DB record, file/preview routes, guest album, Live Wall, Recap, feature/unfeature, report, hide/restore, analytics summary, and cleanup. Run it only against a safe target event.
+`smoke:deployed:storage` reuses the real storage smoke. It uploads a tiny PNG through the deployed guest API, verifies DB record, file/preview routes, guest album, Recap, feature/unfeature, report, hide/restore, analytics summary, and cleanup. Run it only against a safe target event.
 
 If no deployed URLs are configured, deployed smoke commands must fail with clear missing-env output. That is expected during local validation.
 
@@ -401,7 +401,7 @@ Before giving the preview build to a beta host:
 - Share the guest link.
 - Open the guest link in the phone browser.
 - Upload a photo.
-- Open Live Wall on a laptop.
+- Keep the QR poster visible on a laptop or printout.
 - Open Recap.
 - Hide, restore, feature, unfeature, and report a test photo.
 - Verify analytics summary changes.

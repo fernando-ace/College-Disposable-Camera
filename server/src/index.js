@@ -78,8 +78,6 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "invite_poster_printed",
   "guest_link_copied",
   "guest_link_shared",
-  "live_wall_link_copied",
-  "live_wall_link_shared",
   "recap_link_copied",
   "recap_link_shared",
   "recap_share_clicked",
@@ -91,19 +89,6 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "recap_photo_opened",
   "recap_create_event_cta_clicked",
   "native_share_opened",
-  "live_wall_opened",
-  "live_wall_viewed",
-  "live_wall_mode_viewed",
-  "live_wall_mode_switched",
-  "live_wall_mode_changed",
-  "live_wall_fullscreen_clicked",
-  "live_wall_slideshow_paused",
-  "live_wall_slideshow_resumed",
-  "live_wall_qr_display_opened",
-  "live_wall_qr_toggled",
-  "live_wall_challenge_display_opened",
-  "live_wall_awards_leaders_viewed",
-  "live_wall_upload_link_clicked",
   "recap_opened",
   "guest_upload_page_viewed",
   "guest_joined_event",
@@ -149,7 +134,6 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "beta_issue_submitted",
   "host_support_link_clicked",
   "qr_poster_viewed_from_beta_handoff",
-  "live_wall_opened_from_beta_handoff",
   "recap_opened_from_beta_handoff",
   "repeat_event_cta_clicked",
   "recap_shared_after_event",
@@ -226,10 +210,6 @@ function publicEventUrl(slug) {
   return `${clientUrl}/e/${slug}`;
 }
 
-function liveWallUrl(slug) {
-  return `${clientUrl}/wall/${slug}`;
-}
-
 function recapUrl(slug) {
   return `${clientUrl}/recap/${slug}`;
 }
@@ -252,7 +232,6 @@ function linkWarning(url) {
 function launchLinkVerification(event) {
   const links = [
     { key: "guest", label: "Guest upload link", url: publicEventUrl(event.slug) },
-    { key: "live-wall", label: "Live Wall link", url: liveWallUrl(event.slug) },
     { key: "recap", label: "Recap link", url: recapUrl(event.slug) },
   ];
 
@@ -751,7 +730,7 @@ function cleanFeedbackText(value, maxLength) {
 
 function validateHostFeedback(input = {}) {
   const kind = input.kind === "beta_issue" ? "beta_issue" : "post_event";
-  const issueArea = ["guest_upload", "live_wall", "recap", "qr_poster", "moderation", "analytics", "other"].includes(input.issueArea) ? input.issueArea : null;
+  const issueArea = ["guest_upload", "recap", "qr_poster", "moderation", "analytics", "other"].includes(input.issueArea) ? input.issueArea : null;
   if (input.skipped) {
     return { skipped: true, kind, issueArea: null, outcome: null, repeatIntent: null, guestConfusion: null, featureRequest: null, note: null };
   }
@@ -799,7 +778,6 @@ function eventPayload(event, { includePhotos = false, includeModeration = false 
   return {
     ...event,
     eventLink: publicEventUrl(event.slug),
-    liveWallLink: liveWallUrl(event.slug),
     recapLink: recapUrl(event.slug),
     photoCount: event._count?.photos ?? event.photoCount ?? 0,
     challenge: challengePayload(challenge),
@@ -844,7 +822,6 @@ function publicEventBasePayload(event, isRevealed) {
     promptPackSlug: event.promptPackSlug,
     isRevealed,
     eventLink: publicEventUrl(event.slug),
-    liveWallLink: liveWallUrl(event.slug),
     recapLink: recapUrl(event.slug),
     challenge: publicChallengePayload(event.challenges?.[0]),
   };
@@ -963,11 +940,10 @@ app.get("/api/host/analytics/summary", requireAuth, async (req, res) => {
     ? { OR: [{ eventId: { in: eventIds } }, { eventSlug: { in: eventSlugs } }] }
     : { eventId: "__none__" };
 
-  const [eventsCreated, uploads, guestJoins, liveWallOpens, recapOpens, activeHosts, activeGuestRows] = await Promise.all([
+  const [eventsCreated, uploads, guestJoins, recapOpens, activeHosts, activeGuestRows] = await Promise.all([
     prisma.event.count({ where: { hostId: req.user.userId } }),
     prisma.photo.count({ where: { eventId: { in: eventIds }, deletedAt: null } }),
     countAnalytics("guest_joined_event", eventScope),
-    countAnalytics("live_wall_opened", eventScope),
     countAnalytics("recap_opened", eventScope),
     prisma.analyticsEvent.findMany({
       where: { name: "host_dashboard_opened", createdAt: { gte: since }, userId: { not: null } },
@@ -991,7 +967,6 @@ app.get("/api/host/analytics/summary", requireAuth, async (req, res) => {
       eventsCreated,
       guestJoins,
       uploads,
-      liveWallOpens,
       recapOpens,
       activeHosts: activeHosts.length,
       activeGuests: activeGuestRows.length,
@@ -1021,7 +996,6 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     reportedPhotos,
     featuredPhotos,
     guestJoins,
-    liveWallOpens,
     recapOpens,
     activeGuestRows,
     latestFeedback,
@@ -1032,7 +1006,6 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, reports: { some: {} } }) }),
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, isFeatured: true }) }),
     countAnalytics("guest_joined_event", eventScope),
-    countAnalytics("live_wall_opened", eventScope),
     countAnalytics("recap_opened", eventScope),
     prisma.analyticsEvent.findMany({
       where: {
@@ -1061,7 +1034,6 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       featuredPhotos,
       guestJoins,
       uploads: photoCount,
-      liveWallOpens,
       recapOpens,
       activeGuests: activeGuestRows.length,
       eventAwardsVoting: await loadAwardVotingSummary(event),
@@ -1586,44 +1558,6 @@ app.get("/api/events/:slug", async (req, res) => {
   });
 });
 
-app.get("/api/events/:slug/live-wall", async (req, res) => {
-  const event = await prisma.event.findUnique({
-    where: { slug: req.params.slug },
-    include: {
-      photos: {
-        where: visiblePhotoWhere(),
-        orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-        include: { guest: true, challengeParticipant: true },
-      },
-      challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: visiblePhotoWhere() } } },
-    },
-  });
-  if (!event) return res.status(404).json({ error: "Event not found" });
-
-  const isLocked = publicAlbumIsLocked(event);
-  const isRevealed = !isLocked;
-  const eventLink = publicEventUrl(event.slug);
-  const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 360 });
-  const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
-  const awardVoting = await loadAwardVotingSummary(event, { clientId });
-
-  res.json({
-    event: {
-      ...publicEventBasePayload(event, isRevealed),
-      photoCount: isLocked ? null : event._count.photos,
-      qrCodeDataUrl,
-    },
-    eventLink,
-    liveWallLink: liveWallUrl(event.slug),
-    recapLink: recapUrl(event.slug),
-    qrCodeDataUrl,
-    isLocked,
-    photos: isLocked ? [] : event.photos.map(photoPayload),
-    ...(awardVoting ? { awardVoting } : {}),
-  });
-});
-
 app.get("/api/events/:slug/recap", async (req, res) => {
   const event = await prisma.event.findUnique({
     where: { slug: req.params.slug },
@@ -1657,7 +1591,6 @@ app.get("/api/events/:slug/recap", async (req, res) => {
       photoCount: isLocked ? null : event._count.photos,
     },
     eventLink: publicEventUrl(event.slug),
-    liveWallLink: liveWallUrl(event.slug),
     recapLink: recapUrl(event.slug),
     isLocked,
     photos: isLocked ? [] : event.photos.map(photoPayload),

@@ -8,7 +8,7 @@ Use this to record a concise product demo after the deployed release candidate i
 - Use a seeded or manually created demo event.
 - Confirm web and API point at the intended environment.
 - Keep the phone browser ready on the guest upload link.
-- Keep the Live Wall tab ready on a laptop-sized screen.
+- Keep the QR poster ready on a laptop-sized screen.
 - Hide or delete any test photo that should not appear in the recording.
 
 ## Shots To Capture
@@ -19,7 +19,7 @@ Use this to record a concise product demo after the deployed release candidate i
 - Challenge mode selection.
 - Launch kit with QR/link.
 - Guest upload on phone browser.
-- Live Wall.
+- QR poster.
 - Recap.
 - Photo moderation: hide/restore, feature/unfeature, report queue.
 - Analytics summary.
@@ -29,13 +29,13 @@ Use this to record a concise product demo after the deployed release candidate i
 1. Open the landing page and click into host login or dashboard.
 2. Show the dashboard and create a new event.
 3. Choose a challenge mode and save the event.
-4. Show the launch kit with guest link, QR code, Live Wall, and Recap links.
+4. Show the launch kit with guest link, QR code, and Recap links.
 5. Switch to the guest phone browser and upload a photo.
-6. Show the photo appearing on Live Wall.
+6. Show the photo appearing in host photo review.
 7. Open Recap.
 8. Return to the host dashboard, feature or hide a photo, and show analytics summary.
 
-Keep narration literal: EventFilm creates private QR-based event albums, guests upload from a browser, hosts can show Live Wall during the event, moderate photos, and share Recap afterward.
+Keep narration literal: EventFilm creates private QR-based event albums, guests upload from a browser, hosts can review photos and share Recap afterward.
 
 ## Final Check
 

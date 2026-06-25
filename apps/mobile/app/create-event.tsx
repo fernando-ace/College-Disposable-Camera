@@ -602,7 +602,7 @@ export default function CreateEventScreen() {
       {step === 5 ? (
         <Card>
           <Badge tone={canCreate ? "green" : "stone"}>{canCreate ? "Ready to launch" : "Review needed"}</Badge>
-          <SectionHeader title="Confirm your event" subtitle="EventFilm will create the guest upload link, Live Wall, Recap, and QR code next." />
+          <SectionHeader title="Confirm your event" subtitle="EventFilm will create the guest upload link, QR code, and Recap next." />
           <View style={{ gap: 8, borderRadius: 18, borderCurve: "continuous", backgroundColor: colors.wash, padding: 12 }}>
             <ReviewRow label="Event" value={name.trim() || "Untitled event"} />
             <ReviewRow label="Template" value={EVENT_TEMPLATES.find((template) => template.slug === challengeDraft.eventTemplateSlug)?.name || "Custom event"} />

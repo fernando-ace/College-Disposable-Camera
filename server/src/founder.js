@@ -15,7 +15,6 @@ const FOUNDER_METRIC_DEFINITIONS = {
   uploadsLast7Days: "Stored, non-deleted photos uploaded in the last 7 days.",
   totalContributors: "Guest rows created across all events.",
   totalRecapOpens: "Tracked recap_opened analytics events.",
-  totalLiveWallOpens: "Tracked live_wall_opened analytics events.",
   totalFeedbackSubmissions: "Saved host feedback rows, including skipped feedback.",
   totalReportedPhotos: "Photo report rows submitted by guests.",
   hiddenPhotoCount: "Non-deleted photos currently hidden by a host.",
@@ -23,10 +22,6 @@ const FOUNDER_METRIC_DEFINITIONS = {
 
 function publicEventUrl(clientUrl, slug) {
   return `${clientUrl}/e/${slug}`;
-}
-
-function liveWallUrl(clientUrl, slug) {
-  return `${clientUrl}/wall/${slug}`;
 }
 
 function recapUrl(clientUrl, slug) {
@@ -56,7 +51,6 @@ function compactEvent(event, { requesterUserId, clientUrl }) {
     guestCount,
     reportCount,
     eventLink: publicEventUrl(clientUrl, event.slug),
-    liveWallLink: liveWallUrl(clientUrl, event.slug),
     recapLink: recapUrl(clientUrl, event.slug),
     hostEventPath: event.hostId === requesterUserId ? `/dashboard/events/${event.id}` : null,
   };
@@ -74,7 +68,6 @@ function compactUpload(photo, { clientUrl, serverUrl, getPhotoPreviewUrl }) {
     challengeItemLabel: photo.challengeItemLabel,
     previewUrl: photo.visibilityStatus === PHOTO_VISIBILITY_VISIBLE ? `${serverUrl}${getPhotoPreviewUrl(photo.id)}` : null,
     eventLink: photo.event?.slug ? publicEventUrl(clientUrl, photo.event.slug) : null,
-    liveWallLink: photo.event?.slug ? liveWallUrl(clientUrl, photo.event.slug) : null,
     recapLink: photo.event?.slug ? recapUrl(clientUrl, photo.event.slug) : null,
   };
 }
@@ -123,7 +116,6 @@ function compactReport(report, { requesterUserId, clientUrl, serverUrl, getPhoto
     hiddenReason: photo.hiddenReason,
     previewUrl: photo.visibilityStatus === PHOTO_VISIBILITY_VISIBLE ? `${serverUrl}${getPhotoPreviewUrl(photo.id)}` : null,
     eventLink: event.slug ? publicEventUrl(clientUrl, event.slug) : null,
-    liveWallLink: event.slug ? liveWallUrl(clientUrl, event.slug) : null,
     recapLink: event.slug ? recapUrl(clientUrl, event.slug) : null,
   };
 }
@@ -157,7 +149,6 @@ function analyticsActivityLabel(name) {
     guest_joined_event: "Guest joined",
     photo_upload_succeeded: "Upload succeeded",
     recap_opened: "Recap opened",
-    live_wall_opened: "Live Wall opened",
     duplicate_event_created: "Duplicate event created",
     award_vote_cast: "Event Awards vote cast",
   };
@@ -242,7 +233,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     uploadsLast7Days,
     totalContributors,
     totalRecapOpens,
-    totalLiveWallOpens,
     totalFeedbackSubmissions,
     totalReportedPhotos,
     hiddenPhotoCount,
@@ -266,7 +256,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     prisma.photo.count({ where: { deletedAt: null, createdAt: { gte: since7 } } }),
     prisma.guest.count(),
     prisma.analyticsEvent.count({ where: { name: "recap_opened" } }),
-    prisma.analyticsEvent.count({ where: { name: "live_wall_opened" } }),
     prisma.hostEventFeedback.count(),
     prisma.photoReport.count(),
     prisma.photo.count({ where: { deletedAt: null, visibilityStatus: PHOTO_VISIBILITY_HIDDEN } }),
@@ -313,7 +302,7 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     }),
     prisma.analyticsEvent.findMany({
       where: {
-        name: { in: ["guest_joined_event", "photo_upload_succeeded", "recap_opened", "live_wall_opened", "duplicate_event_created", "award_vote_cast"] },
+        name: { in: ["guest_joined_event", "photo_upload_succeeded", "recap_opened", "duplicate_event_created", "award_vote_cast"] },
       },
       orderBy: { createdAt: "desc" },
       take: ACTIVITY_LIMIT,
@@ -361,7 +350,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
       uploadsLast7Days,
       totalContributors,
       totalRecapOpens,
-      totalLiveWallOpens,
       totalFeedbackSubmissions,
       totalReportedPhotos,
       hiddenPhotoCount,
@@ -371,7 +359,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
       events: totalEvents,
       guestJoins: totalGuestJoins,
       uploads: totalUploads,
-      liveWallOpens: totalLiveWallOpens,
       recapOpens: totalRecapOpens,
       feedbackSubmissions: totalFeedbackSubmissions,
     },

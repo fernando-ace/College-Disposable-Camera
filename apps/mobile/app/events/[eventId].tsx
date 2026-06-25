@@ -5,7 +5,7 @@ import { Link, router, useLocalSearchParams } from "expo-router";
 import { Linking, Pressable, Text, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus, UpdateEventSettingsInput } from "@eventfilm/shared";
-import { CHALLENGE_TYPES, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildLiveWallDisplayLinks, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
 import { ActionButton, Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader, colors } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -80,7 +80,6 @@ function buildWebUrl(event: EventSummary, path: string) {
 
 const BETA_ISSUE_AREAS = [
   ["guest_upload", "Guest upload"],
-  ["live_wall", "Live Wall"],
   ["recap", "Recap"],
   ["qr_poster", "QR or poster"],
   ["moderation", "Moderation"],
@@ -261,7 +260,6 @@ export default function EventDetailScreen() {
 
   const launchKit = event ? buildHostLaunchKit(event) : null;
   const shareAssets = event ? buildHostShareAssets(event) : null;
-  const liveWallDisplayLinks = event ? buildLiveWallDisplayLinks(event) : [];
   const template = event ? getEventTemplate(event.eventTemplateSlug) : null;
   const lifecycle = event ? deriveEventLifecycleStatus(event, analyticsSummary || undefined) : null;
   const lifecycleStatus = lifecycle?.status;
@@ -321,7 +319,7 @@ export default function EventDetailScreen() {
               <Body tone="muted">Start by sharing the guest upload link. Guests can add photos without an account.</Body>
               <View style={{ gap: 8 }}>
                 <Body tone="muted">1. Share the guest link so guests can start adding photos.</Body>
-                <Body tone="muted">2. Open the Live Wall during the event.</Body>
+                <Body tone="muted">2. Review incoming photos during the event.</Body>
                 <Body tone="muted">3. Share the recap when the album is ready.</Body>
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
@@ -330,9 +328,6 @@ export default function EventDetailScreen() {
                 </View>
                 <View style={{ flex: 1, minWidth: 150 }}>
                   <Button tone="secondary" onPress={() => router.push(`/events/${event.id}/share`)}>Open event</Button>
-                </View>
-                <View style={{ flex: 1, minWidth: 150 }}>
-                  <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
                 </View>
               </View>
               <Button tone="secondary" onPress={dismissCreatedHandoff}>Dismiss</Button>
@@ -364,19 +359,6 @@ export default function EventDetailScreen() {
                 <Button tone="secondary" onPress={() => Linking.openURL(buildWebUrl(event, shareAssets.poster.posterPath))}>Open poster page</Button>
               </Card>
             ) : null}
-            <LinkBlock label="Live Wall" description="Open this on a TV or projector. Use your phone to share links and keep the QR handy." url={event.liveWallLink}>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
-                <View style={{ flex: 1, minWidth: 150 }}>
-                  <Button disabled={!event.liveWallLink} onPress={() => event.liveWallLink && Linking.openURL(event.liveWallLink)}>Open Live Wall</Button>
-                </View>
-                <View style={{ flex: 1, minWidth: 150 }}>
-                  <Button tone="secondary" onPress={() => router.push(`/events/${event.id}/share`)}>Share guest link</Button>
-                </View>
-                <View style={{ flex: 1, minWidth: 150 }}>
-                  <Button tone="secondary" disabled={!event.liveWallLink} onPress={() => copyEventLink("Live Wall link", event.liveWallLink)}>Copy Live Wall link</Button>
-                </View>
-              </View>
-            </LinkBlock>
             <LinkBlock label="Recap" description="Open the finished memory page with highlights, contributors, challenge moments, and the full album." url={event.recapLink}>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                 <View style={{ flex: 1, minWidth: 150 }}>
@@ -387,20 +369,8 @@ export default function EventDetailScreen() {
                 </View>
               </View>
             </LinkBlock>
-            {liveWallDisplayLinks.length ? (
-              <Card tone="warm">
-                <SectionHeader title="Advanced Live Wall modes" subtitle="Web presentation is primary. Use these when you want a specific room display." />
-                <View style={{ gap: 10 }}>
-                  {liveWallDisplayLinks.filter((link) => link.key !== "grid").map((link) => (
-                    <LinkBlock key={link.key} label={link.label} description={link.purpose} url={link.url}>
-                      <Button tone="secondary" onPress={() => Linking.openURL(link.url)}>Open</Button>
-                    </LinkBlock>
-                  ))}
-                </View>
-              </Card>
-            ) : null}
             <Card tone="warm">
-              <SectionHeader title="Run of show" subtitle={event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Guest Upload before reveal. Live Wall during the event. Recap after reveal." : "Share Guest Upload, open the Live Wall, and send the Recap whenever the album is ready."} />
+              <SectionHeader title="Run of show" subtitle={event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? "Guest Upload before reveal. Review photos during the event. Recap after reveal." : "Share Guest Upload, review photos, and send the Recap whenever the album is ready."} />
               <Body tone="muted">The share kit has copy, QR, and captions when you need to send everything cleanly.</Body>
             </Card>
             {settingsForm ? (
@@ -529,19 +499,6 @@ function FirstEventHandoffPanel({ event }: { event: EventSummary }) {
     Linking.openURL(buildWebUrl(event, `/dashboard/events/${event.id}/poster`));
   }
 
-  function openLiveWall() {
-    track("open_live_wall");
-    api.trackAnalyticsEvent({
-      name: "live_wall_opened_from_beta_handoff",
-      source: "mobile",
-      path: `/events/${event.id}`,
-      eventId: event.id,
-      eventSlug: event.slug,
-      metadata: { surface: "event_detail" },
-    }).catch(() => {});
-    if (event.liveWallLink) Linking.openURL(event.liveWallLink);
-  }
-
   function openRecap() {
     track("open_recap");
     api.trackAnalyticsEvent({
@@ -557,18 +514,15 @@ function FirstEventHandoffPanel({ event }: { event: EventSummary }) {
 
   return (
     <Card tone="accent">
-      <SectionHeader title="Host checklist" subtitle="Use Guest Upload for photos, Live Wall for the room, and Recap when the album is ready." />
+      <SectionHeader title="Host checklist" subtitle="Use Guest Upload for photos, QR poster for the room, and Recap when the album is ready." />
       <View style={{ gap: 10 }}>
         <Body tone="muted">Before: confirm the mode and share the QR poster or guest link.</Body>
-        <Body tone="muted">During: keep Live Wall open and remind guests to use Safari or Chrome.</Body>
+        <Body tone="muted">During: keep the QR poster visible and review incoming photos.</Body>
         <Body tone="muted">After: feature favorites, hide off-tone photos, then share Recap.</Body>
       </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         <View style={{ flex: 1, minWidth: 132 }}>
           <Button tone="secondary" onPress={openPoster}>QR poster</Button>
-        </View>
-        <View style={{ flex: 1, minWidth: 132 }}>
-          <Button tone="secondary" disabled={!event.liveWallLink} onPress={openLiveWall}>Live Wall</Button>
         </View>
         <View style={{ flex: 1, minWidth: 132 }}>
           <Button tone="secondary" disabled={!event.recapLink} onPress={openRecap}>Recap</Button>
@@ -944,7 +898,6 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
   const rows = [
     ["Guest joins", summary.guestJoins],
     ["Uploads", summary.uploads],
-    ["Live Wall", summary.liveWallOpens],
     ["Recaps", summary.recapOpens],
     ["Hidden", summary.hiddenPhotos],
     ["Reported", summary.reportedPhotos],
@@ -952,7 +905,7 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
 
   return (
     <Card>
-      <SectionHeader title="Event activity" subtitle="Guest, wall, recap, and moderation activity." />
+      <SectionHeader title="Event activity" subtitle="Guest, recap, and moderation activity." />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         {rows.map(([label, value]) => (
           <StatTile key={label} label={String(label)} value={Number(value)} />
@@ -1018,7 +971,7 @@ function LinkHealthPanel({ linkChecks }: { linkChecks: LaunchLinkVerification[] 
 function RunOfShow() {
   const rows = [
     ["Before", "Create the event, verify the guest link, and place the QR code where guests will see it."],
-    ["During", "Keep the Live Wall open and hide any reported or off-tone photos instead of deleting them."],
+    ["During", "Review incoming uploads and hide any reported or off-tone photos instead of deleting them."],
     ["After", "Refresh the album, feature favorites, then share the Recap link when the album is ready."],
   ];
 

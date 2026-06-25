@@ -5,7 +5,7 @@ import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { createEventFilmApiClient } from "@eventfilm/api-client";
-import type { AnalyticsSummary, EventAnalyticsSummary, EventRecapResponse, LiveWallResponse } from "@eventfilm/api-client";
+import type { AnalyticsSummary, EventAnalyticsSummary, EventRecapResponse } from "@eventfilm/api-client";
 import {
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
@@ -14,7 +14,6 @@ import {
   buildContributorSummary,
   buildGuestChallengeProgress,
   buildGuestUploadSuccessSummary,
-  buildLiveWallDisplayLinks,
   buildHostShareAssets,
   buildEventRecapStory,
   buildChallengePayload,
@@ -40,7 +39,6 @@ import {
   deriveEventLifecycleStatus,
   isPhotoVisible,
   memoryCapsuleFromChallenge,
-  parseLiveWallMode,
   photoChallengeLabel,
   promptsFromChallenge,
   sanitizeGuestDisplayName,
@@ -49,7 +47,7 @@ import {
   validateEventSettingsInput,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, LiveWallDisplayLink, LiveWallMode, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
 import {
   AppShell,
   BrandMark,
@@ -102,7 +100,6 @@ type AuthContextValue = {
 };
 const BETA_ISSUE_AREAS = [
   ["guest_upload", "Guest upload"],
-  ["live_wall", "Photo Wall"],
   ["recap", "Shared Recap"],
   ["qr_poster", "QR or poster"],
   ["moderation", "Review photos"],
@@ -1386,29 +1383,6 @@ function HostAwardVotingSummary({
   );
 }
 
-function LiveWallDisplayLinkCard({ link, event }: { link: LiveWallDisplayLink; event: EventSummary }) {
-  function openLink() {
-    trackAnalytics(link.analyticsName, { eventId: event.id, eventSlug: event.slug, metadata: { surface: "share_kit", mode: link.key } });
-  }
-
-  return (
-    <a
-      className="group rounded-[1.25rem] border border-[#eadfce] bg-[#fffaf6] p-4 transition hover:-translate-y-0.5 hover:border-[#ffd4c7] hover:bg-[#fff3ee]"
-      href={link.url}
-      target="_blank"
-      rel="noreferrer"
-      onClick={openLink}
-    >
-      <div className="flex items-center justify-between gap-3">
-        <p className="font-display text-lg font-bold text-stone-950">{link.label}</p>
-        <Icon className="h-4 w-4 text-[#d94f33]">arrow_forward</Icon>
-      </div>
-      <p className="mt-2 text-sm font-semibold leading-6 text-stone-600">{link.purpose}</p>
-      <p className="mt-3 text-xs font-bold uppercase text-[#653e00]">{link.instruction}</p>
-    </a>
-  );
-}
-
 function HostBetaIssuePanel({ event }: { event: EventSummary }) {
   const auth = useAuth();
   const [open, setOpen] = useState(false);
@@ -2054,10 +2028,10 @@ function TrustPage({ kind }: { kind: "privacy" | "terms" | "support" }) {
     },
     support: {
       title: "Contact and Support",
-      intro: "Need help with an event, guest link, Photo Wall, or Shared Recap? Use the placeholder contact details below until Fernando adds final support channels.",
+      intro: "Need help with an event, guest link, QR poster, photo review, or Shared Recap? Use the placeholder contact details below until Fernando adds final support channels.",
       sections: [
         ["Contact", "Placeholder: Fernando should add a final support email, phone number, or contact form link here."],
-        ["Running an event", "Create your event, copy the guest link or QR code, open the Photo Wall during the event, and share the Shared Recap afterward."],
+        ["Running an event", "Create your event, copy the guest link or QR code, review incoming photos, and share the Shared Recap afterward."],
         ["Guests do not need an account", "If a guest is confused, send them the guest link directly. It opens in the browser."],
         ["Photo safety", "If a photo should not be in an album, the host can remove it from the event dashboard."],
       ],
@@ -2177,7 +2151,7 @@ function Dashboard() {
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="font-serif-display text-4xl font-bold text-ink">Event library</h1>
-            <p className="mt-3 max-w-2xl text-muted">Open an event to manage guest links, QR posters, Photo Wall, recap, downloads, and settings.</p>
+            <p className="mt-3 max-w-2xl text-muted">Open an event to manage guest links, QR posters, photo review, recap, downloads, and settings.</p>
             <p className="mt-2 text-sm font-semibold text-stone-500">{auth.user?.email}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -2304,7 +2278,7 @@ function BetaReadiness() {
   const recentEvents = events.slice(0, 4);
   const apiLooksDeployed = !API_BASE_URL.includes("localhost") && !API_BASE_URL.includes("127.0.0.1");
   const hasUsableEventLinks = events.some((event) => {
-    const links = [event.eventLink, event.liveWallLink, event.recapLink];
+    const links = [event.eventLink, event.recapLink];
     return links.every((link) => link && !link.includes("localhost") && !link.includes("127.0.0.1"));
   });
 
@@ -2344,7 +2318,7 @@ function BetaReadiness() {
               {apiLooksDeployed ? "Mobile/web clients are pointing at a non-local API." : "Client is still pointing at a local API."}
             </p>
             <p className={cx("rounded-2xl p-4 text-sm font-semibold", hasUsableEventLinks ? "bg-green-50 text-green-700" : "bg-amber-50 text-amber-800")}>
-              {hasUsableEventLinks ? "At least one event has non-local guest, Live Wall, and Recap links." : "Create or reload a deployed event before first-host sharing."}
+              {hasUsableEventLinks ? "At least one event has non-local guest and Recap links." : "Create or reload a deployed event before first-host sharing."}
             </p>
             <p className="rounded-2xl bg-stone-50 p-4 text-sm font-semibold text-stone-700">Storage smoke runbook: docs/deployment-readiness.md</p>
           </div>
@@ -2356,7 +2330,6 @@ function BetaReadiness() {
             {[
               ["Guest joins", analyticsSummary?.guestJoins ?? 0],
               ["Uploads", analyticsSummary?.uploads ?? 0],
-              ["Live Wall", analyticsSummary?.liveWallOpens ?? 0],
               ["Recap", analyticsSummary?.recapOpens ?? 0],
               ["Active hosts", analyticsSummary?.activeHosts ?? 0],
               ["Active guests", analyticsSummary?.activeGuests ?? 0],
@@ -2386,7 +2359,6 @@ function BetaReadiness() {
                 <Link className="text-sm font-bold text-[#653e00] hover:text-stone-950" to={`/dashboard/events/${event.id}`}>Manage</Link>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                {event.liveWallLink && <a className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-200" href={event.liveWallLink} target="_blank" rel="noreferrer">Live Wall</a>}
                 {event.recapLink && <a className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-200" href={event.recapLink} target="_blank" rel="noreferrer">Recap</a>}
                 {event.eventLink && <a className="rounded-full bg-stone-100 px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-200" href={event.eventLink} target="_blank" rel="noreferrer">Guest link</a>}
               </div>
@@ -2415,7 +2387,6 @@ const FOUNDER_METRIC_LABELS: Array<[keyof FounderOverview["overview"], string, "
   ["uploadsLast7Days", "Uploads 7d", "accent"],
   ["totalContributors", "Contributors", "green"],
   ["totalRecapOpens", "Recap opens", "plum"],
-  ["totalLiveWallOpens", "Live Wall opens", "green"],
   ["totalFeedbackSubmissions", "Feedback", "default"],
   ["totalReportedPhotos", "Reports", "default"],
   ["hiddenPhotoCount", "Hidden photos", "default"],
@@ -2456,7 +2427,6 @@ function FounderDashboard() {
       ["Funnel events", overview.funnel.events, "All created events"],
       ["Funnel guest joins", overview.funnel.guestJoins, "Tracked guest joins"],
       ["Funnel uploads", overview.funnel.uploads, "Stored non-deleted photos"],
-      ["Funnel Live Wall opens", overview.funnel.liveWallOpens, "Tracked Live Wall opens"],
       ["Funnel Recap opens", overview.funnel.recapOpens, "Tracked Recap opens"],
       ["Funnel feedback", overview.funnel.feedbackSubmissions, "Saved host feedback rows"],
       ["Event Awards votes", overview.usage.eventAwardsVotes, "Stored Event Awards vote rows"],
@@ -2525,8 +2495,8 @@ function FounderDashboard() {
           <h2 className="mt-3 font-display text-2xl font-bold">Run the first beta event</h2>
           <div className="mt-4 grid gap-3 text-sm font-semibold text-stone-700">
             {[
-              "Confirm one real event has guest, poster, Live Wall, and Recap links.",
-              "Watch guest joins, uploads, contributors, Live Wall opens, and Recap opens.",
+              "Confirm one real event has guest, poster, and Recap links.",
+              "Watch guest joins, uploads, contributors, and Recap opens.",
               "Check Event Awards votes if the event uses awards.",
               "Review beta issues, host feedback, reported photos, and hidden photos after the event.",
             ].map((item, index) => (
@@ -2552,7 +2522,6 @@ function FounderDashboard() {
               ["Events", overview.funnel.events],
               ["Guest joins", overview.funnel.guestJoins],
               ["Uploads", overview.funnel.uploads],
-              ["Live Wall", overview.funnel.liveWallOpens],
               ["Recap", overview.funnel.recapOpens],
               ["Feedback", overview.funnel.feedbackSubmissions],
             ].map(([label, value]) => (
@@ -2641,7 +2610,6 @@ function FounderEventList({ title, events, empty, onOpen }: { title: string; eve
             <div className="mt-4 flex flex-wrap gap-2">
               {event.hostEventPath && <Link className="rounded-full bg-stone-950 px-3 py-2 text-xs font-bold text-white hover:bg-stone-800" to={event.hostEventPath} onClick={() => onOpen(event.id, event.slug, "host_event_detail")}>Manage</Link>}
               <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={event.eventLink} target="_blank" rel="noreferrer" onClick={() => onOpen(event.id, event.slug, "guest_link")}>Guest link</a>
-              <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={event.liveWallLink} target="_blank" rel="noreferrer" onClick={() => onOpen(event.id, event.slug, "live_wall")}>Live Wall</a>
               <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={event.recapLink} target="_blank" rel="noreferrer" onClick={() => onOpen(event.id, event.slug, "recap")}>Recap</a>
             </div>
           </div>
@@ -2750,7 +2718,6 @@ function FounderReportedPhotos({ reports }: { reports: FounderOverview["reported
                 <div className="mt-3 flex flex-wrap gap-2">
                   {report.hostEventPath && <Link className="rounded-full bg-stone-950 px-3 py-2 text-xs font-bold text-white hover:bg-stone-800" to={report.hostEventPath}>Open host event</Link>}
                   {report.recapLink && <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={report.recapLink} target="_blank" rel="noreferrer">Recap</a>}
-                  {report.liveWallLink && <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={report.liveWallLink} target="_blank" rel="noreferrer">Live Wall</a>}
                 </div>
               </div>
             </div>
@@ -2885,7 +2852,7 @@ function CreateEvent() {
                 ) : null}
                 {error ? <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}
                 <div className="rounded-lg bg-[#fffaf6] p-3 text-sm font-semibold text-stone-700 lg:hidden">
-                  {disabledReason || "Ready to create. You will get the guest link, QR poster, Photo Wall, and recap next."}
+                  {disabledReason || "Ready to create. You will get the guest link, QR poster, and recap next."}
                 </div>
               </div>
             </Card>
@@ -2942,7 +2909,7 @@ function CreateEvent() {
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 p-3 shadow-sm backdrop-blur lg:hidden">
           <div className="mx-auto max-w-md">
             <Button type="submit" form="create-event-form" className="w-full" disabled={!canCreate}>{canCreate ? "Create event" : "Add event name"}</Button>
-            <p className="mt-2 text-center text-xs font-semibold text-stone-600">{disabledReason || "Guest link, QR poster, Photo Wall, and recap are created next."}</p>
+            <p className="mt-2 text-center text-xs font-semibold text-stone-600">{disabledReason || "Guest link, QR poster, and recap are created next."}</p>
           </div>
         </div>
       </div>
@@ -2954,7 +2921,7 @@ function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss
   const isMemoryCapsule = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
   const steps = [
     ["Share the guest link", "Send this in the group chat. Guests can add photos without an account."],
-    ["Use the Photo Wall if you want it", "Put it on a TV, laptop, or iPad during the event. For small hangouts, the guest link is enough."],
+    ["Review photos", "Keep an eye on uploads and hide anything that should not appear in the album."],
     ["Share the recap", isMemoryCapsule ? "Send it after reveal so everyone has the photos in one place." : "Send it whenever you want everyone to revisit the album."],
   ];
 
@@ -2993,7 +2960,7 @@ function HostLinkPurposeHelper() {
   const rows = [
     ["Guest link", "Text this to friends so they can add photos from their phone."],
     ["QR poster", "Print it or show it when scanning is easier than texting a link."],
-    ["Photo Wall", "Open this while people are together if you want a live screen. Smaller hangouts can skip it."],
+    ["Photo review", "Use the Photos tab to check uploads, feature favorites, and hide anything off-tone."],
     ["Shared Recap", "Send this when it is over so everyone has the photos in one place."],
   ];
 
@@ -3201,20 +3168,15 @@ function ManageEvent() {
   };
   const canSaveSettings = Boolean(settingsDirty && !settingsSaving && liveSettingsValidation?.ok);
   const showCreatedHandoff = searchParams.get("created") === "1";
-  const defaultDetailTab = lifecycle?.phase === "during" ? "live-wall" : lifecycle?.phase === "after" ? "recap" : "share";
-  const activeTab = searchParams.get("tab") || defaultDetailTab;
+  const defaultDetailTab = lifecycle?.phase === "after" ? "recap" : "share";
   const tabItems = [
     ["share", "Share"],
     ["uploads", "Photos"],
-    ["live-wall", "Photo Wall"],
     ["recap", "Recap"],
     ["settings", "Settings"],
   ];
-  const liveWallStatus = event?.photoCount
-    ? { label: "Photos are coming in", tone: "green" as const, copy: `${event.photoCount} ${event.photoCount === 1 ? "photo has" : "photos have"} been added.` }
-    : lifecycle?.phase === "during"
-      ? { label: "Waiting for photos", tone: "amber" as const, copy: "No photos yet. Ask guests to scan the QR code or use the guest link." }
-      : { label: "Photo Wall is ready", tone: "stone" as const, copy: "Use this during the event, or just share the guest link for smaller hangouts." };
+  const requestedDetailTab = searchParams.get("tab");
+  const activeTab = tabItems.some(([key]) => key === requestedDetailTab) ? requestedDetailTab || defaultDetailTab : defaultDetailTab;
 
   useEffect(() => {
     if (!event || !lifecycle) return;
@@ -3260,8 +3222,8 @@ function ManageEvent() {
   }
 
   const detailPrimaryAction = event && lifecycle ? (
-    lifecycle.phase === "during" && event.liveWallLink ? (
-      <a className="inline-flex min-h-12 items-center justify-center rounded-full bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white shadow-sm" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a>
+    lifecycle.phase === "during" ? (
+      <Button type="button" onClick={() => setSearchParams({ tab: "uploads" })}>Review photos</Button>
     ) : lifecycle.phase === "after" && event.recapLink ? (
       <Button type="button" onClick={() => copyDetailLink("Shared Recap link", event.recapLink)}>Share recap</Button>
     ) : (
@@ -3378,44 +3340,6 @@ function ManageEvent() {
           </section>
           ) : null}
 
-          {activeTab === "live-wall" ? (
-          <section className="mt-8">
-            <Card className="lg:p-8">
-              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-                <div>
-                  <StatusPill tone={liveWallStatus.tone}>{liveWallStatus.label}</StatusPill>
-                  <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Photo Wall</h2>
-                  <p className="mt-2 max-w-2xl text-stone-600">{liveWallStatus.copy}</p>
-                </div>
-                <div className="rounded-[1.15rem] bg-[#fff3ee] px-5 py-4 text-center">
-                  <p className="font-display text-3xl font-bold text-[#d94f33]">{event.photoCount}</p>
-                  <p className="text-xs font-bold uppercase text-stone-500">photos added</p>
-                </div>
-              </div>
-              <div className="mt-6 flex flex-wrap gap-2">
-                {event.liveWallLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.liveWallLink} target="_blank" rel="noreferrer">Open Photo Wall</a> : null}
-                <SecondaryButton type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Copy guest link</SecondaryButton>
-                <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/dashboard/events/${event.id}/poster`}>Download QR poster</Link>
-              </div>
-              <div className="mt-6 grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
-                <p className="font-bold text-stone-950">Simple setup</p>
-                <p>Put this on a TV, laptop, or iPad during the event.</p>
-                <p>Keep the QR code visible when people are adding photos.</p>
-                <p>For small hangouts, sharing the guest link is enough.</p>
-              </div>
-              <details className="mt-6 rounded-[1.15rem] border border-[#eadfce] bg-white p-4">
-                <summary className="cursor-pointer list-none font-display text-xl font-bold text-stone-950">More display options</summary>
-                <p className="mt-2 text-sm font-semibold text-stone-600">Use these only when the room needs a specific view.</p>
-                <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  {buildHostShareAssets(event).liveWallDisplayLinks
-                    .filter((link) => link.key !== "grid")
-                    .map((link) => <LiveWallDisplayLinkCard key={link.key} link={link} event={event} />)}
-                </div>
-              </details>
-            </Card>
-          </section>
-          ) : null}
-
           {activeTab === "recap" ? (
           <section className="mt-8">
             <Card className="lg:p-8">
@@ -3464,14 +3388,13 @@ function ManageEvent() {
                 {[
                   ["Guest joins", eventAnalytics.guestJoins],
                   ["Uploads", eventAnalytics.uploads],
-                  ["Photo Wall opens", eventAnalytics.liveWallOpens],
                   ["Recap views", eventAnalytics.recapOpens],
                   ["Visible photos", eventAnalytics.visiblePhotos],
                   ["Hidden photos", eventAnalytics.hiddenPhotos],
                   ["Reported photos", eventAnalytics.reportedPhotos],
                   ["Featured photos", eventAnalytics.featuredPhotos],
                 ].map(([label, value], index) => (
-                  <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 1 ? "accent" : index === 2 ? "green" : index === 3 ? "plum" : "default"} />
+                  <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 1 ? "accent" : index === 2 ? "plum" : "default"} />
                 ))}
               </div>
               <div className="mt-4 rounded-[1.45rem] border border-[#eadfce] bg-white p-5 shadow-[0_18px_54px_rgba(101,62,0,0.075)]">
@@ -3697,178 +3620,6 @@ function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; 
       ))}
     </div>
   );
-}
-
-function LiveWall() {
-  const { slug = "" } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const initialMode = parseLiveWallMode(searchParams.get("mode"));
-  const [data, setData] = useState<LiveWallResponse | null>(null);
-  const [error, setError] = useState("");
-  const [copyStatus, setCopyStatus] = useState("");
-  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-  const [mode, setMode] = useState<LiveWallMode>(initialMode);
-
-  async function load() {
-    const nextData = await api<LiveWallResponse>(`/api/events/${slug}/live-wall`);
-    setData(nextData);
-    setError("");
-    setLastUpdated(new Date());
-  }
-
-  useEffect(() => {
-    trackAnalytics("live_wall_opened", { eventSlug: slug, path: `/wall/${slug}` });
-    trackAnalytics("live_wall_viewed", { eventSlug: slug, path: `/wall/${slug}`, metadata: { mode } });
-    trackAnalytics("live_wall_mode_viewed", { eventSlug: slug, path: `/wall/${slug}`, metadata: { mode } });
-    let isMounted = true;
-    async function loadIfMounted() {
-      try {
-        const nextData = await api<LiveWallResponse>(`/api/events/${slug}/live-wall`);
-        if (!isMounted) return;
-        setData(nextData);
-        setError("");
-        setLastUpdated(new Date());
-      } catch (err) {
-        if (isMounted) setError(publicRouteErrorMessage(err, "Photo Wall is not available right now. Check the event link or refresh in a moment."));
-      }
-    }
-    loadIfMounted();
-    const interval = window.setInterval(loadIfMounted, 15_000);
-    return () => {
-      isMounted = false;
-      window.clearInterval(interval);
-    };
-  }, [slug]);
-
-  useEffect(() => {
-    const nextMode = parseLiveWallMode(searchParams.get("mode"));
-    setMode(nextMode);
-  }, [searchParams]);
-
-  useEffect(() => {
-    if (!data?.event) return;
-    trackAnalytics("live_wall_mode_viewed", { eventId: data.event.id, eventSlug: data.event.slug, metadata: { mode } });
-    if (mode === "join") trackAnalytics("live_wall_qr_display_opened", { eventId: data.event.id, eventSlug: data.event.slug, metadata: { mode } });
-    if (mode === "challenge") trackAnalytics("live_wall_challenge_display_opened", { eventId: data.event.id, eventSlug: data.event.slug, metadata: { mode } });
-    if (mode === "awards") trackAnalytics("live_wall_awards_leaders_viewed", { eventId: data.event.id, eventSlug: data.event.slug, metadata: { mode } });
-  }, [data?.event?.id, data?.event?.slug, mode]);
-
-  function switchMode(nextMode: LiveWallMode) {
-    setMode(nextMode);
-    setSearchParams(nextMode === "grid" ? {} : { mode: nextMode });
-    trackAnalytics("live_wall_mode_switched", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { from: mode, to: nextMode } });
-    trackAnalytics("live_wall_mode_changed", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { from: mode, to: nextMode } });
-  }
-
-  async function copyJoinLink() {
-    if (!data?.eventLink) return;
-    try {
-      await copyText(data.eventLink);
-      setCopyStatus("Guest link copied");
-    } catch (err) {
-      setCopyStatus((err as Error).message);
-    }
-  }
-
-  function trackUploadLinkClick(label: string) {
-    trackAnalytics("live_wall_upload_link_clicked", { eventId: data?.event.id, eventSlug: data?.event.slug || slug, metadata: { mode, label } });
-  }
-
-  const event = data?.event;
-  const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
-  const displayLinks = event ? buildLiveWallDisplayLinks(event) : [];
-  const availableModes = displayLinks.map((link) => link.key);
-  const activeMode = availableModes.includes(mode) ? mode : "grid";
-
-  return (
-    <main className="min-h-screen bg-app text-ink">
-      <div className="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex flex-col gap-4 border-b border-line pb-5 sm:flex-row sm:items-center sm:justify-between">
-          <BrandMark />
-          {event ? (
-            <div className="text-left sm:text-right">
-              <p className="text-sm font-bold text-ink">{event.name}</p>
-              <p className="mt-1 text-sm text-muted">{data?.photos.length ?? 0} photos</p>
-            </div>
-          ) : null}
-        </header>
-
-        {!event ? (
-          <section className="grid min-h-[70vh] place-items-center text-center">
-            <div>
-              <CleanIcon name="camera" className="mx-auto h-12 w-12 text-coral" />
-              <h1 className="mt-5 font-serif-display text-5xl font-bold text-ink">Photo Wall</h1>
-              <p className="mt-2 text-muted">{error || "Loading the latest event photos..."}</p>
-            </div>
-          </section>
-        ) : (
-          <section className="py-8">
-            <div className="text-center">
-              <h1 className="font-serif-display text-5xl font-bold text-ink lg:text-6xl">Photo Wall</h1>
-              <p className="mt-2 text-lg text-muted">Scan to add photos.</p>
-              <p className="text-sm font-semibold text-muted">No account needed.</p>
-            </div>
-
-            <div className="mt-8 grid gap-5 lg:grid-cols-[330px_1fr]">
-              <Card className="grid content-center text-center">
-                {data?.qrCodeDataUrl ? <img className="mx-auto aspect-square w-full max-w-[240px] rounded-lg bg-white p-3" src={data.qrCodeDataUrl} alt="Guest upload QR code" /> : <div className="mx-auto grid aspect-square w-full max-w-[240px] place-items-center rounded-lg bg-stone-100 text-muted"><CleanIcon name="qr" className="h-16 w-16" /></div>}
-                <h2 className="mt-6 font-serif-display text-3xl font-bold text-ink">{data?.photos.length ? "Scan to add photos" : "Waiting for photos."}</h2>
-                <p className="mx-auto mt-2 max-w-56 text-sm leading-6 text-muted">{data?.photos.length ? "Photos show up here as people add them." : "Scan the QR code to add the first one."}</p>
-                {data?.eventLink ? <a className="mt-5 inline-flex min-h-11 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white" href={data.eventLink} target="_blank" rel="noreferrer" onClick={() => trackUploadLinkClick("qr_panel")}>Open upload link</a> : null}
-              </Card>
-
-              <Card className="p-3 sm:p-4">
-                {data?.isLocked ? (
-                  <div className="grid min-h-[28rem] place-items-center text-center">
-                    <div>
-                      <CleanIcon name="lock" className="mx-auto h-12 w-12 text-coral" />
-                      <h2 className="mt-4 font-serif-display text-4xl font-bold text-ink">{capsuleCopy?.revealTitle || "Photos are saved for the reveal."}</h2>
-                      <p className="mx-auto mt-2 max-w-md text-muted">{capsuleCopy?.revealNote || "Photos are hidden until the reveal time."}</p>
-                    </div>
-                  </div>
-                ) : data?.photos.length ? (
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-                    {data.photos.slice(0, 12).map((photo) => (
-                      <img className="aspect-square w-full rounded-xl object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} key={photo.id} />
-                    ))}
-                  </div>
-                ) : (
-                  <div className="grid min-h-[28rem] place-items-center text-center">
-                    <div>
-                      <CleanIcon name="camera" className="mx-auto h-12 w-12 text-coral" />
-                      <h2 className="mt-4 font-serif-display text-4xl font-bold text-ink">Waiting for photos.</h2>
-                      <p className="mx-auto mt-2 max-w-md text-muted">Scan the QR code to add the first one.</p>
-                    </div>
-                  </div>
-                )}
-              </Card>
-            </div>
-
-            <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-sm text-muted">{lastUpdated ? `Updated ${lastUpdated.toLocaleTimeString()}` : "Photos refresh automatically."}</p>
-              <details className="relative">
-                <summary className="inline-flex min-h-10 cursor-pointer list-none items-center gap-2 rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink shadow-sm" aria-label="Open more Photo Wall controls">
-                  More
-                  <CleanIcon name="chevronDown" className="h-4 w-4" />
-                </summary>
-                <div className="absolute right-0 z-20 mt-2 grid w-60 gap-1 rounded-xl border border-line bg-white p-2 text-sm shadow-sm">
-                  {displayLinks.map((link) => (
-                    <button className={cx("rounded-lg px-3 py-2 text-left font-semibold", activeMode === link.key ? "bg-coral-soft text-coral" : "text-muted hover:bg-stone-50 hover:text-ink")} type="button" onClick={() => switchMode(link.key)} key={link.key}>{link.label}</button>
-                  ))}
-                  <button className="rounded-lg px-3 py-2 text-left font-semibold text-muted hover:bg-stone-50 hover:text-ink" type="button" onClick={() => load().catch((err) => setError(publicRouteErrorMessage(err)))}>Refresh</button>
-                  <button className="rounded-lg px-3 py-2 text-left font-semibold text-muted hover:bg-stone-50 hover:text-ink" type="button" onClick={copyJoinLink}>Copy guest link</button>
-                </div>
-              </details>
-            </div>
-            {copyStatus ? <p className="mt-3 rounded-lg bg-green-50 p-3 text-sm font-bold text-green-700">{copyStatus}</p> : null}
-            {error ? <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700">{error}</p> : null}
-          </section>
-        )}
-      </div>
-    </main>
-  );
-
-
 }
 
 function RecapChallengeMoments({ story, awardVoting, event, photos, clientId, onVoteComplete, onPhotoClick }: { story: EventRecapStory; awardVoting?: AwardVotingSummary | null; event: PublicEvent; photos: Photo[]; clientId: string; onVoteComplete: () => Promise<void>; onPhotoClick: (photo: Photo) => void }) {
@@ -4474,7 +4225,6 @@ function GuestEvent() {
                 </button>
                 {optionsOpen ? (
                   <div className="absolute right-0 top-11 z-30 w-40 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
-                    <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/wall/${event.slug}`}>Photo Wall</a>
                     <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/recap/${event.slug}`}>Shared Recap</a>
                     <button type="button" className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50" onClick={openUploadSheet}>Add photos</button>
                   </div>
@@ -4822,7 +4572,6 @@ function App() {
             <Route path="/dashboard/events/new" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
             <Route path="/dashboard/events/:eventId/poster" element={<ProtectedRoute><EventPosterPage /></ProtectedRoute>} />
             <Route path="/dashboard/events/:eventId" element={<ProtectedRoute><ManageEvent /></ProtectedRoute>} />
-            <Route path="/wall/:slug" element={<LiveWall />} />
             <Route path="/recap/:slug" element={<EventRecap />} />
             <Route path="/e/:slug" element={<GuestEvent />} />
           </Routes>

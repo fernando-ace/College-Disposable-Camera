@@ -14,7 +14,7 @@ The web guest upload route at `/e/:slug` stays browser-based and continues to us
 This pass prepares EventFilm for controlled real-host testing without changing the guest model.
 
 - Guests still use web links and QR codes. They do not need accounts or an app install.
-- Mobile is the host command center: create events, inspect event detail, share guest/Live Wall/Recap links, view beta analytics, and moderate photos with hide/restore and feature/unfeature.
+- Mobile is the host command center: create events, inspect event detail, share guest and Recap links, view beta analytics, and moderate photos with hide/restore and feature/unfeature.
 - The API validates production environment values and keeps development fallbacks out of production.
 - EAS profiles exist for development, preview, and production. Preview/production builds must use a deployed API URL.
 - Dev-only demo seeding creates challenge-configured beta events without fake photos or production testimonials.

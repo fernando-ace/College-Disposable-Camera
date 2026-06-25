@@ -43,12 +43,12 @@ Create demo events only in development:
 npm run seed:beta-demo -w server
 ```
 
-The script creates one event for each flagship mode: Color Hunt, Photo Scavenger Hunt, Event Awards, and Memory Capsule. It also creates `eventfilm-beta-demo-storage-smoke`, a revealed dev-only event used by the Supabase storage smoke so album, Live Wall, and Recap visibility can be checked with a real upload. It does not create fake guest testimonials or fake production photos.
+The script creates one event for each flagship mode: Color Hunt, Photo Scavenger Hunt, Event Awards, and Memory Capsule. It also creates `eventfilm-beta-demo-storage-smoke`, a revealed dev-only event used by the Supabase storage smoke so album and Recap visibility can be checked with a real upload. It does not create fake guest testimonials or fake production photos.
 
 For visual QA, keep the default seed photo-free and use one of these temporary paths:
 
 - Run `npm run smoke:storage` against a safe local or deployed smoke event.
-- Upload a tiny throwaway image through a demo guest link, verify guest upload, Live Wall, Recap, moderation, and cleanup.
+- Upload a tiny throwaway image through a demo guest link, verify guest upload, Recap, moderation, and cleanup.
 - Do not commit real uploaded images, fake production photos, or fake testimonials.
 
 Cleanup:
@@ -81,7 +81,7 @@ $env:EVENTFILM_SMOKE_EVENT_SLUG="eventfilm-beta-demo-memory-capsule"
 ```
 
 The smoke covers the landing page, primary CTA, unauthenticated host routes,
-guest upload route, Live Wall, Recap, privacy, terms, support, and obvious
+guest upload route, Recap, privacy, terms, support, and obvious
 console errors on public pages.
 
 ## Supabase Storage Smoke
@@ -96,7 +96,7 @@ npm run demo:cleanup
 ```
 
 The script uploads a tiny PNG through the actual guest upload API, verifies the
-photo record, public file/preview routes, guest album, Live Wall, Recap,
+photo record, public file/preview routes, guest album, Recap,
 feature/unfeature, guest report, host moderation state, hide/restore behavior,
 event analytics summary, and cleanup. It prints whether required environment
 variables are present, but it does not require or print Supabase secrets. If the
@@ -109,12 +109,12 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Create one test event from mobile.
 - Use Color Hunt, Photo Scavenger Hunt, Event Awards, and Memory Capsule at least once.
 - Upload one real photo from a guest phone.
-- Open the Live Wall on a laptop or display device.
+- Keep the QR poster visible on a laptop, display device, or printout.
 - Share the Recap link and confirm reveal behavior.
 - Hide and restore one photo.
 - Feature one photo.
 - Report one photo as a guest.
-- Confirm host metrics update after guest, upload, Live Wall, Recap, moderation, feature, and report activity.
+- Confirm host metrics update after guest, upload, Recap, moderation, feature, and report activity.
 - Confirm analytics records event activity.
 - Run `npm run demo:cleanup` or otherwise remove test data before real beta use.
 
@@ -122,14 +122,13 @@ reachable and the Supabase project is active/unpaused before changing app code.
 
 - iPhone Safari: scan the QR poster, open the guest upload page, enter an optional display name, upload from camera/library, and confirm My Uploads.
 - Android Chrome: repeat guest upload, including anonymous continuation.
-- Expo Go host app: open the event, share kit, Live Wall, Recap, metrics, moderation, and beta issue report.
-- Desktop Live Wall: open grid, slideshow, join, challenge, and awards modes when applicable.
+- Expo Go host app: open the event, share kit, Recap, metrics, moderation, and beta issue report.
 - Desktop Recap: confirm locked state before reveal and full recap after reveal.
 - QR poster scan: scan from printed paper or a second display, not just a copied link.
 - Wi-Fi versus cellular: try at least one upload on each when practical.
 - Large photo upload: try one high-resolution phone photo and confirm friendly behavior if it is too large or slow.
 - Slow network behavior: confirm upload errors/retry copy are understandable and do not trap the guest.
-- Hidden photo behavior: hide one photo and confirm it disappears from guest album, Live Wall, Recap, and public image routes.
+- Hidden photo behavior: hide one photo and confirm it disappears from guest album, Recap, and public image routes.
 - Beta issue path: submit one non-sensitive test issue from the host event page and confirm founder ops can see it.
 
 ## Host Flow
@@ -137,10 +136,10 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Sign up or log in as a host.
 - Create an event with the intended challenge mode.
 - Open the event detail screen on web and mobile.
-- Confirm the guest upload, Live Wall, and Recap links render.
+- Confirm the guest upload and Recap links render.
 - Confirm link verification does not warn about localhost for real testing.
 - Copy/share the guest upload link.
-- Open the Live Wall on the display device.
+- Keep the QR poster open or printed for guests.
 - Confirm mobile dashboard analytics loads without blocking event management.
 
 ## Guest Flow
@@ -157,7 +156,7 @@ reachable and the Supabase project is active/unpaused before changing app code.
 
 - Upload at least two test photos.
 - Hide one photo as host.
-- Confirm hidden photo is absent from guest album, Live Wall, Recap, and public image routes.
+- Confirm hidden photo is absent from guest album, Recap, and public image routes.
 - Restore the photo.
 - Feature one visible photo.
 - Confirm featured photos sort ahead of non-featured photos.
@@ -166,19 +165,18 @@ reachable and the Supabase project is active/unpaused before changing app code.
 
 ## Analytics Smoke
 
-- Open dashboard, Live Wall, Recap, and guest upload link.
+- Open dashboard, Recap, and guest upload link.
 - Upload one photo successfully.
 - Trigger one upload validation failure if practical.
 - Confirm host analytics summary changes after events are recorded.
-- Open the host event detail page and confirm event-level beta metrics show guest joins, uploads, Live Wall opens, Recap opens, hidden photos, reported photos, and featured photos.
-- If checking directly in the database, filter `AnalyticsEvent` by the test event id or slug and confirm event names such as `guest_joined_event`, `photo_upload_succeeded`, `live_wall_opened`, and `recap_opened`.
+- Open the host event detail page and confirm event-level beta metrics show guest joins, uploads, Recap opens, hidden photos, reported photos, and featured photos.
+- If checking directly in the database, filter `AnalyticsEvent` by the test event id or slug and confirm event names such as `guest_joined_event`, `photo_upload_succeeded`, and `recap_opened`.
 
 Metric definitions:
 
 - Active host: signed-in host dashboard open in the last 30 days.
 - Guest join: guest upload route visit that records `guest_joined_event`.
 - Photo upload: successfully stored event photo that has not been deleted.
-- Live Wall open: route visit that records `live_wall_opened`.
 - Recap open: route visit that records `recap_opened`.
 - Beta MAU: distinct active hosts plus distinct anonymous guest hashes in the last 30 days. Keep this internal during beta.
 

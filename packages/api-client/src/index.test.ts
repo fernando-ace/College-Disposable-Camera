@@ -17,13 +17,6 @@ test("client exposes normalized base URL", () => {
   assert.equal(client.baseUrl, "https://api.eventfilm.test");
 });
 
-test("live wall URL helper preserves default and mode query links", () => {
-  const client = createEventFilmApiClient({ baseUrl: "https://api.eventfilm.test/" });
-  assert.equal(client.getLiveWallUrl("spring formal"), "/wall/spring%20formal");
-  assert.equal(client.getLiveWallUrl("spring formal", "grid"), "/wall/spring%20formal");
-  assert.equal(client.getLiveWallUrl("spring formal", "slideshow"), "/wall/spring%20formal?mode=slideshow");
-});
-
 test("health check uses the API health endpoint", async () => {
   const calls: string[] = [];
   const client = createEventFilmApiClient({
@@ -132,7 +125,7 @@ test("founder overview helper uses founder endpoint with auth", async () => {
   assert.equal(authHeader, "Bearer token");
 });
 
-test("live wall and recap helpers accept optional clientId query", async () => {
+test("recap helper accepts optional clientId query", async () => {
   const calls: string[] = [];
   const client = createEventFilmApiClient({
     baseUrl: "https://api.eventfilm.test/",
@@ -145,10 +138,8 @@ test("live wall and recap helpers accept optional clientId query", async () => {
     }) as typeof fetch,
   });
 
-  await client.getLiveWallData("abc", "client-1");
   await client.getRecapData("abc", "client-1");
-  assert.equal(calls[0], "https://api.eventfilm.test/api/events/abc/live-wall?clientId=client-1");
-  assert.equal(calls[1], "https://api.eventfilm.test/api/events/abc/recap?clientId=client-1");
+  assert.equal(calls[0], "https://api.eventfilm.test/api/events/abc/recap?clientId=client-1");
 });
 
 test("guest my uploads helper sends clientId query", async () => {

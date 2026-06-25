@@ -46,13 +46,13 @@ Deployed rehearsal:
 7. Confirm the phone page says `No account needed.`
 8. Upload one harmless test photo.
 9. Confirm the host Uploads tab shows the photo.
-10. Confirm Live Wall shows the photo.
+10. Confirm the host Uploads tab and public album show the photo.
 11. Confirm Recap shows the photo when reveal rules allow.
 12. Confirm the public album works.
 13. Confirm My Uploads works on the phone browser.
 14. Feature the photo.
 15. Hide the photo.
-16. Confirm the hidden photo disappears from public album, Live Wall, and Recap.
+16. Confirm the hidden photo disappears from public album and Recap.
 17. Restore the photo.
 18. Report the photo from a public surface only if the target event is safe for reported-photo test data.
 19. Confirm host or founder review surfaces show the report when configured.
@@ -68,7 +68,7 @@ Capture this before inviting the first host:
 3. Phone screenshot of guest upload page showing `No account needed.`
 4. Screenshot after upload success.
 5. Screenshot of host Uploads tab.
-6. Screenshot of Live Wall.
+6. Screenshot of host photo review.
 7. Screenshot of Recap.
 8. Screenshot of founder overview if configured.
 9. Commit hash deployed to Vercel.

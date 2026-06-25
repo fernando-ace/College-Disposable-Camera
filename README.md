@@ -20,10 +20,10 @@ See `docs/june-revenue-sprint.md` for the free beta checklist, manual sales rout
 
 - Host sign up, login, logout with JWT auth
 - Host dashboard with event list and photo counts
-- Host analytics summary for guest joins, uploads, Live Wall opens, and Recap opens
+- Host analytics summary for guest joins, uploads, Recap opens, and moderation activity
 - Event creation with a hard-to-guess public slug
 - Event link and QR code generation
-- Host launch link verification for guest upload, Live Wall, and Recap links
+- Host launch link verification for guest upload and Recap links
 - Public guest event page at `/e/:eventSlug`
 - Guest nickname stored in local storage
 - Guest image upload without an account
@@ -297,7 +297,7 @@ Guest:
 - Configure `FOUNDER_EMAILS` on the API host before using `/dashboard/founder`; leave it empty to disable founder access.
 - Configure the frontend deployment with `VITE_API_URL` pointing at the deployed API.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
-- Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Live Wall, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
+- Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
 - Verify the founder beta ops dashboard with an allowlisted host account: overview metrics, recent activity, feedback inbox, read-only reported photo review, template/mode insights, and CSV export for Unlock Alabama reporting.
 - See `docs/real-event-qa.md` before testing with a real host.
 - See `docs/deployment-readiness.md` for the deployment, storage, CORS, migration, EAS, smoke, and rollback checklists.
@@ -418,7 +418,7 @@ npm run demo:cleanup
 `EVENTFILM_SMOKE_EVENT_SLUG` when testing non-default URLs. `smoke:storage` expects real Supabase-backed API
 configuration and never commits or prints storage secrets. The storage smoke
 uses the revealed `eventfilm-beta-demo-storage-smoke` seed event by default and
-verifies upload, DB record, album, Live Wall, Recap, moderation, reporting,
+verifies upload, DB record, album, Recap, moderation, reporting,
 analytics, and cleanup.
 
 Deployed smoke commands:

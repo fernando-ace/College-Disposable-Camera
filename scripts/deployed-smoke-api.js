@@ -89,9 +89,6 @@ async function main() {
       body: new FormData(),
     });
 
-    console.log("\n== Live Wall route ==");
-    await requestJson(apiUrl, `/api/events/${encodeURIComponent(slug)}/live-wall`);
-
     console.log("\n== Recap route ==");
     await requestJson(apiUrl, `/api/events/${encodeURIComponent(slug)}/recap`);
   } else {

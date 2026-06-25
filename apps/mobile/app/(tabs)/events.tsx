@@ -103,7 +103,7 @@ export default function EventsScreen() {
       {!events.length && !loading ? (
         <EmptyState
           title="Create your first EventFilm album"
-          body="Start with the event name and photo setup. The guest link, QR code, Live Wall, and Recap links appear right after setup."
+          body="Start with the event name and photo setup. The guest link, QR code, and Recap links appear right after setup."
           action={(
             <Link href="/create-event" asChild>
               <Button>Create your first event</Button>

@@ -26,21 +26,19 @@ Use the approved generated mockups as the strict visual reference:
 - Landing: hero, how it works, use cases, event styles, FAQ, final CTA.
 - Create event: event type, photo style, details, then ready-to-share handoff.
 - Dashboard: sidebar shell, welcome, tiny summary pills, event list with one next action.
-- Event detail: Share, Photos, Photo Wall, Recap, Settings.
+- Event detail: Share, Photos, Recap, Settings.
 - Guest upload: event name, No account needed, Add photos, optional name, prompt hint, My Uploads.
-- Photo Wall: event name, centered title, QR/add-photo area, photo grid, quiet More controls.
 - Shared Recap: album hero, Add photos, Copy recap link, Favorite moments, Photos, People who added photos.
 - QR poster: event name, large QR, Scan to add photos, No account needed, short hint.
 
 ## Visible by default
 
 - Guest link, QR code, event poster, group chat message.
-- Add photos, Photo Wall, Shared Recap, Review photos.
+- Add photos, Shared Recap, Review photos.
 - Event date/status, photo count, and one lifecycle action.
 
 ## Hidden behind More options
 
-- Advanced Photo Wall modes.
 - Prompt/category editing.
 - Analytics/activity details.
 - Repeat event tools.
@@ -71,7 +69,6 @@ Use the approved generated mockups as the strict visual reference:
 - Dashboard is a sidebar plus event list, not analytics-first.
 - Event Share tab shows Guest link, QR code, Event poster, group chat message, and collapsed link helper.
 - Guest upload mobile puts event name, No account needed, Add photos, optional name, compact prompt, and My Uploads above clutter.
-- Photo Wall is elegant and centered with QR/add-photo area, photo grid, quiet controls, and More for advanced modes.
 - Shared Recap is album-first with large title, Add photos, Copy recap link, Favorite moments, Photos, and People who added photos.
 - QR poster is warm and minimal.
 - The app does not drift back into card-heavy/admin-dashboard styling.
