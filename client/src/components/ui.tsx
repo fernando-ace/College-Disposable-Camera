@@ -59,7 +59,7 @@ export function BrandMark({ className = "" }: { className?: string }) {
 
 export function PrimaryButton({ children, className = "", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
-    <button className={cx("inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-500 disabled:shadow-none", className)} {...props}>
+    <button className={cx("inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-coral px-5 py-3 text-sm font-bold shadow-sm transition hover:bg-coral-strong disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-700 disabled:shadow-none", className)} {...props}>
       {children}
     </button>
   );

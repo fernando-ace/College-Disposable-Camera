@@ -18,8 +18,8 @@ export const colors = {
   amberSoft: "#fef3c7",
   amberWash: "#fff7dc",
   amberDark: "#653e00",
-  coral: "#c2410c",
-  coralDark: "#9a3412",
+  coral: "#ef6f58",
+  coralDark: "#d94f33",
   rose: "#fff1ec",
   plum: "#6d3f5b",
   danger: "#b91c1c",
@@ -325,7 +325,7 @@ export function Button({
 }) {
   const isDisabled = disabled || loading;
   const enabledBackgroundColor = tone === "primary" ? colors.coral : tone === "danger" ? colors.danger : tone === "ghost" ? "transparent" : "#fff";
-  const enabledColor = tone === "primary" || tone === "danger" ? "#fff" : colors.ink;
+  const enabledColor = tone === "danger" ? "#fff" : colors.ink;
   const backgroundColor = disabled ? (tone === "ghost" ? "transparent" : colors.border) : enabledBackgroundColor;
   const color = disabled ? colors.inkSoft : enabledColor;
 

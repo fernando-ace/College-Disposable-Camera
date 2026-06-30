@@ -9,9 +9,10 @@
   --ink: #171717;
   --muted: #66615b;
   --line: #e8e2da;
-  --coral: #c83a2b;
-  --coral-strong: #a83524;
+  --coral: #ff5a4f;
+  --coral-strong: #ec443a;
   --coral-soft: #fff0ed;
+  --on-coral: #171717;
   --paper: #ffffff;
 }
 
@@ -57,14 +58,23 @@ textarea {
 
 .bg-coral {
   background: var(--coral);
+  color: var(--on-coral);
 }
 
 .bg-coral-strong {
   background: var(--coral-strong);
+  color: var(--on-coral);
 }
 
 .hover\:bg-coral-strong:hover {
   background: var(--coral-strong);
+  color: var(--on-coral);
+}
+
+.bg-coral:disabled,
+.bg-coral-strong:disabled {
+  background: #d6d3d1;
+  color: #44403c;
 }
 
 .bg-coral-soft {
