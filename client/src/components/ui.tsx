@@ -152,7 +152,7 @@ export function AppShell({ children, userEmail, canViewFounder = false }: { chil
           </div>
         </div>
       </aside>
-      <header className="sticky top-0 z-10 border-b border-line bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
+      <header className="sticky top-0 z-40 border-b border-line bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
         <div className="flex items-center justify-between">
           <BrandMark />
           <Link className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink" to="/dashboard/events/new">Create</Link>

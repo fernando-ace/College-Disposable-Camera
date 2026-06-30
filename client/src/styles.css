@@ -118,6 +118,125 @@ textarea {
   display: none;
 }
 
+.poster-page {
+  min-width: 0;
+  overflow-x: clip;
+}
+
+.poster-sheet {
+  aspect-ratio: 8.5 / 11;
+  width: min(100%, 640px, calc(77.27vh - 4.75rem));
+  width: min(100%, 640px, calc(77.27svh - 4.75rem));
+  min-width: 0;
+  max-width: 100%;
+  padding: clamp(1rem, 2vw, 1.5rem);
+}
+
+.poster-content {
+  width: 100%;
+  min-width: 0;
+}
+
+.poster-brand {
+  font-size: clamp(0.75rem, 1.4vw, 0.875rem);
+}
+
+.poster-title {
+  max-width: min(100%, 16ch);
+  margin-top: clamp(0.75rem, 2vw, 1rem);
+  overflow-wrap: anywhere;
+  font-size: clamp(1.75rem, 3.4vw, 2.75rem);
+}
+
+.poster-qr-frame {
+  margin-top: clamp(0.9rem, 2vw, 1.25rem);
+  width: min(100%, clamp(9.5rem, 20vw, 14rem));
+  padding: clamp(0.65rem, 1.4vw, 1rem);
+}
+
+.poster-instruction {
+  margin-top: clamp(0.9rem, 2vw, 1.25rem);
+  font-size: clamp(1.55rem, 3.2vw, 2rem);
+}
+
+.poster-no-account {
+  margin-top: clamp(0.35rem, 1vw, 0.5rem);
+  font-size: clamp(0.95rem, 1.8vw, 1.1rem);
+}
+
+.poster-divider {
+  margin-top: clamp(0.75rem, 1.8vw, 1rem);
+  max-width: min(100%, 24rem);
+}
+
+.poster-mode-hint {
+  margin-top: clamp(0.65rem, 1.5vw, 0.9rem);
+  max-width: min(100%, 24rem);
+  font-size: clamp(0.8rem, 1.35vw, 0.95rem);
+  line-height: 1.5;
+}
+
+@media (min-width: 768px) and (min-height: 840px) {
+  .poster-sheet {
+    padding: clamp(1rem, 4vw, 2.5rem);
+  }
+
+  .poster-title {
+    margin-top: clamp(1rem, 3.4vw, 2rem);
+    font-size: clamp(2rem, 6vw, 3.75rem);
+  }
+
+  .poster-qr-frame {
+    margin-top: clamp(1.25rem, 3.6vw, 2.25rem);
+    width: min(100%, clamp(10rem, 32vw, 19.375rem));
+    padding: clamp(0.75rem, 2vw, 1.25rem);
+  }
+
+  .poster-instruction {
+    margin-top: clamp(1.25rem, 3.4vw, 2rem);
+    font-size: clamp(1.8rem, 4vw, 2.25rem);
+  }
+
+  .poster-no-account {
+    margin-top: clamp(0.5rem, 1.3vw, 0.75rem);
+    font-size: clamp(1rem, 2.1vw, 1.25rem);
+  }
+
+  .poster-divider {
+    margin-top: clamp(1rem, 3.4vw, 2rem);
+  }
+
+  .poster-mode-hint {
+    margin-top: clamp(0.9rem, 2.4vw, 1.5rem);
+    font-size: clamp(0.9rem, 1.8vw, 1.125rem);
+  }
+}
+
+@media (max-width: 767px) {
+  .poster-sheet {
+    width: min(100%, 360px, calc(77.27vh - 6.25rem));
+    width: min(100%, 360px, calc(77.27svh - 6.25rem));
+    padding: clamp(0.75rem, 4vw, 1rem);
+  }
+
+  .poster-brand {
+    font-size: clamp(0.7rem, 3vw, 0.8rem);
+  }
+
+  .poster-title {
+    max-width: min(100%, 15ch);
+    font-size: clamp(1.55rem, 7vw, 2rem);
+  }
+
+  .poster-qr-frame {
+    width: min(100%, clamp(8.5rem, 45vw, 11rem));
+  }
+
+  .poster-instruction {
+    font-size: clamp(1.45rem, 7vw, 1.85rem);
+  }
+}
+
 @keyframes live-pulse {
   0%,
   100% {
@@ -161,11 +280,50 @@ textarea {
   .poster-sheet {
     position: absolute;
     inset: 0;
+    aspect-ratio: auto !important;
     width: 100%;
+    max-width: none !important;
     min-height: auto;
     padding: 0.25in !important;
     border-radius: 0 !important;
     box-shadow: none !important;
     border: 0 !important;
+  }
+
+  .poster-brand {
+    font-size: 0.875rem;
+  }
+
+  .poster-title {
+    margin-top: 2rem;
+    font-size: 3.75rem;
+  }
+
+  .poster-qr-frame {
+    margin-top: 2.25rem;
+    width: 19.375rem;
+    padding: 1.25rem;
+  }
+
+  .poster-instruction {
+    margin-top: 2rem;
+    font-size: 2.25rem;
+  }
+
+  .poster-no-account {
+    margin-top: 0.75rem;
+    font-size: 1.25rem;
+  }
+
+  .poster-divider {
+    margin-top: 2rem;
+    max-width: 24rem;
+  }
+
+  .poster-mode-hint {
+    margin-top: 1.5rem;
+    max-width: 24rem;
+    font-size: 1.125rem;
+    line-height: 1.75rem;
   }
 }

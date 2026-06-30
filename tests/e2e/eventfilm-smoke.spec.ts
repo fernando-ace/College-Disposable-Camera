@@ -44,6 +44,17 @@ async function expectLocatorFitsViewport(page: Page, locator: Locator) {
   expect(Math.ceil(box.x + box.width)).toBeLessThanOrEqual(viewportWidth);
 }
 
+async function expectLocatorFullyFitsViewport(page: Page, locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+  const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  expect(Math.floor(box.x)).toBeGreaterThanOrEqual(0);
+  expect(Math.floor(box.y)).toBeGreaterThanOrEqual(0);
+  expect(Math.ceil(box.x + box.width)).toBeLessThanOrEqual(viewport.width);
+  expect(Math.ceil(box.y + box.height)).toBeLessThanOrEqual(viewport.height);
+}
+
 const isDeployedBrowserSmoke = !isLocalUrl(baseUrl);
 
 function requireHttpsUrl(value: string, envName: string) {
@@ -290,8 +301,36 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.locator("body")).not.toContainText("Event type");
       await expect(page.getByRole("heading", { name: "Photo style" })).toBeVisible();
       await expect(page.locator("body")).toContainText(/Simple Album|Photo Prompts|Optional setup/);
+      await expect(page.getByLabel(/Reveal time/)).toHaveCount(0);
+
+      await page.getByRole("button", { name: /^Memory Capsule/ }).click();
+      const revealTimeInput = page.getByLabel(/Reveal time/);
+      await expect(revealTimeInput).toBeVisible();
+      const createEventOrder = await page.evaluate(() => {
+        const headingByText = (text: string) => Array.from(document.querySelectorAll("h2")).find((node) => node.textContent?.trim() === text);
+        const labelByText = (text: string) => Array.from(document.querySelectorAll("label")).find((node) => node.textContent?.includes(text));
+        const styleHeading = headingByText("Photo style");
+        const revealLabel = labelByText("Reveal time");
+        const optionalHeading = headingByText("Optional setup");
+        return {
+          styleBeforeReveal: Boolean(styleHeading && revealLabel && (styleHeading.compareDocumentPosition(revealLabel) & Node.DOCUMENT_POSITION_FOLLOWING)),
+          revealBeforeOptional: Boolean(revealLabel && optionalHeading && (revealLabel.compareDocumentPosition(optionalHeading) & Node.DOCUMENT_POSITION_FOLLOWING)),
+        };
+      });
+      expect(createEventOrder).toEqual({ styleBeforeReveal: true, revealBeforeOptional: true });
+      const styleBox = await page.getByRole("heading", { name: "Photo style" }).boundingBox();
+      const revealBox = await revealTimeInput.boundingBox();
+      const optionalBox = await page.getByRole("heading", { name: "Optional setup" }).boundingBox();
+      expect(styleBox).not.toBeNull();
+      expect(revealBox).not.toBeNull();
+      expect(optionalBox).not.toBeNull();
+      if (styleBox && revealBox && optionalBox) {
+        expect(styleBox.y).toBeLessThan(revealBox.y);
+        expect(revealBox.y).toBeLessThan(optionalBox.y);
+      }
 
       await page.getByRole("button", { name: /^Photo Prompts/ }).click();
+      await expect(page.getByLabel(/Reveal time/)).toHaveCount(0);
       await page.getByRole("button", { name: "Customize" }).click();
       await page.getByRole("button", { name: /Edit prompts/ }).click();
       await expect(page.getByRole("button", { name: /^Up$/ })).toHaveCount(0);
@@ -459,12 +498,27 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("button", { name: "Copy message" })).toBeVisible();
       await expect(page.locator("input[aria-label='Guest link']")).toHaveValue(new RegExp(`/e/${seededSlug}`));
 
+      await page.setViewportSize({ width: 1280, height: 720 });
       await page.goto(`/dashboard/events/${eventId}/poster`);
       await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
       await expect(page.locator("body")).toContainText("Scan to add photos");
       await expect(page.locator("body")).toContainText(/No account needed\.?/);
       await expect(page.getByRole("button", { name: "Copy guest link" })).toBeVisible();
       await expect(page.getByAltText("Guest upload QR code")).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      await expectLocatorFullyFitsViewport(page, page.locator(".poster-sheet"));
+
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.goto(`/dashboard/events/${eventId}/poster`);
+      await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
+      await expect(page.getByAltText("Guest upload QR code")).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      await expectLocatorFullyFitsViewport(page, page.locator(".poster-sheet"));
+      const mobileCopyGuestLink = page.getByRole("button", { name: "Copy guest link" });
+      await mobileCopyGuestLink.scrollIntoViewIfNeeded();
+      await expect(mobileCopyGuestLink).toBeVisible();
+      await expectLocatorFitsViewport(page, mobileCopyGuestLink);
+      await page.setViewportSize({ width: 1280, height: 720 });
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
       await expect(page.getByRole("button", { name: "Photo Wall" })).toHaveCount(0);

@@ -1788,17 +1788,17 @@ function EventPosterPage() {
       {!event && <Card className="text-center"><h1 className="font-serif-display text-3xl font-bold">Loading poster</h1><p className="mt-2 text-muted">{error || "Building the host invite poster..."}</p></Card>}
       {event && assets && (
         <div className="poster-page mx-auto grid max-w-5xl gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
-          <section className="poster-sheet mx-auto grid aspect-[8.5/11] w-full max-w-[640px] place-items-center rounded-xl border border-line bg-[#fff7ef] p-10 text-center text-ink shadow-sm">
-            <div className="w-full">
-              <p className="text-sm font-bold text-coral">EventFilm</p>
-              <h1 className="mx-auto mt-8 max-w-[12ch] font-serif-display text-6xl font-bold leading-none">{event.name}</h1>
-              <div className="mx-auto mt-9 w-full max-w-[310px] rounded-xl bg-white p-5 shadow-sm">
-                {event.qrCodeDataUrl ? <img className="aspect-square w-full bg-white" src={event.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
+          <section className="poster-sheet mx-auto grid place-items-center rounded-xl border border-line bg-[#fff7ef] text-center text-ink shadow-sm">
+            <div className="poster-content">
+              <p className="poster-brand font-bold text-coral">EventFilm</p>
+              <h1 className="poster-title mx-auto font-serif-display font-bold leading-none">{event.name}</h1>
+              <div className="poster-qr-frame mx-auto rounded-xl bg-white shadow-sm">
+                {event.qrCodeDataUrl ? <img className="poster-qr-code aspect-square w-full bg-white" src={event.qrCodeDataUrl} alt="Guest upload QR code" /> : null}
               </div>
-              <h2 className="mt-8 font-serif-display text-4xl font-bold text-coral">Scan to add photos</h2>
-              <p className="mt-3 text-xl font-semibold text-ink">No account needed</p>
-              <div className="mx-auto mt-8 h-px max-w-sm bg-line" />
-              <p className="mx-auto mt-6 max-w-sm text-lg leading-7 text-muted">{assets.poster.modeHint || "Candid moments. Group pics. Event memories."}</p>
+              <h2 className="poster-instruction font-serif-display font-bold text-coral">Scan to add photos</h2>
+              <p className="poster-no-account font-semibold text-ink">No account needed</p>
+              <div className="poster-divider mx-auto h-px bg-line" />
+              <p className="poster-mode-hint mx-auto text-muted">{assets.poster.modeHint || "Candid moments. Group pics. Event memories."}</p>
             </div>
           </section>
 
@@ -2318,7 +2318,7 @@ function Dashboard() {
                       alt=""
                     />
                   ) : (
-                    <div className="absolute inset-0 z-10 grid place-items-center bg-stone-900 text-white/75">
+                    <div className="absolute inset-0 z-[1] grid place-items-center bg-stone-900 text-white/75">
                       <div className="text-center">
                         <CleanIcon name="image" className="mx-auto h-9 w-9" />
                         <p className="mt-2 text-sm font-semibold">No photos yet</p>
@@ -2326,7 +2326,7 @@ function Dashboard() {
                     </div>
                   )}
                   <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/10" aria-hidden="true" />
-                  <div className="relative z-10 flex h-full flex-col justify-between p-4 text-white">
+                  <div className="relative z-[1] flex h-full flex-col justify-between p-4 text-white">
                     <div className="flex justify-end">
                       <span className="max-w-[72%] truncate rounded-lg bg-black/45 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
                         {setupLabel}
@@ -3045,22 +3045,6 @@ function CreateEvent() {
                   />
                   {visibleCreateFieldErrors.description ? <span id="create-event-description-error" className="text-xs font-semibold text-red-700">{visibleCreateFieldErrors.description}</span> : null}
                 </label>
-                {requiresRevealAt ? (
-                  <label className="grid gap-2 text-sm font-bold text-stone-700">
-                    Reveal time
-                    <TextInput
-                      type="datetime-local"
-                      value={form.revealAt}
-                      onChange={(event) => update("revealAt", event.target.value)}
-                      required
-                      aria-invalid={Boolean(visibleCreateFieldErrors.revealAt) || undefined}
-                      aria-describedby={visibleCreateFieldErrors.revealAt ? "create-event-reveal-error create-event-reveal-helper" : "create-event-reveal-helper"}
-                      className={visibleCreateFieldErrors.revealAt ? invalidInputClass : ""}
-                    />
-                    <span id="create-event-reveal-helper" className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this time.</span>
-                    {visibleCreateFieldErrors.revealAt ? <span id="create-event-reveal-error" className="text-xs font-semibold text-red-700">{visibleCreateFieldErrors.revealAt}</span> : null}
-                  </label>
-                ) : null}
                 {error ? <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}
                 <div className="rounded-lg bg-[#fffaf6] p-3 text-sm font-semibold text-stone-700 lg:hidden">
                   {disabledReason || "Ready to create. You will get the guest link, QR poster, and recap next."}
@@ -3069,6 +3053,25 @@ function CreateEvent() {
             </Card>
 
             <PhotoStylePicker draft={challengeDraft} onSelect={selectPhotoStyle} />
+
+            {requiresRevealAt ? (
+              <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
+                <label className="grid gap-2 text-sm font-bold text-stone-700">
+                  Reveal time
+                  <TextInput
+                    type="datetime-local"
+                    value={form.revealAt}
+                    onChange={(event) => update("revealAt", event.target.value)}
+                    required
+                    aria-invalid={Boolean(visibleCreateFieldErrors.revealAt) || undefined}
+                    aria-describedby={visibleCreateFieldErrors.revealAt ? "create-event-reveal-error create-event-reveal-helper" : "create-event-reveal-helper"}
+                    className={visibleCreateFieldErrors.revealAt ? invalidInputClass : ""}
+                  />
+                  <span id="create-event-reveal-helper" className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this time.</span>
+                  {visibleCreateFieldErrors.revealAt ? <span id="create-event-reveal-error" className="text-xs font-semibold text-red-700">{visibleCreateFieldErrors.revealAt}</span> : null}
+                </label>
+              </section>
+            ) : null}
 
             <section className="min-w-0 rounded-xl border border-line bg-white p-4 shadow-sm sm:p-5">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
