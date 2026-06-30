@@ -15,6 +15,7 @@ import {
   buildGuestChallengeProgress,
   buildGuestUploadSuccessSummary,
   buildHostShareAssets,
+  buildAwardResultsSummary,
   buildEventRecapStory,
   buildChallengePayload,
   buildDuplicateEventInput,
@@ -47,7 +48,7 @@ import {
   validateEventSettingsInput,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardVotingSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardResultsSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
 import {
   AppShell,
   BrandMark,
@@ -111,6 +112,81 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const eventFilmApi = createEventFilmApiClient({ baseUrl: API_BASE_URL });
 const api = eventFilmApi.request;
 const ANALYTICS_ANON_KEY = "eventfilm_anon_id";
+
+function isEditableKeyboardTarget(target: EventTarget | null): target is HTMLElement {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  return target.matches("input:not([type='file']):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']), textarea, select");
+}
+
+function useMobileKeyboardZoomRecovery() {
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches) return;
+
+    const visualViewport = window.visualViewport;
+    let lastKeyboardTarget: HTMLElement | null = null;
+    let recoveryTimer: number | undefined;
+    let viewportHeight = visualViewport?.height || window.innerHeight;
+
+    function clearRecoveryTimer() {
+      if (recoveryTimer === undefined) return;
+      window.clearTimeout(recoveryTimer);
+      recoveryTimer = undefined;
+    }
+
+    function recoverViewport() {
+      clearRecoveryTimer();
+      recoveryTimer = window.setTimeout(() => {
+        if (isEditableKeyboardTarget(document.activeElement)) return;
+
+        const viewportOffsetTop = visualViewport?.offsetTop || 0;
+        const scale = visualViewport?.scale || 1;
+        if (viewportOffsetTop || Math.abs(scale - 1) > 0.01) {
+          window.scrollBy({ top: viewportOffsetTop, left: 0, behavior: "instant" });
+        }
+
+        if (lastKeyboardTarget?.isConnected) {
+          const rect = lastKeyboardTarget.getBoundingClientRect();
+          const visibleHeight = visualViewport?.height || window.innerHeight;
+          const isOffscreen = rect.top < 0 || rect.bottom > visibleHeight;
+          if (isOffscreen) lastKeyboardTarget.scrollIntoView({ block: "center", inline: "nearest" });
+        }
+
+        lastKeyboardTarget = null;
+      }, 120);
+    }
+
+    function handleFocusIn(event: FocusEvent) {
+      if (!isEditableKeyboardTarget(event.target)) return;
+      clearRecoveryTimer();
+      lastKeyboardTarget = event.target;
+      viewportHeight = visualViewport?.height || window.innerHeight;
+    }
+
+    function handleFocusOut(event: FocusEvent) {
+      if (isEditableKeyboardTarget(event.target)) recoverViewport();
+    }
+
+    function handleViewportResize() {
+      if (!visualViewport) return;
+      const nextHeight = visualViewport.height;
+      const keyboardLikelyClosed = lastKeyboardTarget && !isEditableKeyboardTarget(document.activeElement) && nextHeight >= viewportHeight - 2;
+      viewportHeight = Math.max(viewportHeight, nextHeight);
+      if (keyboardLikelyClosed) recoverViewport();
+    }
+
+    document.addEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusout", handleFocusOut);
+    visualViewport?.addEventListener("resize", handleViewportResize);
+
+    return () => {
+      clearRecoveryTimer();
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      visualViewport?.removeEventListener("resize", handleViewportResize);
+    };
+  }, []);
+}
 
 
 function isLocalHost(hostname: string) {
@@ -229,6 +305,10 @@ class AppErrorBoundary extends React.Component<{ children: React.ReactNode }, { 
 
 function formatDateTime(value: string) {
   return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+}
+
+function formatEventCardDate(value: string) {
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
 }
 
 function formatBytes(value: number) {
@@ -505,11 +585,69 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
 function PhotoStatusBadges({ photo, host = false }: { photo: Photo; host?: boolean }) {
   return (
     <div className="flex flex-wrap gap-1.5">
-      {photo.isFeatured && <StatusPill tone="amber">Featured</StatusPill>}
+      {photo.isFeatured && <StatusPill tone="amber">Host pick</StatusPill>}
+      {Number(photo.likeCount || 0) > 0 && <StatusPill tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</StatusPill>}
       {host && photo.visibilityStatus === "HIDDEN" && <StatusPill tone="red">Hidden</StatusPill>}
       {host && Boolean(photo.reportCount) && <StatusPill tone="red">{photo.reportCount} reported</StatusPill>}
       {photoChallengeLabel(photo) && <StatusPill tone="stone">{photoChallengeLabel(photo)}</StatusPill>}
     </div>
+  );
+}
+
+type PhotoLikeToggleHandler = (photo: Photo, liked: boolean) => void | Promise<void>;
+
+function photoHeartLabel(count: number) {
+  return `${count} ${count === 1 ? "heart" : "hearts"}`;
+}
+
+function applyPhotoLikeState(photo: Photo, liked: boolean, likeCount?: number): Photo {
+  const currentCount = Math.max(0, Number(photo.likeCount || 0));
+  const nextCount = likeCount === undefined ? Math.max(0, currentCount + (liked ? 1 : -1)) : Math.max(0, likeCount);
+  return { ...photo, likedByMe: liked, likeCount: nextCount };
+}
+
+function updatePhotoInList(photos: Photo[], photoId: string, updater: (photo: Photo) => Photo) {
+  return photos.map((photo) => photo.id === photoId ? updater(photo) : photo);
+}
+
+function PhotoHeartButton({
+  photo,
+  onToggle,
+  className = "",
+  variant = "light",
+}: {
+  photo: Photo;
+  onToggle?: PhotoLikeToggleHandler;
+  className?: string;
+  variant?: "light" | "solid";
+}) {
+  const count = Math.max(0, Number(photo.likeCount || 0));
+  const liked = Boolean(photo.likedByMe);
+  const label = liked ? `Unlike photo, ${photoHeartLabel(count)}` : `Like photo, ${photoHeartLabel(count)}`;
+  const baseTone = variant === "solid"
+    ? liked
+      ? "bg-[#e85d3f] text-white shadow-sm"
+      : "bg-white/95 text-stone-900 shadow-sm ring-1 ring-black/5"
+    : liked
+      ? "bg-[#fff0ed] text-[#d94f33] ring-1 ring-[#ffd4c7]"
+      : "bg-white text-stone-800 ring-1 ring-[#eadfce] hover:bg-[#fffaf6]";
+
+  return (
+    <button
+      type="button"
+      className={cx("inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60", baseTone, className)}
+      aria-pressed={liked}
+      aria-label={label}
+      title={label}
+      disabled={!onToggle}
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle?.(photo, !liked);
+      }}
+    >
+      <CleanIcon name="heart" className={cx("h-4 w-4", liked ? "fill-current" : "")} />
+      <span className="tabular-nums">{count}</span>
+    </button>
   );
 }
 
@@ -535,6 +673,7 @@ function PhotoDetailModal({
   onReport,
   reportStatus,
   onHostAction,
+  onPhotoLike,
 }: {
   photo: Photo | null;
   mode: "public" | "host";
@@ -542,6 +681,7 @@ function PhotoDetailModal({
   onReport?: (reason: PhotoReportReason, note: string) => Promise<void>;
   reportStatus?: string;
   onHostAction?: (action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) => Promise<void>;
+  onPhotoLike?: PhotoLikeToggleHandler;
 }) {
   const [reason, setReason] = useState<PhotoReportReason>("inappropriate");
   const [note, setNote] = useState("");
@@ -603,11 +743,23 @@ function PhotoDetailModal({
               <div className="mt-3 grid gap-2 text-sm text-stone-600">
                 <p><strong className="text-stone-900">Guest:</strong> {photo.challengeParticipantName || photo.guestNickname || "Guest"}</p>
                 <p><strong className="text-stone-900">Uploaded:</strong> {formatDateTime(photo.createdAt)}</p>
+                <p><strong className="text-stone-900">Hearts:</strong> {photoHeartLabel(Math.max(0, Number(photo.likeCount || 0)))}</p>
                 {photoChallengeLabel(photo) && <p><strong className="text-stone-900">Challenge:</strong> {photoChallengeLabel(photo)}</p>}
                 {mode === "host" && photo.hiddenReason && <p><strong className="text-stone-900">Hidden reason:</strong> {photo.hiddenReason}</p>}
                 {mode === "host" && Boolean(photo.reports?.length) && <p><strong className="text-stone-900">Latest report:</strong> {photo.reports?.[0]?.reason}</p>}
               </div>
             </Card>
+            {mode === "public" && onPhotoLike ? (
+              <Card className="shadow-none">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-stone-950">Guest favorite</p>
+                    <p className="mt-1 text-sm text-stone-600">Hearts decide recap favorites and award leaders.</p>
+                  </div>
+                  <PhotoHeartButton photo={photo} onToggle={onPhotoLike} />
+                </div>
+              </Card>
+            ) : null}
             {mode === "host" && onHostAction && (
               <Card className="shadow-none">
                 <p className="text-sm font-bold text-stone-950">Host controls</p>
@@ -618,9 +770,9 @@ function PhotoDetailModal({
                     <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</SecondaryButton>
                   )}
                   {photo.isFeatured ? (
-                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove feature</SecondaryButton>
+                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove host pick</SecondaryButton>
                   ) : (
-                    <Button disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Feature photo</Button>
+                    <Button disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</Button>
                   )}
                   <button className="min-h-12 rounded-full bg-red-700 px-5 py-3 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete permanently</button>
                 </div>
@@ -1205,120 +1357,87 @@ function Shell({ children, wide = false }: { children: React.ReactNode; wide?: b
   );
 }
 
-function AwardVotingPanel({
-  event,
+function AwardResultsPanel({
+  awardResults,
   photos,
-  awardVoting,
-  clientId,
-  surface,
-  onVoteComplete,
+  onPhotoClick,
+  onPhotoLike,
 }: {
-  event: Pick<PublicEvent, "slug" | "id">;
+  awardResults?: AwardResultsSummary | null;
   photos: Photo[];
-  awardVoting?: AwardVotingSummary | null;
-  clientId: string;
-  surface: "recap" | "guest_album";
-  onVoteComplete: () => Promise<void>;
+  onPhotoClick?: (photo: Photo) => void;
+  onPhotoLike?: PhotoLikeToggleHandler;
 }) {
-  const [busyVote, setBusyVote] = useState("");
-  const [status, setStatus] = useState("");
-  if (!awardVoting?.categories.length || !awardVoting.votingEnabled) return null;
+  if (!awardResults?.categories.length) return null;
 
-  const photosByCategory = new Map<string, Photo[]>();
-  for (const photo of photos) {
-    if (!photo.challengeItemId) continue;
-    const group = photosByCategory.get(photo.challengeItemId) || [];
-    group.push(photo);
-    photosByCategory.set(photo.challengeItemId, group);
-  }
-
-  async function castVote(photo: Photo, categoryId: string) {
-    setBusyVote(`${categoryId}:${photo.id}`);
-    setStatus("");
-    try {
-      const response = await eventFilmApi.castEventAwardVote(event.slug, { photoId: photo.id, clientId, challengeItemId: categoryId });
-      trackAnalytics(response.duplicate ? "award_vote_duplicate_blocked" : "award_vote_cast", {
-        eventId: event.id,
-        eventSlug: event.slug,
-        metadata: { surface, photoId: response.photoId, challengeItemId: response.challengeItemId, categoryId: response.challengeItemId },
-      });
-      setStatus(response.duplicate ? "You already voted in that category from this browser." : "Vote saved.");
-      await onVoteComplete();
-    } catch (err) {
-      setStatus(publicRouteErrorMessage(err, "Could not save that vote. Refresh and try again."));
-    } finally {
-      setBusyVote("");
-    }
-  }
+  const photosById = new Map(photos.filter(isPhotoVisible).map((photo) => [photo.id, photo]));
 
   return (
     <section className="rounded-[2rem] border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)] sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <StatusPill>Awards</StatusPill>
-          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Vote for winners</h2>
-          <p className="mt-2 max-w-2xl text-sm text-stone-600">Pick one photo per category from this browser. It is lightweight voting, not a fraud-proof ballot.</p>
+          <h2 className="mt-3 font-display text-3xl font-bold text-stone-950">Award leaders</h2>
+          <p className="mt-2 max-w-2xl text-sm text-stone-600">Heart favorite photos to help decide the winners. One browser can heart each photo once.</p>
         </div>
-        {status && <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-[#653e00]">{status}</p>}
+        <StatusPill tone="red">Hearts decide winners</StatusPill>
       </div>
 
       <div className="mt-6 grid gap-5">
-        {awardVoting.categories.map((category) => {
-          const categoryPhotos = photosByCategory.get(category.categoryId) || [];
-          const voteCounts = new Map(category.voteTotals.map((item) => [item.photoId, item.voteCount]));
-          const winners = category.leaderPhotoIds.map((photoId) => categoryPhotos.find((photo) => photo.id === photoId)).filter(Boolean) as Photo[];
+        {awardResults.categories.map((category) => {
+          const leaderPhotos = category.leaderPhotoIds.map((photoId) => photosById.get(photoId)).filter(Boolean) as Photo[];
+          const topPhotos = (category.likeTotals.length ? category.likeTotals : photos
+            .filter((photo) => photo.challengeItemId === category.categoryId)
+            .map((photo) => ({ photoId: photo.id, likeCount: Math.max(0, Number(photo.likeCount || 0)) })))
+            .slice(0, 8)
+            .map((total) => ({ total, photo: photosById.get(total.photoId) }))
+            .filter((item): item is { total: { photoId: string; likeCount: number }; photo: Photo } => Boolean(item.photo));
+
           return (
             <section className="rounded-[1.45rem] bg-[#fffaf6] p-4" key={category.categoryId}>
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="font-display text-2xl font-bold text-stone-950">{category.categoryLabel}</h3>
-                  <p className="text-sm font-semibold text-stone-600">{category.submissionCount} submissions - {category.totalVotes} votes</p>
+                  <p className="text-sm font-semibold text-stone-600">{category.submissionCount} submissions - {category.totalLikes} {category.totalLikes === 1 ? "heart" : "hearts"}</p>
                 </div>
                 {category.isTie && <StatusPill tone="amber">Tie for first</StatusPill>}
               </div>
 
-              {winners.length > 0 && (
+              {leaderPhotos.length > 0 ? (
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  {winners.map((photo) => (
+                  {leaderPhotos.map((photo) => (
                     <div className="flex items-center gap-3 rounded-2xl bg-white p-3 ring-1 ring-amber-200" key={photo.id}>
-                      <img className="h-16 w-16 rounded-2xl object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                      <div className="min-w-0">
-                        <p className="text-xs font-bold uppercase text-[#653e00]">{category.isTie ? "Tied winner" : "Winner"}</p>
+                      <button type="button" className="shrink-0 overflow-hidden rounded-2xl" onClick={() => onPhotoClick?.(photo)} aria-label={`Open ${category.categoryLabel} leader photo`}>
+                        <img className="h-16 w-16 object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                      </button>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold uppercase text-[#653e00]">{category.isTie ? "Tied leader" : "Current leader"}</p>
                         <p className="truncate font-bold text-stone-950">{photo.guestNickname || "Guest photo"}</p>
-                        <p className="text-sm font-semibold text-stone-600">{voteCounts.get(photo.id) || 0} votes</p>
+                        <p className="text-sm font-semibold text-stone-600">{photoHeartLabel(Math.max(0, Number(photo.likeCount || 0)))}</p>
+                      </div>
+                      {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} /> : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-4 rounded-2xl bg-white p-4 text-sm font-bold text-stone-600">{category.noSubmissions ? "No submissions in this category yet." : "No hearts yet. Heart a photo to start the leaderboard."}</p>
+              )}
+
+              {topPhotos.length ? (
+                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {topPhotos.map(({ photo }) => (
+                    <div className="overflow-hidden rounded-[1.15rem] bg-white p-2 ring-1 ring-[#eadfce]" key={photo.id}>
+                      <button type="button" className="block w-full overflow-hidden rounded-[0.95rem]" onClick={() => onPhotoClick?.(photo)}>
+                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                      </button>
+                      <div className="flex items-center justify-between gap-2 p-2">
+                        <p className="min-w-0 truncate text-sm font-bold text-stone-900">{photo.guestNickname || "Guest photo"}</p>
+                        {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" /> : <span className="shrink-0 rounded-full bg-[#fff0ed] px-3 py-2 text-xs font-black text-[#d94f33]">{photo.likeCount || 0}</span>}
                       </div>
                     </div>
                   ))}
                 </div>
-              )}
-
-              {!categoryPhotos.length ? (
-                <p className="mt-4 rounded-2xl bg-white p-4 text-sm font-bold text-stone-600">No submissions in this category yet.</p>
-              ) : (
-                <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                  {categoryPhotos.map((photo) => {
-                    const selected = category.myVotePhotoId === photo.id;
-                    const blockedByExistingVote = Boolean(category.myVotePhotoId && !selected);
-                    return (
-                      <div className={cx("overflow-hidden rounded-[1.15rem] bg-white p-2 ring-1", selected ? "ring-amber-400" : "ring-[#eadfce]")} key={photo.id}>
-                        <img className="aspect-square w-full rounded-[0.95rem] object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                        <div className="p-2">
-                          <p className="truncate text-sm font-bold text-stone-900">{photo.guestNickname || "Guest photo"}</p>
-                          <p className="mt-1 text-xs font-bold text-stone-500">{voteCounts.get(photo.id) || 0} votes</p>
-                          <button
-                            className={cx("mt-3 min-h-10 w-full rounded-[0.9rem] px-3 py-2 text-xs font-bold", selected ? "bg-stone-950 text-white" : "bg-amber-500 text-stone-950 disabled:bg-stone-200 disabled:text-stone-500")}
-                            disabled={Boolean(busyVote) || blockedByExistingVote}
-                            onClick={() => castVote(photo, category.categoryId)}
-                          >
-                            {selected ? "Your vote" : blockedByExistingVote ? "Voted" : busyVote === `${category.categoryId}:${photo.id}` ? "Voting..." : "Vote"}
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-              {category.noVotes && categoryPhotos.length > 0 && <p className="mt-3 text-sm font-semibold text-stone-600">No votes yet in this category.</p>}
+              ) : null}
             </section>
           );
         })}
@@ -1327,16 +1446,16 @@ function AwardVotingPanel({
   );
 }
 
-function HostAwardVotingSummary({
-  awardVoting,
+function HostAwardResultsSummary({
+  awardResults,
   photos,
   onFeatureWinner,
 }: {
-  awardVoting?: AwardVotingSummary | null;
+  awardResults?: AwardResultsSummary | null;
   photos: Photo[];
   onFeatureWinner: (photo: Photo) => Promise<void>;
 }) {
-  if (!awardVoting?.categories.length) return null;
+  if (!awardResults?.categories.length) return null;
   const visiblePhotos = photos.filter(isPhotoVisible);
   const photosById = new Map(visiblePhotos.map((photo) => [photo.id, photo]));
 
@@ -1345,35 +1464,35 @@ function HostAwardVotingSummary({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <StatusPill>Awards</StatusPill>
-          <h3 className="mt-3 font-display text-2xl font-bold text-stone-950">Voting summary</h3>
-          <p className="mt-2 max-w-2xl text-sm text-stone-600">Guests get one lightweight browser/session vote per category. Hide or delete a photo to remove it from public winners.</p>
+          <h3 className="mt-3 font-display text-2xl font-bold text-stone-950">Award leaders</h3>
+          <p className="mt-2 max-w-2xl text-sm text-stone-600">Guest hearts are the crowd signal. Host picks stay separate for manual curation.</p>
         </div>
-        <StatusPill tone={awardVoting.votingEnabled ? "green" : "stone"}>{awardVoting.votingEnabled ? "Voting on" : "Voting off"}</StatusPill>
+        <StatusPill tone="red">Heart based</StatusPill>
       </div>
 
       <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {awardVoting.categories.map((category) => {
+        {awardResults.categories.map((category) => {
           const leader = category.leaderPhotoIds[0] ? photosById.get(category.leaderPhotoIds[0]) : null;
-          const voteCount = category.voteTotals[0]?.voteCount || 0;
+          const likeCount = leader ? Math.max(0, Number(leader.likeCount || category.likeTotals.find((item) => item.photoId === leader.id)?.likeCount || 0)) : 0;
           return (
             <div className="rounded-[1.25rem] bg-[#fffaf6] p-4" key={category.categoryId}>
               <div className="flex items-center justify-between gap-3">
                 <p className="min-w-0 truncate font-bold text-stone-950">{category.categoryLabel}</p>
                 {category.isTie && <StatusPill tone="amber">Tie</StatusPill>}
               </div>
-              <p className="mt-1 text-sm font-semibold text-stone-600">{category.submissionCount} submissions - {category.totalVotes} votes</p>
+              <p className="mt-1 text-sm font-semibold text-stone-600">{category.submissionCount} submissions - {category.totalLikes} {category.totalLikes === 1 ? "heart" : "hearts"}</p>
               {leader ? (
                 <div className="mt-4 flex items-center gap-3">
                   <img className="h-16 w-16 rounded-2xl object-cover" src={photoImageSrc(leader)} alt={leader.originalFilename} />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold uppercase text-[#653e00]">Current leader</p>
                     <p className="truncate font-bold text-stone-950">{leader.guestNickname || "Guest photo"}</p>
-                    <p className="text-sm font-semibold text-stone-600">{voteCount} {voteCount === 1 ? "vote" : "votes"}</p>
+                    <p className="text-sm font-semibold text-stone-600">{photoHeartLabel(likeCount)}</p>
                   </div>
-                  <SecondaryButton className="min-h-10 rounded-[0.95rem] px-3 py-2" disabled={leader.isFeatured} onClick={() => onFeatureWinner(leader)}>{leader.isFeatured ? "Featured" : "Feature"}</SecondaryButton>
+                  <SecondaryButton className="min-h-10 rounded-[0.95rem] px-3 py-2" disabled={leader.isFeatured} onClick={() => onFeatureWinner(leader)}>{leader.isFeatured ? "Host pick" : "Feature winner"}</SecondaryButton>
                 </div>
               ) : (
-                <p className="mt-4 rounded-2xl bg-white p-3 text-sm font-bold text-stone-600">{category.noSubmissions ? "No submissions yet." : "No votes yet."}</p>
+                <p className="mt-4 rounded-2xl bg-white p-3 text-sm font-bold text-stone-600">{category.noSubmissions ? "No submissions yet." : "No hearts yet."}</p>
               )}
             </div>
           );
@@ -2129,20 +2248,16 @@ function Dashboard() {
     setCanViewFounder(Boolean(auth.user?.isFounder));
   }, [auth.token, auth.user?.isFounder]);
 
-  const sortedEvents = useMemo(
-    () => [...events].sort((first, second) => first.name.localeCompare(second.name)),
-    [events],
-  );
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredEvents = useMemo(() => {
-    if (!normalizedQuery) return sortedEvents;
-    return sortedEvents.filter((event) => [
+    if (!normalizedQuery) return events;
+    return events.filter((event) => [
       event.name,
       event.description || "",
       plainModeLabel(event.challenge?.type || "NONE"),
       challengeLabel(event.challenge),
     ].join(" ").toLowerCase().includes(normalizedQuery));
-  }, [normalizedQuery, sortedEvents]);
+  }, [events, normalizedQuery]);
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
 
   return (
@@ -2186,49 +2301,92 @@ function Dashboard() {
         <div className="grid gap-5 lg:grid-cols-2">
           {filteredEvents.map((event) => {
             const previewPhotos = (event.previewPhotos || []).slice(0, 4);
+            const coverPhoto = previewPhotos[0];
+            const eventDateLabel = formatEventCardDate(event.eventDate);
             const setupLabel = plainModeLabel(event.challenge?.type || "NONE");
             return (
-              <article className="overflow-hidden rounded-xl border border-line bg-white shadow-sm transition hover:border-coral/40" key={event.id}>
-                <div className="grid gap-0 sm:grid-cols-[180px_minmax(0,1fr)]">
-                  <div className="grid min-h-40 grid-cols-2 gap-1 bg-stone-100 p-2">
-                    {previewPhotos.length ? (
-                      previewPhotos.map((photo) => (
-                        <img
-                          className="h-full min-h-16 w-full rounded-lg object-cover"
-                          src={assetUrl(photo.previewUrl || photo.url)}
-                          alt={photo.originalFilename || `${event.name} photo`}
-                          key={photo.id}
-                        />
-                      ))
-                    ) : (
-                      <div className="col-span-2 grid min-h-36 place-items-center rounded-lg bg-[#fffaf6] text-muted">
-                        <div className="text-center">
-                          <CleanIcon name="image" className="mx-auto h-8 w-8" />
-                          <p className="mt-2 text-sm font-semibold">No photos yet</p>
+              <React.Fragment key={event.id}>
+                <Link
+                  className="group relative block aspect-[16/9] overflow-hidden rounded-xl bg-stone-950 shadow-sm sm:hidden"
+                  to={`/dashboard/events/${event.id}`}
+                  aria-label={`Open event: ${event.name}`}
+                >
+                  {coverPhoto ? (
+                    <img
+                      className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                      src={photoImageSrc(coverPhoto)}
+                      alt=""
+                    />
+                  ) : (
+                    <div className="absolute inset-0 z-10 grid place-items-center bg-stone-900 text-white/75">
+                      <div className="text-center">
+                        <CleanIcon name="image" className="mx-auto h-9 w-9" />
+                        <p className="mt-2 text-sm font-semibold">No photos yet</p>
+                      </div>
+                    </div>
+                  )}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/10" aria-hidden="true" />
+                  <div className="relative z-10 flex h-full flex-col justify-between p-4 text-white">
+                    <div className="flex justify-end">
+                      <span className="max-w-[72%] truncate rounded-lg bg-black/45 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
+                        {setupLabel}
+                      </span>
+                    </div>
+                    <div className="flex items-end justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-white/85">{eventDateLabel}</p>
+                        <h3 className="mt-1 line-clamp-2 text-2xl font-bold leading-tight text-white">{event.name}</h3>
+                      </div>
+                      <span className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-black/35 px-2.5 py-2 text-sm font-bold text-white backdrop-blur">
+                        <CleanIcon name="image" className="h-5 w-5" />
+                        <span className="tabular-nums">{event.photoCount}</span>
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+
+                <article className="hidden overflow-hidden rounded-xl border border-line bg-white shadow-sm transition hover:border-coral/40 sm:block">
+                  <div className="grid gap-0 sm:grid-cols-[180px_minmax(0,1fr)]">
+                    <div className="grid min-h-40 grid-cols-2 gap-1 bg-stone-100 p-2">
+                      {previewPhotos.length ? (
+                        previewPhotos.map((photo) => (
+                          <img
+                            className="h-full min-h-16 w-full rounded-lg object-cover"
+                            src={assetUrl(photo.previewUrl || photo.url)}
+                            alt={photo.originalFilename || `${event.name} photo`}
+                            key={photo.id}
+                          />
+                        ))
+                      ) : (
+                        <div className="col-span-2 grid min-h-36 place-items-center rounded-lg bg-[#fffaf6] text-muted">
+                          <div className="text-center">
+                            <CleanIcon name="image" className="mx-auto h-8 w-8" />
+                            <p className="mt-2 text-sm font-semibold">No photos yet</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="flex min-w-0 flex-col p-5">
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <Link to={`/dashboard/events/${event.id}`}><h3 className="truncate text-xl font-bold text-ink">{event.name}</h3></Link>
+                          <p className="mt-1 text-sm font-semibold text-stone-600">Photo setup: {setupLabel}</p>
+                        </div>
+                        <div className="shrink-0 rounded-lg bg-coral-soft px-3 py-2 text-center">
+                          <p className="text-xl font-bold text-coral tabular-nums">{event.photoCount}</p>
+                          <p className="text-xs font-semibold text-muted">{event.photoCount === 1 ? "photo" : "photos"}</p>
                         </div>
                       </div>
-                    )}
-                  </div>
-                  <div className="flex min-w-0 flex-col p-5">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="min-w-0">
-                        <Link to={`/dashboard/events/${event.id}`}><h3 className="truncate text-xl font-bold text-ink">{event.name}</h3></Link>
-                        <p className="mt-1 text-sm font-semibold text-stone-600">Photo setup: {setupLabel}</p>
-                      </div>
-                      <div className="shrink-0 rounded-lg bg-coral-soft px-3 py-2 text-center">
-                        <p className="text-xl font-bold text-coral tabular-nums">{event.photoCount}</p>
-                        <p className="text-xs font-semibold text-muted">{event.photoCount === 1 ? "photo" : "photos"}</p>
+                      {event.description ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted">{event.description}</p> : <p className="mt-3 text-sm leading-6 text-muted">Open this event to manage links, photos, recap, and settings.</p>}
+                      <div className="mt-auto pt-5">
+                        <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to={`/dashboard/events/${event.id}`}>
+                          Open event
+                        </Link>
                       </div>
                     </div>
-                    {event.description ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted">{event.description}</p> : <p className="mt-3 text-sm leading-6 text-muted">Open this event to manage links, photos, recap, and settings.</p>}
-                    <div className="mt-auto pt-5">
-                      <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to={`/dashboard/events/${event.id}`}>
-                        Open event
-                      </Link>
-                    </div>
                   </div>
-                </div>
-              </article>
+                </article>
+              </React.Fragment>
             );
           })}
         </div>
@@ -2761,28 +2919,48 @@ function CreateEvent() {
   });
   const [challengeDraft, setChallengeDraft] = useState<ChallengeDraft>(() => createEmptyChallengeDraft());
   const [error, setError] = useState("");
+  const [createFieldErrors, setCreateFieldErrors] = useState<EventSettingsFieldErrors>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const navigate = useNavigate();
 
   function update(field: keyof typeof form, value: string) {
     setForm((current) => ({ ...current, [field]: value }));
+    setCreateFieldErrors((current) => ({ ...current, [field]: undefined }));
+    setError("");
   }
 
   const selectedMode = getChallengePack(challengeDraft.type);
   const selectedPromptPack = getPromptPack(challengeDraft.promptPackSlug);
   const showPromptPackSetup = usesPromptPackSetup(challengeDraft.type);
+  const requiresRevealAt = challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
+  const eventSettingsInput = eventSettingsInputFromForm(form, { requireRevealAt: requiresRevealAt });
+  const eventSettingsValidation = validateEventSettingsInput(eventSettingsInput, { requireRevealAt: requiresRevealAt });
   const challengeValidationError = validateChallengeDraft(challengeDraft);
+  const liveCreateFieldErrors: EventSettingsFieldErrors = {};
+  if (!eventSettingsValidation.ok) {
+    if (form.name.trim() || createFieldErrors.name) liveCreateFieldErrors.name = eventSettingsValidation.fieldErrors.name;
+    if (form.description || createFieldErrors.description) liveCreateFieldErrors.description = eventSettingsValidation.fieldErrors.description;
+    if (requiresRevealAt && (!form.revealAt || createFieldErrors.revealAt)) liveCreateFieldErrors.revealAt = eventSettingsValidation.fieldErrors.revealAt;
+  }
+  const visibleCreateFieldErrors: EventSettingsFieldErrors = { ...liveCreateFieldErrors };
+  (Object.keys(createFieldErrors) as Array<keyof EventSettingsFieldErrors>).forEach((field) => {
+    if (createFieldErrors[field]) visibleCreateFieldErrors[field] = createFieldErrors[field];
+  });
+  const revealSummary = form.revealAt && !Number.isNaN(new Date(form.revealAt).getTime()) ? formatDateTime(form.revealAt) : "Needs reveal time";
   const disabledReason = !form.name.trim()
     ? "Add an event name to create your event."
-    : challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE && Number.isNaN(new Date(form.revealAt).getTime())
-        ? "Choose a valid reveal time."
+    : !eventSettingsValidation.ok
+        ? eventSettingsValidation.error
         : challengeValidationError;
   const canCreate = !disabledReason;
+  const mobileCreateLabel = canCreate ? "Create event" : form.name.trim() ? "Review settings" : "Add event name";
+  const invalidInputClass = "border-red-300 bg-red-50 focus:border-red-400 focus:ring-red-100";
 
   function selectPhotoStyle(type: ChallengeDraft["type"]) {
     setChallengeDraft((current) => ({ ...current, type }));
     setAdvancedOpen(false);
     setError("");
+    setCreateFieldErrors({});
     trackAnalytics("event_mode_selected", { path: "/dashboard/events/new", metadata: { mode: type } });
   }
 
@@ -2792,17 +2970,21 @@ function CreateEvent() {
     try {
       if (disabledReason) {
         setError(disabledReason);
+        if (!eventSettingsValidation.ok) setCreateFieldErrors(eventSettingsValidation.fieldErrors);
         return;
       }
+      if (!eventSettingsValidation.ok) {
+        setCreateFieldErrors(eventSettingsValidation.fieldErrors);
+        setError(eventSettingsValidation.error);
+        return;
+      }
+      setCreateFieldErrors({});
       const challenge = buildChallengePayload(challengeDraft);
       const data = await api<{ event: EventSummary }>("/api/host/events", {
         method: "POST",
         token: auth.token,
         body: JSON.stringify({
-          ...form,
-          name: form.name.trim(),
-          description: form.description.trim(),
-          ...(challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? { revealAt: new Date(form.revealAt).toISOString() } : {}),
+          ...eventSettingsValidation.value,
           eventTemplateSlug: challengeDraft.eventTemplateSlug,
           promptPackSlug: challengeDraft.promptPackSlug,
           challenge,
@@ -2816,6 +2998,8 @@ function CreateEvent() {
       });
       navigate(`/dashboard/events/${data.event.id}?created=1`);
     } catch (err) {
+      const apiFieldErrors = (err as { data?: { fieldErrors?: EventSettingsFieldErrors } }).data?.fieldErrors;
+      if (apiFieldErrors) setCreateFieldErrors(apiFieldErrors);
       setError((err as Error).message);
     }
   }
@@ -2837,17 +3021,44 @@ function CreateEvent() {
               <div className="mt-4 grid gap-4">
                 <label className="grid gap-2 text-sm font-bold text-stone-700">
                   Event name
-                  <TextInput value={form.name} onChange={(event) => update("name", event.target.value)} placeholder="Mia's graduation cookout" required />
+                  <TextInput
+                    value={form.name}
+                    onChange={(event) => update("name", event.target.value)}
+                    placeholder="Mia's graduation cookout"
+                    required
+                    aria-invalid={Boolean(visibleCreateFieldErrors.name) || undefined}
+                    aria-describedby={visibleCreateFieldErrors.name ? "create-event-name-error" : undefined}
+                    className={visibleCreateFieldErrors.name ? invalidInputClass : ""}
+                  />
+                  {visibleCreateFieldErrors.name ? <span id="create-event-name-error" className="text-xs font-semibold text-red-700">{visibleCreateFieldErrors.name}</span> : null}
                 </label>
                 <label className="grid gap-2 text-sm font-bold text-stone-700">
                   Description <span className="font-semibold text-stone-500">(optional)</span>
-                  <TextArea rows={3} value={form.description} onChange={(event) => update("description", event.target.value)} placeholder="Tell guests what this album is for." />
+                  <TextArea
+                    rows={3}
+                    value={form.description}
+                    onChange={(event) => update("description", event.target.value)}
+                    placeholder="Tell guests what this album is for."
+                    aria-invalid={Boolean(visibleCreateFieldErrors.description) || undefined}
+                    aria-describedby={visibleCreateFieldErrors.description ? "create-event-description-error" : undefined}
+                    className={visibleCreateFieldErrors.description ? invalidInputClass : ""}
+                  />
+                  {visibleCreateFieldErrors.description ? <span id="create-event-description-error" className="text-xs font-semibold text-red-700">{visibleCreateFieldErrors.description}</span> : null}
                 </label>
-                {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? (
+                {requiresRevealAt ? (
                   <label className="grid gap-2 text-sm font-bold text-stone-700">
                     Reveal time
-                    <TextInput type="datetime-local" value={form.revealAt} onChange={(event) => update("revealAt", event.target.value)} required />
-                    <span className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this time.</span>
+                    <TextInput
+                      type="datetime-local"
+                      value={form.revealAt}
+                      onChange={(event) => update("revealAt", event.target.value)}
+                      required
+                      aria-invalid={Boolean(visibleCreateFieldErrors.revealAt) || undefined}
+                      aria-describedby={visibleCreateFieldErrors.revealAt ? "create-event-reveal-error create-event-reveal-helper" : "create-event-reveal-helper"}
+                      className={visibleCreateFieldErrors.revealAt ? invalidInputClass : ""}
+                    />
+                    <span id="create-event-reveal-helper" className="text-xs font-semibold text-stone-500">Memory Capsule keeps the album hidden until this time.</span>
+                    {visibleCreateFieldErrors.revealAt ? <span id="create-event-reveal-error" className="text-xs font-semibold text-red-700">{visibleCreateFieldErrors.revealAt}</span> : null}
                   </label>
                 ) : null}
                 {error ? <p className="rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}
@@ -2896,7 +3107,7 @@ function CreateEvent() {
                 <p><strong className="text-stone-950">Event:</strong> {form.name.trim() || "Untitled event"}</p>
                 <p><strong className="text-stone-950">Photo style:</strong> {plainModeLabel(challengeDraft.type)}</p>
                 {showPromptPackSetup ? <p><strong className="text-stone-950">Prompts:</strong> {selectedPromptPack.name}</p> : null}
-                {challengeDraft.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? <p><strong className="text-stone-950">Reveal:</strong> {formatDateTime(form.revealAt)}</p> : null}
+                {requiresRevealAt ? <p><strong className="text-stone-950">Reveal:</strong> {revealSummary}</p> : null}
               </div>
               <div className={cx("mt-5 rounded-lg p-3 text-sm font-semibold", canCreate ? "bg-green-50 text-green-800" : "bg-[#fffaf6] text-[#653e00]")}>
                 {disabledReason || "Ready to create. You can share the QR link after setup."}
@@ -2908,7 +3119,7 @@ function CreateEvent() {
         </form>
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-white/95 p-3 shadow-sm backdrop-blur lg:hidden">
           <div className="mx-auto max-w-md">
-            <Button type="submit" form="create-event-form" className="w-full" disabled={!canCreate}>{canCreate ? "Create event" : "Add event name"}</Button>
+            <Button type="submit" form="create-event-form" className="w-full" disabled={!canCreate}>{mobileCreateLabel}</Button>
             <p className="mt-2 text-center text-xs font-semibold text-stone-600">{disabledReason || "Guest link, QR poster, and recap are created next."}</p>
           </div>
         </div>
@@ -3020,7 +3231,7 @@ function ManageEvent() {
 
   useEffect(() => {
     if (galleryFilter === "all") return;
-    if (["visible", "hidden", "featured", "reported"].includes(galleryFilter)) return;
+    if (["visible", "hidden", "featured", "liked", "reported"].includes(galleryFilter)) return;
     if (!event?.challenge) {
       setGalleryFilter("all");
       return;
@@ -3144,18 +3355,24 @@ function ManageEvent() {
     if (galleryFilter === "visible") return isPhotoVisible(photo);
     if (galleryFilter === "hidden") return photo.visibilityStatus === "HIDDEN";
     if (galleryFilter === "featured") return Boolean(photo.isFeatured);
+    if (galleryFilter === "liked") return Number(photo.likeCount || 0) > 0;
     if (galleryFilter === "reported") return Boolean(photo.reportCount);
     if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
     if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
     if (galleryFilter.startsWith("prompt:")) return photo.challengePromptId === galleryFilter.replace("prompt:", "");
     if (galleryFilter.startsWith("award:")) return photo.challengeItemId === galleryFilter.replace("award:", "");
     return true;
+  }).sort((first, second) => {
+    if (galleryFilter !== "liked") return 0;
+    return Number(second.likeCount || 0) - Number(first.likeCount || 0) || new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
   }) || [];
   const visiblePhotos = event?.photos.filter(isPhotoVisible) || [];
   const hostContributorSummary = buildContributorSummary(visiblePhotos);
   const hiddenCount = event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0;
   const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
   const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
+  const likedCount = event?.photos.filter((photo) => Number(photo.likeCount || 0) > 0).length || 0;
+  const hostAwardResults = event ? eventAnalytics?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visiblePhotos }) : null;
   const lifecycle = event ? deriveEventLifecycleStatus(event, eventAnalytics || undefined) : null;
   const shareAssets = event ? buildHostShareAssets(event) : null;
   const canViewFounderTools = Boolean(auth.user?.isFounder);
@@ -3215,6 +3432,25 @@ function ManageEvent() {
     }
   }
 
+  async function shareDetailGuestLink() {
+    if (!event || !shareAssets) return;
+    try {
+      await shareOrCopyText({
+        title: `${event.name} guest link`,
+        text: shareAssets.guestInviteMessage,
+        url: event.eventLink,
+        fallbackLabel: "Guest link",
+        analyticsName: "guest_link_shared",
+        eventId: event.id,
+        eventSlug: event.slug,
+        surface: "event_detail",
+        onStatus: setLinkCopyStatus,
+      });
+    } catch (err) {
+      setLinkCopyStatus((err as Error).message);
+    }
+  }
+
   function dismissCreatedHandoff() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("created");
@@ -3227,7 +3463,7 @@ function ManageEvent() {
     ) : lifecycle.phase === "after" && event.recapLink ? (
       <Button type="button" onClick={() => copyDetailLink("Shared Recap link", event.recapLink)}>Share recap</Button>
     ) : (
-      <Button type="button" onClick={() => copyDetailLink("Guest link", event.eventLink)}>Share guest link</Button>
+      <Button type="button" onClick={shareDetailGuestLink}>Share guest link</Button>
     )
   ) : null;
 
@@ -3260,12 +3496,12 @@ function ManageEvent() {
             </div>
           </section>
 
-          <nav className="mt-8 overflow-x-auto pb-1 sm:overflow-visible sm:pb-0">
-            <div className="flex min-w-max gap-2 rounded-[1.35rem] border border-[#eadfce] bg-white p-2 shadow-sm">
+          <nav className="mt-8">
+            <div className="grid w-full grid-cols-4 gap-1 rounded-[1.35rem] border border-[#eadfce] bg-white p-1.5 shadow-sm sm:inline-flex sm:w-auto sm:gap-2 sm:p-2">
               {tabItems.map(([key, label]) => (
                 <button
                   type="button"
-                  className={cx("rounded-[1rem] px-4 py-3 text-sm font-bold transition", activeTab === key ? "bg-stone-950 text-white" : "text-stone-700 hover:bg-[#fffaf6]")}
+                  className={cx("min-h-11 min-w-0 rounded-[1rem] px-2 py-2.5 text-center text-sm font-bold leading-tight transition sm:px-4 sm:py-3", activeTab === key ? "bg-stone-950 text-white" : "text-stone-700 hover:bg-[#fffaf6]")}
                   onClick={() => setSearchParams(key === defaultDetailTab ? {} : { tab: key })}
                   key={key}
                 >
@@ -3303,31 +3539,23 @@ function ManageEvent() {
                     </div>
                   </Card>
 
-                  <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-1">
+                  <div className="grid gap-5">
                     <Card className="text-center">
-                      <h3 className="text-lg font-bold text-ink">QR code</h3>
-                      <p className="mt-1 text-sm text-muted">Scan to add photos</p>
+                      <h3 className="text-lg font-bold text-ink">QR code event poster</h3>
+                      <p className="mt-1 text-sm text-muted">Scan, print, or share</p>
                       {event.qrCodeDataUrl ? <img className="mx-auto mt-5 aspect-square w-44 rounded-lg bg-white p-2" src={event.qrCodeDataUrl} alt="Guest upload QR code" /> : <div className="mx-auto mt-5 grid aspect-square w-44 place-items-center rounded-lg bg-stone-100 text-muted"><CleanIcon name="qr" className="h-12 w-12" /></div>}
-                      <Link className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-stone-50" to={`/dashboard/events/${event.id}/poster`}>Download</Link>
-                    </Card>
-                    <Card className="text-center">
-                      <h3 className="text-lg font-bold text-ink">Event poster</h3>
-                      <p className="mt-1 text-sm text-muted">Print or share</p>
-                      <div className="mx-auto mt-5 grid aspect-[4/3] w-44 place-items-center rounded-lg bg-coral-soft p-4 text-center">
-                        <p className="font-serif-display text-2xl font-bold text-ink">Share your photos</p>
-                      </div>
-                      <Link className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-stone-50" to={`/dashboard/events/${event.id}/poster`}>Download</Link>
+                      <Link className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink hover:bg-stone-50" to={`/dashboard/events/${event.id}/poster`}>Share</Link>
                     </Card>
                   </div>
                 </div>
 
                 <Card className="mt-5">
                   <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-center">
-                    <div>
+                    <div className="min-w-0">
                       <h3 className="text-lg font-bold text-ink">Message to paste in group chat</h3>
-                      <p className="mt-3 whitespace-pre-line rounded-lg border border-line bg-stone-50 p-4 text-sm leading-6 text-muted">{shareAssets.guestInviteMessage}</p>
+                      <p className="mt-3 whitespace-pre-line break-words rounded-lg border border-line bg-stone-50 p-4 text-sm leading-6 text-muted">{shareAssets.guestInviteMessage}</p>
                     </div>
-                    <SecondaryButton type="button" onClick={() => copyDetailText("Group chat message", shareAssets.guestInviteMessage)}>
+                    <SecondaryButton className="w-full sm:w-auto" type="button" onClick={() => copyDetailText("Group chat message", shareAssets.guestInviteMessage)}>
                       <CleanIcon name="copy" />
                       Copy message
                     </SecondaryButton>
@@ -3355,7 +3583,8 @@ function ManageEvent() {
                 </div>
                 <div className="grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-bold text-stone-700">
                   <span>{visiblePhotos.length} visible photos</span>
-                  <span>{featuredCount} featured favorites</span>
+                  <span>{featuredCount} host picks</span>
+                  <span>{likedCount} guest favorites</span>
                   <span>{hostContributorSummary.contributorCount || "Guest"} {hostContributorSummary.contributorCount === 1 ? "contributor" : "contributors"}</span>
                 </div>
               </div>
@@ -3392,7 +3621,8 @@ function ManageEvent() {
                   ["Visible photos", eventAnalytics.visiblePhotos],
                   ["Hidden photos", eventAnalytics.hiddenPhotos],
                   ["Reported photos", eventAnalytics.reportedPhotos],
-                  ["Featured photos", eventAnalytics.featuredPhotos],
+                  ["Host picks", eventAnalytics.featuredPhotos],
+                  ["Guest hearts", eventAnalytics.photoLikes || 0],
                 ].map(([label, value], index) => (
                   <MetricCard key={label} label={String(label)} value={String(value)} tone={index === 1 ? "accent" : index === 2 ? "plum" : "default"} />
                 ))}
@@ -3412,7 +3642,7 @@ function ManageEvent() {
                   ) : null}
                 </div>
               </div>
-              <HostAwardVotingSummary awardVoting={eventAnalytics.eventAwardsVoting} photos={event.photos} onFeatureWinner={(photo) => updatePhotoFeatured(photo, true)} />
+              <HostAwardResultsSummary awardResults={hostAwardResults} photos={event.photos} onFeatureWinner={(photo) => updatePhotoFeatured(photo, true)} />
             </details>
           )}
 
@@ -3509,7 +3739,8 @@ function ManageEvent() {
                     ["all", `All photos (${event.photos.length})`],
                     ["visible", `Visible (${visiblePhotos.length})`],
                     ["hidden", `Hidden (${hiddenCount})`],
-                    ["featured", `Featured (${featuredCount})`],
+                    ["featured", `Host picks (${featuredCount})`],
+                    ["liked", `Most liked (${likedCount})`],
                     ["reported", `Reported (${reportedCount})`],
                   ].map(([key, label]) => (
                     <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === key ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700 hover:bg-stone-200")} onClick={() => setGalleryFilter(key)} key={key}>{label}</button>
@@ -3570,7 +3801,7 @@ function ManageEvent() {
                     <p className="mt-1 text-stone-600">{formatDateTime(photo.createdAt)}</p>
                     <div className="mt-3 grid gap-2 sm:grid-cols-3">
                       <button className={cx("min-h-10 rounded-[0.95rem] px-4 py-2 text-sm font-bold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-[#fff0d8] text-[#653e00]")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)} disabled={photo.visibilityStatus === "HIDDEN"}>
-                        {photo.isFeatured ? "Unfavorite" : "Favorite"}
+                        {photo.isFeatured ? "Unpick" : "Host pick"}
                       </button>
                       {photo.visibilityStatus === "HIDDEN" ? (
                         <SecondaryButton className="min-h-10 rounded-[0.95rem] px-4 py-2" onClick={() => updatePhotoVisibility(photo, "VISIBLE")}>Restore</SecondaryButton>
@@ -3593,7 +3824,7 @@ function ManageEvent() {
   );
 }
 
-function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; dark?: boolean; onPhotoClick?: (photo: Photo) => void }) {
+function PhotoMosaic({ photos, dark = false, onPhotoClick, onPhotoLike }: { photos: Photo[]; dark?: boolean; onPhotoClick?: (photo: Photo) => void; onPhotoLike?: PhotoLikeToggleHandler }) {
   if (!photos.length) {
     return (
       <div className={cx("grid min-h-72 place-items-center rounded-[2rem] p-8 text-center", dark ? "bg-white/10 text-stone-200" : "border border-[#eadfce] bg-white text-stone-600")}>
@@ -3609,9 +3840,12 @@ function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; 
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
       {photos.map((photo, index) => (
         <figure className={cx("group overflow-hidden rounded-[1.45rem] border", index === 0 ? "col-span-2 row-span-2" : "", dark ? "border-white/10 bg-white/10" : "border-[#eadfce] bg-white shadow-[0_12px_30px_rgba(101,62,0,0.055)]")} key={photo.id}>
+          <div className="relative">
+            {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" className="absolute right-2 top-2 z-10" /> : null}
           <button className="block h-full w-full text-left" type="button" onClick={() => onPhotoClick?.(photo)}>
             <img className="aspect-square h-full w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
           </button>
+          </div>
           <figcaption className={cx("p-3 text-xs font-bold", dark ? "text-stone-100" : "text-stone-700")}>
             <span className="block truncate">{photo.challengeParticipantName || photo.guestNickname || "Guest"}</span>
             {photoChallengeLabel(photo) && <span className={cx("mt-1 block truncate", dark ? "text-amber-200" : "text-[#653e00]")}>{photoChallengeLabel(photo)}</span>}
@@ -3622,7 +3856,7 @@ function PhotoMosaic({ photos, dark = false, onPhotoClick }: { photos: Photo[]; 
   );
 }
 
-function RecapChallengeMoments({ story, awardVoting, event, photos, clientId, onVoteComplete, onPhotoClick }: { story: EventRecapStory; awardVoting?: AwardVotingSummary | null; event: PublicEvent; photos: Photo[]; clientId: string; onVoteComplete: () => Promise<void>; onPhotoClick: (photo: Photo) => void }) {
+function RecapChallengeMoments({ story, awardResults, photos, onPhotoClick, onPhotoLike }: { story: EventRecapStory; awardResults?: AwardResultsSummary | null; photos: Photo[]; onPhotoClick: (photo: Photo) => void; onPhotoLike?: PhotoLikeToggleHandler }) {
   return (
     <section className="mt-8" id="recap-challenge-moments">
       <div className="mb-5">
@@ -3649,9 +3883,12 @@ function RecapChallengeMoments({ story, awardVoting, event, photos, clientId, on
             {moment.photos.length ? (
               <div className="mt-4 grid grid-cols-3 gap-2">
                 {moment.photos.slice(0, 3).map((photo) => (
-                  <button className="overflow-hidden rounded-[0.9rem] bg-stone-100" key={photo.id} type="button" onClick={() => onPhotoClick(photo)}>
-                    <img className="aspect-square h-full w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                  </button>
+                  <div className="relative overflow-hidden rounded-[0.9rem] bg-stone-100" key={photo.id}>
+                    {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" /> : null}
+                    <button className="block w-full" type="button" onClick={() => onPhotoClick(photo)}>
+                      <img className="aspect-square h-full w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                    </button>
+                  </div>
                 ))}
               </div>
             ) : (
@@ -3660,9 +3897,9 @@ function RecapChallengeMoments({ story, awardVoting, event, photos, clientId, on
           </article>
         ))}
       </div>
-      {awardVoting ? (
+      {awardResults ? (
         <div className="mt-6">
-          <AwardVotingPanel event={event} photos={photos} awardVoting={awardVoting} clientId={clientId} surface="recap" onVoteComplete={onVoteComplete} />
+          <AwardResultsPanel awardResults={awardResults} photos={photos} onPhotoClick={onPhotoClick} onPhotoLike={onPhotoLike} />
         </div>
       ) : null}
     </section>
@@ -3712,7 +3949,8 @@ function EventRecap() {
   }, [slug]);
 
   const event = data?.event;
-  const story = event ? buildEventRecapStory(event, data.photos, { awardVoting: data.awardVoting }) : null;
+  const awardResults = event ? buildAwardResultsSummary({ challenge: event.challenge, photos: data.photos.filter(isPhotoVisible) }) : null;
+  const story = event ? buildEventRecapStory(event, data.photos, { awardResults, awardVoting: data.awardVoting }) : null;
   const recapHeroSentence = data?.isLocked
     ? `Photos are saved for the reveal. The recap unlocks after ${event ? formatDateTime(event.revealAt) : "the reveal time"}.`
     : story?.totalPhotos
@@ -3740,6 +3978,25 @@ function EventRecap() {
     await eventFilmApi.reportPhoto(selectedPhoto.id, { reason, note, reporterId: getAnalyticsAnonymousId() });
     setReportStatus("Thanks. The host can review this report.");
     trackAnalytics("photo_reported", { eventId: event?.id, eventSlug: event?.slug, metadata: { photoId: selectedPhoto.id, reason } });
+  }
+
+  async function handleRecapPhotoLike(photo: Photo, liked: boolean) {
+    if (!event) return;
+    const previousPhoto = photo;
+    const optimisticPhoto = applyPhotoLikeState(photo, liked);
+    setData((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, () => optimisticPhoto) } : current);
+    setSelectedPhoto((current) => current?.id === photo.id ? optimisticPhoto : current);
+    setRecapLinkStatus("");
+    try {
+      const response = await eventFilmApi.setPhotoLike(event.slug, photo.id, { clientId: session.clientId, liked });
+      setData((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, (item) => applyPhotoLikeState(item, response.liked, response.likeCount)) } : current);
+      setSelectedPhoto((current) => current?.id === photo.id ? applyPhotoLikeState(current, response.liked, response.likeCount) : current);
+      trackAnalytics(response.liked ? "photo_like_added" : "photo_like_removed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", photoId: photo.id } });
+    } catch (err) {
+      setData((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, () => previousPhoto) } : current);
+      setSelectedPhoto((current) => current?.id === photo.id ? previousPhoto : current);
+      setRecapLinkStatus(publicRouteErrorMessage(err, "Could not update that heart. Try again."));
+    }
   }
 
   function openPublicPhoto(photo: Photo) {
@@ -3800,9 +4057,12 @@ function EventRecap() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {(story.highlightPhotos.length ? story.highlightPhotos : data.photos).slice(0, 4).map((photo) => (
-                  <button className="overflow-hidden rounded-xl bg-stone-100" type="button" onClick={() => openPublicPhoto(photo)} key={photo.id}>
-                    <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                  </button>
+                  <div className="relative overflow-hidden rounded-xl bg-stone-100" key={photo.id}>
+                    <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-2 top-2 z-10" />
+                    <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
+                      <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                    </button>
+                  </div>
                 ))}
               </div>
             </section>
@@ -3818,16 +4078,19 @@ function EventRecap() {
                 <Card>
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h2 className="text-lg font-bold text-ink">Favorite moments</h2>
+                      <h2 className="text-lg font-bold text-ink">Guest favorites</h2>
                       <p className="mt-1 text-sm text-muted">Highlights from everyone</p>
                     </div>
                     <CleanIcon name="heart" className="text-coral" />
                   </div>
                   <div className="mt-5 grid grid-cols-2 gap-2">
                     {story.highlightPhotos.slice(0, 4).map((photo) => (
-                      <button className="overflow-hidden rounded-lg bg-stone-100" type="button" onClick={() => openPublicPhoto(photo)} key={photo.id}>
-                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                      </button>
+                      <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                        <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
+                        <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
+                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                   {!story.highlightPhotos.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No favorites yet. Be the first to mark a moment.</p> : null}
@@ -3843,9 +4106,12 @@ function EventRecap() {
                   </div>
                   <div className="mt-5 grid grid-cols-3 gap-2">
                     {albumPhotos.slice(0, 9).map((photo) => (
-                      <button className="overflow-hidden rounded-lg bg-stone-100" type="button" onClick={() => openPublicPhoto(photo)} key={photo.id}>
-                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                      </button>
+                      <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                        <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
+                        <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
+                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                   {!albumPhotos.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No photos yet. Share the guest link so people can add theirs.</p> : null}
@@ -3879,12 +4145,12 @@ function EventRecap() {
                   <p className="text-muted">Photos from the event, all in one place.</p>
                 </div>
                 <RecapAlbumFilterTabs filters={story.albumFilters} activeFilter={selectedFilter?.key || "all"} onChange={chooseAlbumFilter} />
-                <PhotoMosaic photos={albumPhotos} onPhotoClick={openPublicPhoto} />
+                <PhotoMosaic photos={albumPhotos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} />
               </section>
             ) : null}
 
-            {event.challenge && !data.isLocked && story.challengeMoments.some((moment) => moment.photos.length || moment.count) ? <RecapChallengeMoments story={story} awardVoting={data.awardVoting} event={event} photos={data.photos} clientId={session.clientId} onVoteComplete={loadRecap} onPhotoClick={openPublicPhoto} /> : null}
-            <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
+            {event.challenge && !data.isLocked && story.challengeMoments.some((moment) => moment.photos.length || moment.count) ? <RecapChallengeMoments story={story} awardResults={awardResults} photos={data.photos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} /> : null}
+            <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} onPhotoLike={handleRecapPhotoLike} />
           </>
         )}
       </div>
@@ -3923,7 +4189,7 @@ function GuestEvent() {
   const [showAllChallengeItems, setShowAllChallengeItems] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<GuestUploadSuccessSummary | null>(null);
   const [uploadSuccessPhoto, setUploadSuccessPhoto] = useState<Photo | null>(null);
-  const [awardVoting, setAwardVoting] = useState<AwardVotingSummary | null>(null);
+  const [awardResults, setAwardResults] = useState<AwardResultsSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [reportStatus, setReportStatus] = useState("");
   const [activeGuestTab, setActiveGuestTab] = useState<"photos" | "people" | "highlights">("photos");
@@ -3969,15 +4235,15 @@ function GuestEvent() {
       if (eventData.event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
         const recapData = await eventFilmApi.getRecapData(slug, session.clientId);
         setPhotos(recapData.photos);
-        setAwardVoting(recapData.awardVoting || null);
+        setAwardResults(recapData.awardResults || buildAwardResultsSummary({ challenge: eventData.event.challenge, photos: recapData.photos }));
       } else {
-        const photoData = await api<{ photos: Photo[] }>(`/api/events/${slug}/photos`);
+        const photoData = await eventFilmApi.getAlbumPhotos(slug, session.clientId);
         setPhotos(photoData.photos);
-        setAwardVoting(null);
+        setAwardResults(null);
       }
     } else {
       setPhotos([]);
-      setAwardVoting(null);
+      setAwardResults(null);
     }
   }
 
@@ -4163,6 +4429,33 @@ function GuestEvent() {
     trackAnalytics("photo_reported", { eventId: event?.id, eventSlug: event?.slug, metadata: { photoId: selectedPhoto.id, reason } });
   }
 
+  async function handleGuestPhotoLike(photo: Photo, liked: boolean) {
+    if (!event) return;
+    const previousPhoto = photo;
+    const optimisticPhoto = applyPhotoLikeState(photo, liked);
+    setPhotos((current) => updatePhotoInList(current, photo.id, () => optimisticPhoto));
+    setMyUploads((current) => updatePhotoInList(current, photo.id, () => optimisticPhoto));
+    setUploadSuccessPhoto((current) => current?.id === photo.id ? optimisticPhoto : current);
+    setSelectedPhoto((current) => current?.id === photo.id ? optimisticPhoto : current);
+    setMessage("");
+    setError("");
+    try {
+      const response = await eventFilmApi.setPhotoLike(event.slug, photo.id, { clientId: session.clientId, liked });
+      const applyResponse = (item: Photo) => applyPhotoLikeState(item, response.liked, response.likeCount);
+      setPhotos((current) => updatePhotoInList(current, photo.id, applyResponse));
+      setMyUploads((current) => updatePhotoInList(current, photo.id, applyResponse));
+      setUploadSuccessPhoto((current) => current?.id === photo.id ? applyResponse(current) : current);
+      setSelectedPhoto((current) => current?.id === photo.id ? applyResponse(current) : current);
+      trackAnalytics(response.liked ? "photo_like_added" : "photo_like_removed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
+    } catch (err) {
+      setPhotos((current) => updatePhotoInList(current, photo.id, () => previousPhoto));
+      setMyUploads((current) => updatePhotoInList(current, photo.id, () => previousPhoto));
+      setUploadSuccessPhoto((current) => current?.id === photo.id ? previousPhoto : current);
+      setSelectedPhoto((current) => current?.id === photo.id ? previousPhoto : current);
+      setError(publicRouteErrorMessage(err, "Could not update that heart. Try again."));
+    }
+  }
+
   function openUploadSheet() {
     setUploadSheetOpen(true);
     setOptionsOpen(false);
@@ -4177,7 +4470,14 @@ function GuestEvent() {
   const visibleAlbumPhotos = isMemoryCapsuleLocked ? [] : photos;
   const displayedPhotoCount = event?.photoCount ?? visibleAlbumPhotos.length;
   const guestSubtitle = isMemoryCapsuleLocked ? "Photos locked" : `${displayedPhotoCount} ${displayedPhotoCount === 1 ? "photo" : "photos"}`;
-  const highlightPhotos = (visibleAlbumPhotos.filter((photo) => photo.isFeatured).length ? visibleAlbumPhotos.filter((photo) => photo.isFeatured) : visibleAlbumPhotos).slice(0, 8);
+  const guestAwardResults = event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? buildAwardResultsSummary({ challenge: event.challenge, photos: visibleAlbumPhotos }) : awardResults;
+  const highlightPhotos = [...visibleAlbumPhotos].sort((first, second) => {
+    const featuredDelta = Number(Boolean(second.isFeatured)) - Number(Boolean(first.isFeatured));
+    if (featuredDelta) return featuredDelta;
+    const likeDelta = Number(second.likeCount || 0) - Number(first.likeCount || 0);
+    if (likeDelta) return likeDelta;
+    return new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
+  }).slice(0, 8);
   const contributorTiles = contributorSummary.topContributors.map((contributor) => ({
     ...contributor,
     photos: visibleAlbumPhotos
@@ -4258,18 +4558,20 @@ function GuestEvent() {
               ) : visibleAlbumPhotos.length ? (
                 <div className="columns-2 gap-1.5">
                   {visibleAlbumPhotos.map((photo) => (
-                    <button
-                      type="button"
-                      className="mb-1.5 block w-full break-inside-avoid overflow-hidden rounded-lg bg-stone-100 text-left"
-                      onClick={() => {
-                        setSelectedPhoto(photo);
-                        setReportStatus("");
-                        trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
-                      }}
-                      key={photo.id}
-                    >
-                      <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                    </button>
+                    <div className="relative mb-1.5 break-inside-avoid overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                      <PhotoHeartButton photo={photo} onToggle={handleGuestPhotoLike} variant="solid" className="absolute right-1.5 top-1.5 z-10" />
+                      <button
+                        type="button"
+                        className="block w-full text-left"
+                        onClick={() => {
+                          setSelectedPhoto(photo);
+                          setReportStatus("");
+                          trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
+                        }}
+                      >
+                        <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                      </button>
+                    </div>
                   ))}
                 </div>
               ) : (
@@ -4312,35 +4614,41 @@ function GuestEvent() {
 
             {activeGuestTab === "highlights" ? (
               <div className="px-2 pt-4">
-                {awardVoting ? <AwardVotingPanel event={event} photos={visibleAlbumPhotos} awardVoting={awardVoting} clientId={session.clientId} surface="guest_album" onVoteComplete={load} /> : null}
+                {guestAwardResults ? <AwardResultsPanel awardResults={guestAwardResults} photos={visibleAlbumPhotos} onPhotoClick={(photo) => {
+                  setSelectedPhoto(photo);
+                  setReportStatus("");
+                  trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_awards", photoId: photo.id } });
+                }} onPhotoLike={handleGuestPhotoLike} /> : null}
                 {highlightPhotos.length ? (
                   <div className="mt-4 columns-2 gap-1.5">
                     {highlightPhotos.map((photo) => (
-                      <button
-                        type="button"
-                        className="mb-1.5 block w-full break-inside-avoid overflow-hidden rounded-lg bg-stone-100 text-left"
-                        onClick={() => {
-                          setSelectedPhoto(photo);
-                          setReportStatus("");
-                          trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_highlights", photoId: photo.id } });
-                        }}
-                        key={photo.id}
-                      >
-                        <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                      </button>
+                      <div className="relative mb-1.5 break-inside-avoid overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                        <PhotoHeartButton photo={photo} onToggle={handleGuestPhotoLike} variant="solid" className="absolute right-1.5 top-1.5 z-10" />
+                        <button
+                          type="button"
+                          className="block w-full text-left"
+                          onClick={() => {
+                            setSelectedPhoto(photo);
+                            setReportStatus("");
+                            trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_highlights", photoId: photo.id } });
+                          }}
+                        >
+                          <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                        </button>
+                      </div>
                     ))}
                   </div>
                 ) : (
                   <div className="mt-8 rounded-lg border border-dashed border-stone-200 p-5 text-center">
                     <h2 className="text-lg font-bold text-stone-950">Highlights will build here.</h2>
-                    <p className="mt-2 text-sm font-semibold leading-6 text-stone-500">Featured and recent photos appear as the album grows.</p>
+                    <p className="mt-2 text-sm font-semibold leading-6 text-stone-500">Host picks, hearts, and recent photos appear as the album grows.</p>
                   </div>
                 )}
               </div>
             ) : null}
           </section>
 
-          <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} />
+          <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} onPhotoLike={handleGuestPhotoLike} />
 
           <div className="fixed inset-x-0 bottom-7 z-30 flex justify-center px-4 pointer-events-none">
             <button type="button" className="pointer-events-auto inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-7 py-3 text-base font-bold text-white shadow-[0_6px_16px_rgba(232,93,63,0.24)] transition hover:bg-[#d84d32]" onClick={openUploadSheet}>
@@ -4490,7 +4798,7 @@ function GuestEvent() {
                     </section>
                   ) : null}
                   {message && !uploadSuccess ? <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p> : null}
-                  {message && !uploadSuccess && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}`}>Vote on awards</Link> : null}
+                  {message && !uploadSuccess && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}`}>Heart award favorites</Link> : null}
                   {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error} {file ? "Try again or choose a smaller image." : ""}</p> : null}
                   {error && file ? <SecondaryButton type="button" className="mt-3 w-full" onClick={() => {
                     trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
@@ -4527,7 +4835,10 @@ function GuestEvent() {
                   {myUploads.length ? (
                     <div className="mt-4 grid grid-cols-3 gap-2">
                       {myUploads.map((photo) => (
-                        <img className="aspect-square w-full rounded-lg object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} key={photo.id} />
+                        <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                          <PhotoHeartButton photo={photo} onToggle={handleGuestPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
+                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                        </div>
                       ))}
                     </div>
                   ) : (
@@ -4554,6 +4865,8 @@ function GuestEvent() {
 }
 
 function App() {
+  useMobileKeyboardZoomRecovery();
+
   return (
     <AuthProvider>
       <AppErrorBoundary>

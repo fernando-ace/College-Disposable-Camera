@@ -2,10 +2,10 @@ import * as React from "react";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Clipboard from "expo-clipboard";
 import { Link, router, useLocalSearchParams } from "expo-router";
-import { Linking, Pressable, Text, View } from "react-native";
+import { Linking, Pressable, Share, Text, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
-import type { EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus, UpdateEventSettingsInput } from "@eventfilm/shared";
-import { CHALLENGE_TYPES, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
+import type { AnalyticsEventName, EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus, UpdateEventSettingsInput } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, buildAwardResultsSummary, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, isPhotoVisible, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
 import { ActionButton, Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader, colors } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -212,6 +212,28 @@ export default function EventDetailScreen() {
     setLinkCopyStatus(`${label} copied.`);
   }
 
+  async function shareEventLink(label: string, url?: string | null, text?: string, analyticsName: AnalyticsEventName = "guest_link_shared") {
+    if (!event || !url) return;
+    api.trackAnalyticsEvent({
+      name: "native_share_opened",
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+    await Share.share({ message: text || `${label} for ${event.name}: ${url}`, url });
+    setLinkCopyStatus(`${label} shared.`);
+    api.trackAnalyticsEvent({
+      name: analyticsName,
+      source: "mobile",
+      path: `/events/${event.id}`,
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "event_detail" },
+    }).catch(() => {});
+  }
+
   React.useEffect(() => {
     let isMounted = true;
 
@@ -324,7 +346,7 @@ export default function EventDetailScreen() {
               </View>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
                 <View style={{ flex: 1, minWidth: 150 }}>
-                  <Button onPress={() => copyEventLink("Guest upload link", event.eventLink)}>Share guest link</Button>
+                  <Button onPress={() => shareEventLink("Guest upload link", event.eventLink, shareAssets?.guestInviteMessage, "guest_link_shared")}>Share guest link</Button>
                 </View>
                 <View style={{ flex: 1, minWidth: 150 }}>
                   <Button tone="secondary" onPress={() => router.push(`/events/${event.id}/share`)}>Open event</Button>
@@ -413,7 +435,7 @@ export default function EventDetailScreen() {
             <LinkHealthPanel linkChecks={linkChecks} />
             <EventMetricsPanel summary={analyticsSummary} />
             <RecapStatusPanel event={event} summary={analyticsSummary} />
-            <EventAwardsVotingPanel summary={analyticsSummary} photos={event.photos} recapLink={event.recapLink} />
+            <EventAwardsLeadersPanel summary={analyticsSummary} event={event} recapLink={event.recapLink} />
             {lifecycle?.phase === "after" ? (
               <>
                 <PostEventSummaryPanel event={event} summary={analyticsSummary} />
@@ -433,7 +455,8 @@ export default function EventDetailScreen() {
                     <PhotoCard photo={photo} compact />
                     <Card padding={13}>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                        {photo.isFeatured ? <Badge>Featured</Badge> : null}
+                        {photo.isFeatured ? <Badge>Host pick</Badge> : null}
+                        {Number(photo.likeCount || 0) > 0 ? <Badge tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</Badge> : null}
                         {photo.visibilityStatus === "HIDDEN" ? <Badge tone="red">Hidden</Badge> : null}
                         {photo.reportCount ? <Badge tone="red">{photo.reportCount} reported</Badge> : null}
                       </View>
@@ -446,7 +469,7 @@ export default function EventDetailScreen() {
                           )}
                         </View>
                         <View style={{ flex: 1, minWidth: 132 }}>
-                          <Button tone="secondary" disabled={photo.visibilityStatus === "HIDDEN"} onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Unfeature" : "Feature"}</Button>
+                          <Button tone="secondary" disabled={photo.visibilityStatus === "HIDDEN"} onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Remove pick" : "Host pick"}</Button>
                         </View>
                       </View>
                       <Body tone="muted">Hide removes a photo from public views and keeps it restorable.</Body>
@@ -741,7 +764,7 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
         <View style={{ gap: 8 }}>
           <SectionHeader title="Award winners" />
           {postSummary.awardWinners.slice(0, 4).map((winner) => (
-            <Body key={winner.categoryId} tone={winner.photoId ? "success" : "muted"}>{winner.categoryLabel}: {winner.photoId ? `${winner.voteCount} votes${winner.isTie ? " - tie" : ""}` : "No winner yet"}</Body>
+            <Body key={winner.categoryId} tone={winner.photoId ? "success" : "muted"}>{winner.categoryLabel}: {winner.photoId ? `${winner.likeCount} hearts${winner.isTie ? " - tie" : ""}` : "No winner yet"}</Body>
           ))}
         </View>
       ) : null}
@@ -752,9 +775,11 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
 function RecapStatusPanel({ event, summary }: { event: EventSummary & { photos: Photo[] }; summary: EventAnalyticsSummary | null }) {
   const { api } = useAuth();
   const [status, setStatus] = React.useState("");
-  const story = buildEventRecapStory(event, event.photos, { awardVoting: summary?.eventAwardsVoting });
+  const awardResults = summary?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: event.photos.filter(isPhotoVisible) });
+  const story = buildEventRecapStory(event, event.photos, { awardResults, awardVoting: summary?.eventAwardsVoting });
   const lifecycle = deriveEventLifecycleStatus(event, summary || undefined);
   const featuredCount = event.photos.filter((photo) => photo.isFeatured).length;
+  const likedCount = event.photos.filter((photo) => Number(photo.likeCount || 0) > 0).length;
 
   async function previewRecap() {
     if (!event.recapLink) return;
@@ -784,11 +809,12 @@ function RecapStatusPanel({ event, summary }: { event: EventSummary & { photos: 
     <Card tone="warm">
       <SectionHeader
         title={lifecycle.phase === "after" ? "Recap is ready to share" : "Recap is building"}
-        subtitle="Preview the recap, feature favorites, then send one link to everyone."
+        subtitle="Preview the recap, choose host picks, then send one link to everyone."
       />
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         <StatTile label="Visible" value={story.totalPhotos} tone="accent" />
-        <StatTile label="Featured" value={featuredCount} />
+        <StatTile label="Host picks" value={featuredCount} />
+        <StatTile label="Guest favorites" value={likedCount} />
         <StatTile label="Contributors" value={story.contributorCount} />
       </View>
       <Body tone="muted">{story.challengeHeadline}: {story.challengeCopy}</Body>
@@ -898,6 +924,7 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
   const rows = [
     ["Guest joins", summary.guestJoins],
     ["Uploads", summary.uploads],
+    ["Hearts", summary.photoLikes || 0],
     ["Recaps", summary.recapOpens],
     ["Hidden", summary.hiddenPhotos],
     ["Reported", summary.reportedPhotos],
@@ -915,34 +942,35 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
   );
 }
 
-function EventAwardsVotingPanel({ summary, photos, recapLink }: { summary: EventAnalyticsSummary | null; photos: Photo[]; recapLink?: string | null }) {
-  const awardVoting = summary?.eventAwardsVoting;
-  if (!awardVoting?.categories.length) return null;
-  const photosById = new Map(photos.map((photo) => [photo.id, photo]));
+function EventAwardsLeadersPanel({ summary, event, recapLink }: { summary: EventAnalyticsSummary | null; event: EventSummary & { photos: Photo[] }; recapLink?: string | null }) {
+  const visiblePhotos = event.photos.filter(isPhotoVisible);
+  const awardResults = summary?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visiblePhotos });
+  if (!awardResults.categories.length) return null;
+  const photosById = new Map(visiblePhotos.map((photo) => [photo.id, photo]));
 
   return (
     <Card tone="warm">
-      <SectionHeader title="Event Awards voting" subtitle="Guests vote from the public Recap, then winners appear inside the finished memory page." />
+      <SectionHeader title="Award leaders" subtitle="Guest hearts decide award leaders. Host picks stay separate for manual curation." />
       <View style={{ gap: 10 }}>
-        {awardVoting.categories.map((category) => {
+        {awardResults.categories.map((category) => {
           const leader = category.leaderPhotoIds[0] ? photosById.get(category.leaderPhotoIds[0]) : null;
-          const voteCount = category.voteTotals[0]?.voteCount || 0;
+          const likeCount = leader ? Number(leader.likeCount || category.likeTotals.find((item) => item.photoId === leader.id)?.likeCount || 0) : 0;
           return (
             <Card key={category.categoryId} padding={13}>
               <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
                 <Body>{category.categoryLabel}</Body>
                 {category.isTie ? <Badge tone="amber">Tie</Badge> : null}
               </View>
-              <Body tone="muted">{category.submissionCount} submissions - {category.totalVotes} votes</Body>
+              <Body tone="muted">{category.submissionCount} submissions - {category.totalLikes} {category.totalLikes === 1 ? "heart" : "hearts"}</Body>
               <Body tone={leader ? "success" : "muted"}>
-                {leader ? `Leader: ${leader.guestNickname || "Guest photo"} (${voteCount} ${voteCount === 1 ? "vote" : "votes"})` : category.noSubmissions ? "No submissions yet." : "No votes yet."}
+                {leader ? `Leader: ${leader.guestNickname || "Guest photo"} (${likeCount} ${likeCount === 1 ? "heart" : "hearts"})` : category.noSubmissions ? "No submissions yet." : "No hearts yet."}
               </Body>
             </Card>
           );
         })}
       </View>
-      <Button tone="secondary" disabled={!recapLink} onPress={() => recapLink && Linking.openURL(recapLink)}>Open Recap awards</Button>
-      <Body tone="muted">Voting is browser/session based and intentionally lightweight.</Body>
+      <Button tone="secondary" disabled={!recapLink} onPress={() => recapLink && Linking.openURL(recapLink)}>Open Recap leaders</Button>
+      <Body tone="muted">Guests can heart many photos, but only once per photo from a browser.</Body>
     </Card>
   );
 }

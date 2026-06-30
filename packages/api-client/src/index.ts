@@ -7,6 +7,7 @@ import type {
   FounderOverview,
   HostFeedbackInput,
   GuestStatus,
+  AwardResultsSummary,
   AwardVotingSummary,
   Photo,
   PhotoReportReason,
@@ -64,6 +65,7 @@ export type EventRecapResponse = {
   isLocked: boolean;
   photos: Photo[];
   awardVoting?: AwardVotingSummary;
+  awardResults?: AwardResultsSummary;
 };
 
 export type GuestMyUploadsResponse = {
@@ -103,12 +105,26 @@ export type EventAnalyticsSummary = {
   hiddenPhotos: number;
   reportedPhotos: number;
   featuredPhotos: number;
+  photoLikes?: number;
   guestJoins: number;
   uploads: number;
   recapOpens: number;
   activeGuests: number;
   eventAwardsVoting?: AwardVotingSummary;
+  eventAwardResults?: AwardResultsSummary;
   hostFeedback?: HostEventFeedback | null;
+};
+
+export type PhotoLikeRequest = {
+  clientId: string;
+  liked: boolean;
+};
+
+export type PhotoLikeResponse = {
+  ok: true;
+  photoId: string;
+  liked: boolean;
+  likeCount: number;
 };
 
 export type FounderOverviewResponse = {
@@ -407,6 +423,12 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
         body: JSON.stringify(input),
       });
     },
+    setPhotoLike(slug: string, photoId: string, input: PhotoLikeRequest) {
+      return request<PhotoLikeResponse>(`/api/events/${encodeURIComponent(slug)}/photos/${encodeURIComponent(photoId)}/likes`, {
+        method: "POST",
+        body: JSON.stringify(input),
+      });
+    },
     getGuestStatus(slug: string, clientId: string) {
       return request<GuestStatus>(`/api/events/${encodeURIComponent(slug)}/guest-status?clientId=${encodeURIComponent(clientId)}`);
     },
@@ -420,8 +442,9 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
         body: JSON.stringify(input),
       });
     },
-    getAlbumPhotos(slug: string) {
-      return request<{ photos: Photo[] }>(`/api/events/${encodeURIComponent(slug)}/photos`);
+    getAlbumPhotos(slug: string, clientId?: string) {
+      const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
+      return request<{ photos: Photo[] }>(`/api/events/${encodeURIComponent(slug)}/photos${query}`);
     },
   };
 }

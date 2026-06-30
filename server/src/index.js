@@ -13,7 +13,9 @@ const prisma = require("./prisma");
 const { signToken, requireAuth, requireFounderAuth } = require("./auth");
 const { port, clientUrl, clientOrigins, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction, founderEmails, isFounderEmail } = require("./config");
 const { EventSettingsError, updateHostEventSettings, validateEventSettingsInput } = require("./event-settings");
+const { getEventLastActivityAt, sortEventsByRecentActivity } = require("./event-activity");
 const { buildFounderOverview } = require("./founder");
+const { PhotoLikeError, markPhotosLikedByClient, normalizeGuestClientId, setPhotoLike } = require("./photo-likes");
 const {
   createPhotoObjectKey,
   getPhotoPreviewUrl,
@@ -62,6 +64,13 @@ const analyticsLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const likeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 const ANALYTICS_EVENT_NAMES = new Set([
   "landing_page_viewed",
   "cta_clicked",
@@ -103,6 +112,8 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "photo_featured",
   "photo_unfeatured",
   "photo_reported",
+  "photo_like_added",
+  "photo_like_removed",
   "album_downloaded",
   "photo_lightbox_opened",
   "award_votes_opened",
@@ -483,6 +494,51 @@ function buildAwardVotingSummary({ challenge, photos, votes, myVotesByCategory }
   };
 }
 
+function photoLikeCount(photo) {
+  return photo?._count?.likes ?? photo?.likeCount ?? (Array.isArray(photo?.likes) ? photo.likes.length : 0);
+}
+
+function buildAwardResultsSummary({ challenge, photos }) {
+  const categories = categoriesFromConfig(challenge?.config);
+  if (challenge?.type !== CHALLENGE_TYPE_EVENT_AWARDS) {
+    return { signal: "likes", categories: [] };
+  }
+
+  const photosByCategory = new Map();
+  for (const photo of photos || []) {
+    if (!photo?.challengeItemId) continue;
+    const group = photosByCategory.get(photo.challengeItemId) || [];
+    group.push(photo);
+    photosByCategory.set(photo.challengeItemId, group);
+  }
+
+  return {
+    signal: "likes",
+    categories: categories.map((category) => {
+      const categoryId = category.id || `award-${category.order}`;
+      const categoryPhotos = photosByCategory.get(categoryId) || [];
+      const likeTotals = categoryPhotos
+        .map((photo) => ({ photoId: photo.id, likeCount: photoLikeCount(photo) }))
+        .filter((item) => item.likeCount > 0)
+        .sort((a, b) => b.likeCount - a.likeCount || a.photoId.localeCompare(b.photoId));
+      const totalLikes = likeTotals.reduce((total, item) => total + item.likeCount, 0);
+      const topLikeCount = likeTotals[0]?.likeCount || 0;
+      const leaderPhotoIds = likeTotals.filter((item) => item.likeCount === topLikeCount && topLikeCount > 0).map((item) => item.photoId);
+      return {
+        categoryId,
+        categoryLabel: category.label,
+        submissionCount: categoryPhotos.length,
+        totalLikes,
+        likeTotals,
+        leaderPhotoIds,
+        isTie: leaderPhotoIds.length > 1,
+        noSubmissions: categoryPhotos.length === 0,
+        noLikes: likeTotals.length === 0,
+      };
+    }),
+  };
+}
+
 async function loadAwardVotingSummary(event, { clientId = "" } = {}) {
   const challenge = event?.challenges?.[0] || null;
   if (challenge?.type !== CHALLENGE_TYPE_EVENT_AWARDS) return undefined;
@@ -509,6 +565,32 @@ async function loadAwardVotingSummary(event, { clientId = "" } = {}) {
   return buildAwardVotingSummary({ challenge, photos: visiblePhotos, votes, myVotesByCategory });
 }
 
+function loadAwardResultsSummary(event) {
+  const challenge = event?.challenges?.[0] || null;
+  if (challenge?.type !== CHALLENGE_TYPE_EVENT_AWARDS) return undefined;
+  return buildAwardResultsSummary({ challenge, photos: Array.isArray(event.photos) ? event.photos : [] });
+}
+
+async function upsertPhotoLikeFromLegacyVote({ eventId, photoId, clientId }) {
+  const guestClientId = normalizeGuestClientId(clientId);
+  if (!eventId || !photoId || !guestClientId) return;
+  await prisma.photoLike.upsert({
+    where: {
+      eventId_photoId_guestClientId: {
+        eventId,
+        photoId,
+        guestClientId,
+      },
+    },
+    update: {},
+    create: {
+      eventId,
+      photoId,
+      guestClientId,
+    },
+  });
+}
+
 function photoReportPayload(report) {
   return {
     id: report.id,
@@ -520,6 +602,7 @@ function photoReportPayload(report) {
 
 function photoPayload(photo, { includeModeration = false } = {}) {
   const reportCount = photo._count?.reports ?? photo.reportCount ?? (Array.isArray(photo.reports) ? photo.reports.length : 0);
+  const likeCount = photoLikeCount(photo);
   return {
     id: photo.id,
     url: `${serverUrl}${getPhotoUrl(photo.id)}`,
@@ -545,6 +628,8 @@ function photoPayload(photo, { includeModeration = false } = {}) {
     hiddenReason: includeModeration ? photo.hiddenReason : undefined,
     isFeatured: Boolean(photo.isFeatured),
     featuredAt: photo.featuredAt,
+    likeCount,
+    likedByMe: photo.likedByMe === undefined ? undefined : Boolean(photo.likedByMe),
     reportCount: includeModeration ? reportCount : undefined,
     reports: includeModeration && Array.isArray(photo.reports) ? photo.reports.map(photoReportPayload) : undefined,
   };
@@ -779,6 +864,7 @@ function eventPayload(event, { includePhotos = false, includeModeration = false 
     ...event,
     eventLink: publicEventUrl(event.slug),
     recapLink: recapUrl(event.slug),
+    lastActivityAt: event.lastActivityAt || getEventLastActivityAt(event),
     photoCount: event._count?.photos ?? event.photoCount ?? 0,
     challenge: challengePayload(challenge),
     previewPhotos: event.photos && !includePhotos ? event.photos.map((photo) => photoPayload(photo, { includeModeration })) : event.previewPhotos,
@@ -793,7 +879,7 @@ function hostEventDetailInclude() {
     photos: {
       where: activePhotoWhere(),
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-      include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
+      include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true, likes: true } } },
     },
     challenges: activeChallengeInclude(),
     _count: { select: { photos: { where: visiblePhotoWhere() } } },
@@ -981,7 +1067,7 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     include: {
       photos: {
         where: visiblePhotoWhere(),
-        select: { id: true, challengeItemId: true },
+        select: { id: true, challengeItemId: true, _count: { select: { likes: true } } },
       },
       challenges: activeChallengeInclude(),
     },
@@ -995,6 +1081,7 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     hiddenPhotos,
     reportedPhotos,
     featuredPhotos,
+    photoLikes,
     guestJoins,
     recapOpens,
     activeGuestRows,
@@ -1005,6 +1092,7 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, visibilityStatus: PHOTO_VISIBILITY_HIDDEN }) }),
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, reports: { some: {} } }) }),
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, isFeatured: true }) }),
+    prisma.photoLike.count({ where: { eventId: event.id } }),
     countAnalytics("guest_joined_event", eventScope),
     countAnalytics("recap_opened", eventScope),
     prisma.analyticsEvent.findMany({
@@ -1032,11 +1120,13 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       hiddenPhotos,
       reportedPhotos,
       featuredPhotos,
+      photoLikes,
       guestJoins,
       uploads: photoCount,
       recapOpens,
       activeGuests: activeGuestRows.length,
       eventAwardsVoting: await loadAwardVotingSummary(event),
+      eventAwardResults: loadAwardResultsSummary(event),
       hostFeedback: hostFeedbackPayload(latestFeedback),
     },
   });
@@ -1110,14 +1200,14 @@ app.get("/api/host/events", requireAuth, async (req, res) => {
         where: visiblePhotoWhere(),
         orderBy: { createdAt: "desc" },
         take: 6,
-        include: { guest: true, challengeParticipant: true },
+        include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
       },
       challenges: activeChallengeInclude(),
       _count: { select: { photos: { where: visiblePhotoWhere() } } },
     },
   });
   res.json({
-    events: events.map((event) => eventPayload(event)),
+    events: sortEventsByRecentActivity(events).map((event) => eventPayload(event)),
   });
 });
 
@@ -1435,7 +1525,7 @@ app.get("/api/host/events/:eventId/photos", requireAuth, async (req, res) => {
       guest: true,
       challengeParticipant: true,
       reports: { orderBy: { createdAt: "desc" } },
-      _count: { select: { reports: true } },
+      _count: { select: { reports: true, likes: true } },
     },
   });
 
@@ -1461,7 +1551,7 @@ app.patch("/api/host/events/:eventId/photos/:photoId/visibility", requireAuth, a
       hiddenAt: nextStatus === PHOTO_VISIBILITY_HIDDEN ? new Date() : null,
       hiddenReason: nextStatus === PHOTO_VISIBILITY_HIDDEN ? String(req.body?.hiddenReason || "").slice(0, 160) || "Hidden by host" : null,
     },
-    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
+    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true, likes: true } } },
   });
 
   trackApiAnalytics(nextStatus === PHOTO_VISIBILITY_HIDDEN ? "photo_hidden" : "photo_restored", {
@@ -1485,7 +1575,7 @@ app.patch("/api/host/events/:eventId/photos/:photoId/featured", requireAuth, asy
   const updated = await prisma.photo.update({
     where: { id: photo.id },
     data: { isFeatured, featuredAt: isFeatured ? new Date() : null },
-    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true } } },
+    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true, likes: true } } },
   });
 
   trackApiAnalytics(isFeatured ? "photo_featured" : "photo_unfeatured", {
@@ -1565,7 +1655,7 @@ app.get("/api/events/:slug/recap", async (req, res) => {
       photos: {
         where: visiblePhotoWhere(),
         orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-        include: { guest: true, challengeParticipant: true },
+        include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
       },
       challenges: activeChallengeInclude(),
       _count: { select: { photos: { where: visiblePhotoWhere() } } },
@@ -1576,7 +1666,10 @@ app.get("/api/events/:slug/recap", async (req, res) => {
   const isLocked = publicAlbumIsLocked(event);
   const isRevealed = !isLocked;
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
-  const awardVoting = !isLocked ? await loadAwardVotingSummary(event, { clientId }) : undefined;
+  const publicPhotos = isLocked ? [] : await markPhotosLikedByClient(prisma, event.id, event.photos, clientId);
+  const eventWithPublicPhotos = { ...event, photos: publicPhotos };
+  const awardVoting = !isLocked ? await loadAwardVotingSummary(eventWithPublicPhotos, { clientId }) : undefined;
+  const awardResults = !isLocked ? loadAwardResultsSummary(eventWithPublicPhotos) : undefined;
 
   if (event.challenges?.[0]?.type === CHALLENGE_TYPE_EVENT_AWARDS) {
     trackApiAnalytics("award_votes_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap" } });
@@ -1593,9 +1686,45 @@ app.get("/api/events/:slug/recap", async (req, res) => {
     eventLink: publicEventUrl(event.slug),
     recapLink: recapUrl(event.slug),
     isLocked,
-    photos: isLocked ? [] : event.photos.map(photoPayload),
+    photos: publicPhotos.map(photoPayload),
     ...(awardVoting ? { awardVoting } : {}),
+    ...(awardResults ? { awardResults } : {}),
   });
+});
+
+app.post("/api/events/:slug/photos/:photoId/likes", likeLimiter, async (req, res) => {
+  try {
+    const result = await setPhotoLike(prisma, {
+      eventSlug: req.params.slug,
+      photoId: req.params.photoId,
+      clientId: req.body?.clientId,
+      liked: req.body?.liked,
+      eventInclude: { challenges: activeChallengeInclude() },
+      isEventLocked: publicAlbumIsLocked,
+      visiblePhotoWhere,
+    });
+
+    trackApiAnalytics(result.liked ? "photo_like_added" : "photo_like_removed", {
+      eventId: result.event.id,
+      eventSlug: result.event.slug,
+      anonymousId: result.clientId,
+      metadata: { photoId: result.photoId, likeCount: result.likeCount },
+    });
+
+    res.status(result.liked ? 201 : 200).json({
+      ok: true,
+      photoId: result.photoId,
+      liked: result.liked,
+      likeCount: result.likeCount,
+    });
+  } catch (error) {
+    if (error instanceof PhotoLikeError) {
+      const payload = { error: error.message };
+      if (error.revealAt) payload.revealAt = error.revealAt;
+      return res.status(error.status).json(payload);
+    }
+    return res.status(400).json({ error: error.message || "Could not update like" });
+  }
 });
 
 app.post("/api/events/:slug/votes", async (req, res) => {
@@ -1639,6 +1768,7 @@ app.post("/api/events/:slug/votes", async (req, res) => {
         guestClientId: clientId.slice(0, 160),
       },
     });
+    await upsertPhotoLikeFromLegacyVote({ eventId: event.id, photoId: photo.id, clientId });
 
     trackApiAnalytics("award_vote_cast", {
       eventId: event.id,
@@ -1660,13 +1790,15 @@ app.post("/api/events/:slug/votes", async (req, res) => {
         },
         select: { photoId: true },
       });
+      const existingPhotoId = existingVote?.photoId || photo.id;
+      await upsertPhotoLikeFromLegacyVote({ eventId: event.id, photoId: existingPhotoId, clientId });
       trackApiAnalytics("award_vote_duplicate_blocked", {
         eventId: event.id,
         eventSlug: event.slug,
         anonymousId: clientId,
-        metadata: { photoId: existingVote?.photoId || photo.id, challengeItemId: category.id, categoryId: category.id },
+        metadata: { photoId: existingPhotoId, challengeItemId: category.id, categoryId: category.id },
       });
-      return res.json({ ok: true, photoId: existingVote?.photoId || photo.id, challengeItemId: category.id, selected: true, duplicate: true });
+      return res.json({ ok: true, photoId: existingPhotoId, challengeItemId: category.id, selected: true, duplicate: true });
     }
     return res.status(400).json({ error: error.message || "Could not record vote" });
   }
@@ -1701,15 +1833,16 @@ app.get("/api/events/:slug/my-uploads", async (req, res) => {
       photos: {
         where: visiblePhotoWhere(),
         orderBy: { createdAt: "desc" },
-        include: { guest: true, challengeParticipant: true },
+        include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
       },
     },
   });
   const used = guest?._count.photos || 0;
+  const photos = await markPhotosLikedByClient(prisma, event.id, guest?.photos || [], String(clientId));
   res.json({
     uploadedCount: used,
     remainingUploads: null,
-    photos: (guest?.photos || []).map(photoPayload),
+    photos: photos.map(photoPayload),
   });
 });
 
@@ -1796,7 +1929,7 @@ app.post("/api/events/:slug/photos", uploadLimiter, upload.single("photo"), asyn
         challengeItemLabel: selectedParticipant?.colorName || selectedPrompt?.text || selectedAwardCategory?.label || null,
         challengeItemKind: selectedParticipant ? "color" : selectedPrompt ? "prompt" : selectedAwardCategory ? "award" : null,
       },
-      include: { guest: true, challengeParticipant: true },
+      include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
     });
     uploadedObjectKey = null;
 
@@ -1817,7 +1950,7 @@ app.get("/api/events/:slug/photos", async (req, res) => {
   const event = await prisma.event.findUnique({
     where: { slug: req.params.slug },
     include: {
-      photos: { where: visiblePhotoWhere(), orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }], include: { guest: true, challengeParticipant: true } },
+      photos: { where: visiblePhotoWhere(), orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }], include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } } },
       challenges: activeChallengeInclude(),
     },
   });
@@ -1825,7 +1958,9 @@ app.get("/api/events/:slug/photos", async (req, res) => {
   if (publicAlbumIsLocked(event)) {
     return res.status(403).json({ error: `Photos are locked until ${event.revealAt.toISOString()}`, revealAt: event.revealAt });
   }
-  res.json({ photos: event.photos.map(photoPayload) });
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
+  const photos = await markPhotosLikedByClient(prisma, event.id, event.photos, clientId);
+  res.json({ photos: photos.map(photoPayload) });
 });
 
 app.post("/api/photos/:photoId/reports", async (req, res) => {

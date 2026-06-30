@@ -16,6 +16,7 @@ import {
   buildHostShareAssets,
   buildPostEventHostSummary,
   buildChallengeProgressSummary,
+  buildAwardResultsSummary,
   buildAwardVotingSummary,
   isAwardVotingEnabled,
   buildChallengePayload,
@@ -263,7 +264,7 @@ test("unknown templates and old events use safe fallbacks", () => {
   );
   assert.equal(metadata.templateName, undefined);
   assert.equal(metadata.recapTitle, "Favorite moments");
-  assert.equal(metadata.recapSubtitle, "Photos the host picked to show first.");
+  assert.equal(metadata.recapSubtitle, "Guest favorites, host picks, and the moments that rose to the top.");
 });
 
 test("event lifecycle status is derived from photo state and Memory Capsule reveal state", () => {
@@ -393,7 +394,7 @@ test("post-event host summary combines visible photos, contributors, analytics, 
   const summary = buildPostEventHostSummary(
     event,
     [
-      photo({ id: "one", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T01:00:00.000Z", isFeatured: true }),
+      photo({ id: "one", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T01:00:00.000Z", isFeatured: true, likeCount: 2 }),
       photo({ id: "two", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T02:00:00.000Z", reportCount: 1 }),
       photo({ id: "hidden", guestNickname: "Alex", visibilityStatus: "HIDDEN", createdAt: "2026-06-02T02:00:00.000Z" }),
     ],
@@ -415,7 +416,7 @@ test("post-event host summary combines visible photos, contributors, analytics, 
   assert.equal(summary.guestJoins, 8);
   assert.equal(summary.uploadsOverTime[0].count, 2);
   assert.equal(summary.challengeCompletion.rows[0].count, 2);
-  assert.deepEqual(summary.awardWinners, [{ categoryId: "funny", categoryLabel: "Funniest", photoId: "one", voteCount: 2, isTie: false }]);
+  assert.deepEqual(summary.awardWinners, [{ categoryId: "funny", categoryLabel: "Funniest", photoId: "one", likeCount: 2, voteCount: 2, isTie: false }]);
 });
 
 test("host feedback validation supports submit and skip states with bounded text", () => {
@@ -678,6 +679,43 @@ test("award voting summary ignores votes for photos not in the visible photo set
   assert.equal(funniest.leaderPhotoIds.join(","), "visible-photo");
 });
 
+test("award results summary uses heart counts for leaders, ties, and no-like states", () => {
+  const challenge = {
+    type: CHALLENGE_TYPES.EVENT_AWARDS,
+    config: {
+      categories: [
+        { id: "award-one", label: "Funniest Photo", order: 0 },
+        { id: "award-two", label: "Best Outfit", order: 1 },
+      ],
+    },
+  };
+
+  const summary = buildAwardResultsSummary({
+    challenge,
+    photos: [
+      photo({ id: "a", challengeItemId: "award-one", likeCount: 4 }),
+      photo({ id: "b", challengeItemId: "award-one", likeCount: 4 }),
+      photo({ id: "c", challengeItemId: "award-one", likeCount: 1 }),
+      photo({ id: "d", challengeItemId: "award-two", likeCount: 0 }),
+    ],
+  });
+
+  const funniest = summary.categories.find((category) => category.categoryId === "award-one");
+  const bestOutfit = summary.categories.find((category) => category.categoryId === "award-two");
+
+  assert.equal(summary.signal, "likes");
+  assert.equal(funniest?.submissionCount, 3);
+  assert.equal(funniest?.totalLikes, 9);
+  assert.deepEqual(funniest?.leaderPhotoIds, ["a", "b"]);
+  assert.equal(funniest?.isTie, true);
+  assert.deepEqual(funniest?.likeTotals.map((item) => `${item.photoId}:${item.likeCount}`), ["a:4", "b:4", "c:1"]);
+
+  assert.equal(bestOutfit?.submissionCount, 1);
+  assert.equal(bestOutfit?.totalLikes, 0);
+  assert.equal(bestOutfit?.noLikes, true);
+  assert.deepEqual(bestOutfit?.leaderPhotoIds, []);
+});
+
 function photo(input: Partial<Photo>): Photo {
   return {
     id: input.id || "photo",
@@ -816,7 +854,7 @@ test("recap metadata excludes hidden photos and leads with featured photos", () 
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["featured", "recent"]);
 });
 
-test("recap story prioritizes featured, winners, voted, challenge, and recent photos without duplicate highlight sections", () => {
+test("recap story prioritizes host picks, liked winners, guest favorites, challenge, and recent photos without duplicate highlight sections", () => {
   const event = {
     id: "event",
     name: "Awards Night",
@@ -835,32 +873,23 @@ test("recap story prioritizes featured, winners, voted, challenge, and recent ph
       categories: [{ id: "best-fit", label: "Best fit", order: 0 }],
     },
   } satisfies EventSummary;
-  const awardVoting = buildAwardVotingSummary({
-    challenge: event.challenge,
-    photos: [photo({ id: "winner", challengeItemId: "best-fit" }), photo({ id: "voted", challengeItemId: "best-fit" })],
-    votes: [
-      { photoId: "winner", challengeItemId: "best-fit" },
-      { photoId: "winner", challengeItemId: "best-fit" },
-      { photoId: "voted", challengeItemId: "best-fit" },
-    ],
-  });
   const story = buildEventRecapStory(
     event,
     [
       photo({ id: "featured", isFeatured: true, createdAt: "2026-01-01T00:01:00.000Z" }),
-      photo({ id: "winner", challengeItemId: "best-fit", challengeItemKind: "award", createdAt: "2026-01-01T00:02:00.000Z" }),
-      photo({ id: "voted", challengeItemId: "best-fit", challengeItemKind: "award", createdAt: "2026-01-01T00:03:00.000Z" }),
+      photo({ id: "winner", challengeItemId: "best-fit", challengeItemKind: "award", likeCount: 4, createdAt: "2026-01-01T00:02:00.000Z" }),
+      photo({ id: "liked", challengeItemId: "best-fit", challengeItemKind: "award", likeCount: 3, createdAt: "2026-01-01T00:03:00.000Z" }),
       photo({ id: "challenge", challengeItemId: "best-fit", challengeItemKind: "award", createdAt: "2026-01-01T00:04:00.000Z" }),
       photo({ id: "recent", createdAt: "2026-01-01T00:05:00.000Z" }),
     ],
-    { awardVoting },
   );
 
-  assert.deepEqual(story.highlightReel.map((section) => section.key), ["featured", "award-winners", "most-voted", "challenge-moments", "recent"]);
-  assert.deepEqual(story.highlightReel.map((section) => section.title), ["Favorite moments", "Award winners", "Guest favorites", "Prompts", "Photos"]);
-  assert.deepEqual(story.highlightReel.map((section) => section.photos.map((item) => item.id)), [["featured"], ["winner"], ["voted"], ["challenge"], ["recent"]]);
+  assert.deepEqual(story.highlightReel.map((section) => section.key), ["host-picks", "award-winners", "guest-favorites", "challenge-moments", "recent"]);
+  assert.deepEqual(story.highlightReel.map((section) => section.title), ["Host picks", "Award winners", "Guest favorites", "Prompts", "Photos"]);
+  assert.deepEqual(story.highlightReel.map((section) => section.photos.map((item) => item.id)), [["featured"], ["winner"], ["liked"], ["challenge"], ["recent"]]);
   assert.equal(new Set(story.highlightReel.flatMap((section) => section.photos.map((item) => item.id))).size, 5);
-  assert.equal(story.challengeMoments[0]?.voteCount, 3);
+  assert.equal(story.challengeMoments[0]?.likeCount, 7);
+  assert.equal(story.challengeMoments[0]?.voteCount, 7);
   assert.equal(story.challengeHeadline, "Award winners");
 });
 
@@ -896,6 +925,37 @@ test("recap story excludes hidden photos and builds mode-specific moments and fi
   assert.deepEqual(story.challengeMoments.map((moment) => [moment.title, moment.count]), [["Red Team", 1], ["Blue Team", 0]]);
   assert.equal(story.albumFilters.some((filter) => filter.photoIds.includes("hidden")), false);
   assert.equal(story.albumFilters.some((filter) => filter.key === "challenge-red-team"), true);
+});
+
+test("recap story picks top-hearted photos for prompt moments and guest favorites", () => {
+  const event = {
+    id: "event",
+    name: "Prompt Night",
+    slug: "prompt-night",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/prompt-night",
+    photoCount: 3,
+    challenge: {
+      id: "challenge",
+      type: CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT,
+      title: "Photo Prompts",
+      instructions: "Pick a prompt.",
+      participants: [],
+      prompts: [{ id: "dance", text: "Best dance move", order: 0 }],
+    },
+  } satisfies EventSummary;
+
+  const story = buildEventRecapStory(event, [
+    photo({ id: "newer", challengePromptId: "dance", challengeItemId: "dance", likeCount: 1, createdAt: "2026-01-01T00:04:00.000Z" }),
+    photo({ id: "top", challengePromptId: "dance", challengeItemId: "dance", likeCount: 5, createdAt: "2026-01-01T00:02:00.000Z" }),
+    photo({ id: "other", createdAt: "2026-01-01T00:05:00.000Z" }),
+  ]);
+
+  assert.equal(story.challengeMoments[0]?.photos[0]?.id, "top");
+  assert.equal(story.challengeMoments[0]?.likeCount, 5);
+  assert.equal(story.albumFilters.some((filter) => filter.key === "liked" && filter.count === 2), true);
 });
 
 test("recap story handles old events, templates, and memory capsule locked copy", () => {

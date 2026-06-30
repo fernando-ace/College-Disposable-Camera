@@ -622,6 +622,7 @@ export function PhotoCard({ photo, compact = false }: { photo: Photo; compact?: 
         <Text selectable style={{ color: colors.ink, fontSize: compact ? 14 : 16, lineHeight: compact ? 18 : 20, fontWeight: "900" }}>{photo.challengeParticipantName || photo.guestNickname || "Guest"}</Text>
         {photo.challengeColorName ? <Badge tone="stone">{photo.challengeColorName}</Badge> : null}
         {photoChallengeLabel(photo) && !photo.challengeColorName ? <Caption>{photoChallengeLabel(photo)}</Caption> : null}
+        {Number(photo.likeCount || 0) > 0 ? <Badge tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</Badge> : null}
       </View>
     </Card>
   );

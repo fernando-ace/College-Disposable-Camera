@@ -163,6 +163,8 @@ export type Photo = {
   hiddenReason?: string | null;
   isFeatured?: boolean;
   featuredAt?: ISODateString | null;
+  likeCount?: number;
+  likedByMe?: boolean;
   reportCount?: number;
   reports?: PhotoReport[];
 };
@@ -237,7 +239,7 @@ export type EventRecapMetadata = {
   recentPhotos: Photo[];
 };
 
-export type EventRecapHighlightKind = "featured" | "award_winner" | "voted" | "challenge" | "recent";
+export type EventRecapHighlightKind = "featured" | "award_winner" | "liked" | "voted" | "challenge" | "recent";
 
 export type EventRecapHighlight = {
   key: string;
@@ -256,6 +258,7 @@ export type EventRecapChallengeMoment = {
   colorHex?: string;
   photos: Photo[];
   isComplete?: boolean;
+  likeCount?: number;
   voteCount?: number;
   isTie?: boolean;
 };
@@ -296,7 +299,8 @@ export type AwardWinnerSummary = {
   categoryId: string;
   categoryLabel: string;
   photoId?: string;
-  voteCount: number;
+  likeCount: number;
+  voteCount?: number;
   isTie: boolean;
 };
 
@@ -425,6 +429,8 @@ export const ANALYTICS_EVENT_NAMES = [
   "photo_featured",
   "photo_unfeatured",
   "photo_reported",
+  "photo_like_added",
+  "photo_like_removed",
   "album_downloaded",
   "photo_lightbox_opened",
   "award_votes_opened",
@@ -492,6 +498,28 @@ export type AwardCategoryVotingSummary = {
 export type AwardVotingSummary = {
   votingEnabled: boolean;
   categories: AwardCategoryVotingSummary[];
+};
+
+export type AwardLikeTotal = {
+  photoId: string;
+  likeCount: number;
+};
+
+export type AwardCategoryResultSummary = {
+  categoryId: string;
+  categoryLabel: string;
+  submissionCount: number;
+  totalLikes: number;
+  likeTotals: AwardLikeTotal[];
+  leaderPhotoIds: string[];
+  isTie: boolean;
+  noSubmissions: boolean;
+  noLikes: boolean;
+};
+
+export type AwardResultsSummary = {
+  signal: "likes";
+  categories: AwardCategoryResultSummary[];
 };
 
 export type AnalyticsEventInput = {
@@ -679,6 +707,9 @@ export type EventSummary = {
   slug: string;
   eventDate: ISODateString;
   revealAt: ISODateString;
+  createdAt?: ISODateString;
+  updatedAt?: ISODateString;
+  lastActivityAt?: ISODateString;
   photoLimitPerGuest: number;
   eventTemplateSlug?: EventTemplateSlug | string | null;
   promptPackSlug?: PromptPackSlug | string | null;
@@ -786,6 +817,57 @@ export function buildAwardVotingSummary({
   };
 
   return summary;
+}
+
+function photoLikeCount(photo: Pick<Photo, "likeCount">) {
+  return Math.max(0, Number(photo.likeCount || 0));
+}
+
+export function buildAwardResultsSummary({
+  challenge,
+  photos,
+}: {
+  challenge?: Pick<EventChallenge, "type" | "config"> | null;
+  photos: Pick<Photo, "id" | "challengeItemId" | "likeCount">[];
+}): AwardResultsSummary {
+  if (challenge?.type !== CHALLENGE_TYPES.EVENT_AWARDS) {
+    return { signal: "likes", categories: [] };
+  }
+
+  const categories = categoriesFromChallenge(challenge);
+  const photosByCategory = new Map<string, Array<Pick<Photo, "id" | "challengeItemId" | "likeCount">>>();
+  for (const photo of photos) {
+    if (!photo.challengeItemId) continue;
+    const group = photosByCategory.get(photo.challengeItemId) || [];
+    group.push(photo);
+    photosByCategory.set(photo.challengeItemId, group);
+  }
+
+  return {
+    signal: "likes",
+    categories: categories.map((category) => {
+      const categoryId = category.id || `award-${category.order}`;
+      const categoryPhotos = photosByCategory.get(categoryId) || [];
+      const likeTotals = categoryPhotos
+        .map((photo) => ({ photoId: photo.id, likeCount: photoLikeCount(photo) }))
+        .filter((item) => item.likeCount > 0)
+        .sort((a, b) => b.likeCount - a.likeCount || a.photoId.localeCompare(b.photoId));
+      const totalLikes = likeTotals.reduce((sum, item) => sum + item.likeCount, 0);
+      const topLikeCount = likeTotals[0]?.likeCount || 0;
+      const leaderPhotoIds = likeTotals.filter((item) => item.likeCount === topLikeCount && topLikeCount > 0).map((item) => item.photoId);
+      return {
+        categoryId,
+        categoryLabel: category.label,
+        submissionCount: categoryPhotos.length,
+        totalLikes,
+        likeTotals,
+        leaderPhotoIds,
+        isTie: leaderPhotoIds.length > 1,
+        noSubmissions: categoryPhotos.length === 0,
+        noLikes: likeTotals.length === 0,
+      };
+    }),
+  };
 }
 
 export type GuestStatus = {
@@ -1320,6 +1402,8 @@ export function sortPhotosForRecap(photos: Photo[]) {
   return [...photos].sort((a, b) => {
     const featuredDelta = Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured));
     if (featuredDelta) return featuredDelta;
+    const likeDelta = photoLikeCount(b) - photoLikeCount(a);
+    if (likeDelta) return likeDelta;
     return byCreatedAtDesc(a, b);
   });
 }
@@ -1905,6 +1989,7 @@ export function buildPostEventHostSummary(
     recapOpens?: number | null;
     featuredPhotos?: number | null;
     eventAwardsVoting?: AwardVotingSummary | null;
+    eventAwardResults?: AwardResultsSummary | null;
   } = {},
 ): PostEventHostSummary {
   const contributorSummary = buildContributorSummary(photos, 5);
@@ -1912,14 +1997,16 @@ export function buildPostEventHostSummary(
   const hiddenPhotos = photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length;
   const reportedPhotos = photos.filter((photo) => Boolean(photo.reportCount)).length;
   const featuredPhotos = analytics.featuredPhotos ?? photos.filter((photo) => Boolean(photo.isFeatured)).length;
-  const winners = (analytics.eventAwardsVoting?.categories || []).map((category) => {
+  const awardResults = analytics.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visible });
+  const winners = (awardResults.categories || []).map((category) => {
     const leaderPhotoId = category.leaderPhotoIds[0];
-    const leaderVotes = leaderPhotoId ? category.voteTotals.find((vote) => vote.photoId === leaderPhotoId)?.voteCount || 0 : 0;
+    const leaderLikes = leaderPhotoId ? category.likeTotals.find((like) => like.photoId === leaderPhotoId)?.likeCount || 0 : 0;
     return {
       categoryId: category.categoryId,
       categoryLabel: category.categoryLabel,
       photoId: leaderPhotoId,
-      voteCount: leaderVotes,
+      likeCount: leaderLikes,
+      voteCount: leaderLikes,
       isTie: category.isTie,
     };
   });
@@ -2174,7 +2261,7 @@ export function buildGuestChallengeProgress(
     return {
       ...summary,
       headline: "Award categories are collecting contenders",
-      note: selected ? `Submitting for ${selected.label}. Vote from the recap after reveal.` : "Pick an award category for your upload.",
+      note: selected ? `Submitting for ${selected.label}. Heart favorites in the recap after reveal.` : "Pick an award category for your upload.",
       selectedLabel: selected?.label,
     };
   }
@@ -2230,7 +2317,7 @@ function photosForChallengeMoment(photos: Photo[], row: ChallengeProgressRow) {
   });
 }
 
-function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSummary | null): EventRecapHighlight[] {
+function buildRecapHighlightReel(photos: Photo[], awardResults?: AwardResultsSummary | null, awardVoting?: AwardVotingSummary | null): EventRecapHighlight[] {
   const sortedPhotos = sortPhotosForRecap(photos);
   const used = new Set<string>();
   const sections: EventRecapHighlight[] = [];
@@ -2240,16 +2327,23 @@ function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSumma
     sections.push({ key, title, description, kind, photos: selected });
   };
 
-  addSection("featured", "Favorite moments", "Photos the host marked as favorites for everyone to see first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
+  addSection("host-picks", "Host picks", "Photos the host marked to show first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
 
-  const winnerIds = (awardVoting?.categories || []).flatMap((category) => category.leaderPhotoIds);
-  addSection("award-winners", "Award winners", "Winning and tied Awards photos from the recap vote.", "award_winner", photosByIds(sortedPhotos, winnerIds));
+  const winnerIds = awardResults?.categories.length
+    ? awardResults.categories.flatMap((category) => category.leaderPhotoIds)
+    : (awardVoting?.categories || []).flatMap((category) => category.leaderPhotoIds);
+  addSection("award-winners", "Award winners", "Winning and tied Awards photos based on guest hearts.", "award_winner", photosByIds(sortedPhotos, winnerIds));
 
-  const votedIds = (awardVoting?.categories || [])
-    .flatMap((category) => category.voteTotals)
-    .sort((a, b) => b.voteCount - a.voteCount)
-    .map((vote) => vote.photoId);
-  addSection("most-voted", "Guest favorites", "Photos guests voted for, kept below the main album.", "voted", photosByIds(sortedPhotos, votedIds));
+  const likedPhotos = sortedPhotos.filter((photo) => photoLikeCount(photo) > 0);
+  addSection("guest-favorites", "Guest favorites", "Photos guests hearted during and after the event.", "liked", likedPhotos);
+
+  if (!likedPhotos.length && awardVoting?.categories.length) {
+    const votedIds = awardVoting.categories
+      .flatMap((category) => category.voteTotals)
+      .sort((a, b) => b.voteCount - a.voteCount)
+      .map((vote) => vote.photoId);
+    addSection("guest-favorites", "Guest favorites", "Photos guests voted for before hearts were added.", "voted", photosByIds(sortedPhotos, votedIds));
+  }
 
   addSection(
     "challenge-moments",
@@ -2264,7 +2358,7 @@ function buildRecapHighlightReel(photos: Photo[], awardVoting?: AwardVotingSumma
   return sections;
 }
 
-function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined, photos: Photo[], awardVoting?: AwardVotingSummary | null): EventRecapChallengeMoment[] {
+function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined, photos: Photo[], awardResults?: AwardResultsSummary | null, awardVoting?: AwardVotingSummary | null): EventRecapChallengeMoment[] {
   const progress = buildChallengeProgressSummary(challenge, photos);
   if (!challenge || progress.mode === "NONE") {
     return [
@@ -2294,18 +2388,26 @@ function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined
   }
 
   return progress.rows.map((row) => {
-    const rowPhotos = photosForChallengeMoment(photos, row);
-    const awardCategory = awardVoting?.categories.find((category) => category.categoryId === row.id);
-    const winnerPhotos = awardCategory?.leaderPhotoIds.length ? photosByIds(photos, awardCategory.leaderPhotoIds) : [];
-    const representative = winnerPhotos.length ? winnerPhotos : rowPhotos;
+    const rowPhotos = sortPhotosForRecap(photosForChallengeMoment(photos, row));
+    const awardCategory = awardResults?.categories.find((category) => category.categoryId === row.id);
+    const legacyAwardCategory = awardVoting?.categories.find((category) => category.categoryId === row.id);
+    const winnerPhotos = awardCategory?.leaderPhotoIds.length
+      ? photosByIds(photos, awardCategory.leaderPhotoIds)
+      : legacyAwardCategory?.leaderPhotoIds.length
+        ? photosByIds(photos, legacyAwardCategory.leaderPhotoIds)
+        : [];
+    const representative = winnerPhotos.length ? sortPhotosForRecap(winnerPhotos) : rowPhotos;
+    const topLikeCount = representative[0] ? photoLikeCount(representative[0]) : 0;
     const status = row.kind === "award" && awardCategory
       ? awardCategory.noSubmissions
         ? "No submissions yet."
-        : awardCategory.noVotes
-          ? "Submissions are in; votes are still open."
-          : `${awardCategory.totalVotes} ${awardCategory.totalVotes === 1 ? "vote" : "votes"}${awardCategory.isTie ? " with a tie at the top." : "."}`
+        : awardCategory.noLikes
+          ? "Submissions are in; hearts are still open."
+          : `${awardCategory.totalLikes} ${awardCategory.totalLikes === 1 ? "heart" : "hearts"}${awardCategory.isTie ? " with a tie at the top." : "."}`
       : row.complete
-        ? `${row.count} ${row.count === 1 ? "photo" : "photos"} captured.`
+        ? topLikeCount > 0
+          ? `${row.count} ${row.count === 1 ? "photo" : "photos"} captured. Top moment has ${topLikeCount} ${topLikeCount === 1 ? "heart" : "hearts"}.`
+          : `${row.count} ${row.count === 1 ? "photo" : "photos"} captured.`
         : "Waiting for a photo.";
     return {
       key: row.id,
@@ -2316,8 +2418,9 @@ function buildRecapChallengeMoments(challenge: EventChallenge | null | undefined
       colorHex: row.colorHex,
       photos: representative.slice(0, 3),
       isComplete: row.complete,
-      voteCount: awardCategory?.totalVotes,
-      isTie: awardCategory?.isTie,
+      likeCount: awardCategory?.totalLikes ?? topLikeCount,
+      voteCount: awardCategory?.totalLikes ?? legacyAwardCategory?.totalVotes,
+      isTie: awardCategory?.isTie ?? legacyAwardCategory?.isTie,
     };
   });
 }
@@ -2328,7 +2431,9 @@ function buildRecapAlbumFilters(challenge: EventChallenge | null | undefined, ph
     { key: "all", label: "Photos from the event", count: sortedPhotos.length, photoIds: photoIds(sortedPhotos) },
   ];
   const featured = sortedPhotos.filter((photo) => Boolean(photo.isFeatured));
-  if (featured.length) filters.push({ key: "featured", label: "Favorite moments", count: featured.length, photoIds: photoIds(featured) });
+  if (featured.length) filters.push({ key: "featured", label: "Host picks", count: featured.length, photoIds: photoIds(featured) });
+  const liked = sortedPhotos.filter((photo) => photoLikeCount(photo) > 0);
+  if (liked.length) filters.push({ key: "liked", label: "Guest favorites", count: liked.length, photoIds: photoIds(liked) });
   const recent = sortedPhotos.slice(0, Math.min(12, sortedPhotos.length));
   if (recent.length && recent.length !== sortedPhotos.length) filters.push({ key: "recent", label: "Recent photos", count: recent.length, photoIds: photoIds(recent) });
 
@@ -2342,14 +2447,15 @@ function buildRecapAlbumFilters(challenge: EventChallenge | null | undefined, ph
 export function buildEventRecapStory(
   event: EventRecapSourceEvent,
   photos: Photo[],
-  options: { awardVoting?: AwardVotingSummary | null } = {},
+  options: { awardResults?: AwardResultsSummary | null; awardVoting?: AwardVotingSummary | null } = {},
 ): EventRecapStory {
   const sortedPhotos = sortPhotosForRecap(visiblePhotos(photos));
   const template = getEventTemplate(event.eventTemplateSlug);
   const modeLabel = challengeLabel(event.challenge);
   const contributors = buildContributorSummary(sortedPhotos, 5);
-  const highlights = buildRecapHighlightReel(sortedPhotos, options.awardVoting);
-  const challengeMoments = buildRecapChallengeMoments(event.challenge, sortedPhotos, options.awardVoting);
+  const awardResults = options.awardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: sortedPhotos });
+  const highlights = buildRecapHighlightReel(sortedPhotos, awardResults, options.awardVoting);
+  const challengeMoments = buildRecapChallengeMoments(event.challenge, sortedPhotos, awardResults, options.awardVoting);
   const capsuleCopy = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
   const isLocked = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && event.isRevealed === false;
   const highlightPhotos = highlights.flatMap((section) => section.photos).slice(0, 8);
@@ -2376,7 +2482,7 @@ export function buildEventRecapStory(
     modeLabel,
     templateName: template?.name,
     recapTitle: "Favorite moments",
-    recapSubtitle: "Photos the host picked to show first.",
+    recapSubtitle: "Guest favorites, host picks, and the moments that rose to the top.",
     totalPhotos: sortedPhotos.length,
     contributorCount: contributors.contributorCount,
     highlightPhotos: highlightPhotos.length ? highlightPhotos : sortedPhotos.slice(0, 8),

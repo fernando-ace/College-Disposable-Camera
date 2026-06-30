@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createEventFilmApiClient, EventFilmApiError, normalizeEventFilmBaseUrl } from "./index.ts";
-import type { AwardVoteRequest } from "./index.ts";
+import type { AwardVoteRequest, PhotoLikeRequest } from "./index.ts";
 
 test("normalizes EventFilm API base URLs", () => {
   assert.equal(normalizeEventFilmBaseUrl("http://localhost:4000/"), "http://localhost:4000");
@@ -179,6 +179,29 @@ test("award vote endpoint helper sends requested payload", async () => {
 
   await client.castEventAwardVote("abc", input);
   assert.equal(calls[0], "https://api.eventfilm.test/api/events/abc/votes");
+  assert.equal(seenBody, JSON.stringify(input));
+});
+
+test("photo like endpoint helper sends requested payload", async () => {
+  const calls: string[] = [];
+  let seenBody = "";
+  const input: PhotoLikeRequest = { clientId: "client-1", liked: true };
+
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      seenBody = String(init?.body || "");
+      return new Response(JSON.stringify({ ok: true, photoId: "photo-1", liked: true, likeCount: 2 }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  const response = await client.setPhotoLike("spring formal", "photo 1", input);
+  assert.deepEqual(response, { ok: true, photoId: "photo-1", liked: true, likeCount: 2 });
+  assert.equal(calls[0], "https://api.eventfilm.test/api/events/spring%20formal/photos/photo%201/likes");
   assert.equal(seenBody, JSON.stringify(input));
 });
 

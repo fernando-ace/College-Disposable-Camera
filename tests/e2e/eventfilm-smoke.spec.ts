@@ -23,6 +23,27 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function heartCountFromLabel(label: string | null) {
+  return Number(label?.match(/(\d+)\s+hearts?/i)?.[1] || 0);
+}
+
+async function expectNoHorizontalOverflow(page: Page) {
+  const sizes = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(sizes.scrollWidth).toBeLessThanOrEqual(sizes.viewportWidth);
+}
+
+async function expectLocatorFitsViewport(page: Page, locator: Locator) {
+  const box = await locator.boundingBox();
+  expect(box).not.toBeNull();
+  if (!box) return;
+  const viewportWidth = await page.evaluate(() => window.innerWidth);
+  expect(Math.floor(box.x)).toBeGreaterThanOrEqual(0);
+  expect(Math.ceil(box.x + box.width)).toBeLessThanOrEqual(viewportWidth);
+}
+
 const isDeployedBrowserSmoke = !isLocalUrl(baseUrl);
 
 function requireHttpsUrl(value: string, envName: string) {
@@ -342,6 +363,22 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("link", { name: /Add photos/i }).first()).toBeVisible();
       if ((revealedRecap.photos || []).length > 0) {
         await expect(page.locator("#recap-photos img").first()).toBeVisible();
+        const likeButton = page.getByRole("button", { name: /^Like photo, \d+ hearts?$/i }).first();
+        await expect(likeButton).toBeVisible();
+        const beforeCount = heartCountFromLabel(await likeButton.getAttribute("aria-label"));
+        await likeButton.click();
+        const unlikeButton = page.getByRole("button", { name: /^Unlike photo, \d+ hearts?$/i }).first();
+        await expect(unlikeButton).toBeVisible();
+        expect(heartCountFromLabel(await unlikeButton.getAttribute("aria-label"))).toBe(beforeCount + 1);
+        await page.reload();
+        const persistedUnlikeButton = page.getByRole("button", { name: /^Unlike photo, \d+ hearts?$/i }).first();
+        await expect(persistedUnlikeButton).toBeVisible();
+        await persistedUnlikeButton.click();
+        await expect(page.getByRole("button", { name: /^Like photo, \d+ hearts?$/i }).first()).toBeVisible();
+      }
+      if ((revealedRecap.awardResults?.categories || []).length > 0) {
+        await expect(page.getByRole("heading", { name: "Award leaders" }).first()).toBeVisible();
+        await expect(page.locator("body")).toContainText(/Hearts decide winners|heart favorite photos/i);
       }
     }
   });
@@ -385,14 +422,24 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("heading", { name: "Your event is ready." })).toHaveCount(0);
     await expect(page).not.toHaveURL(/created=1/);
 
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/dashboard/events/${eventId}?tab=share`);
     await expect(page.getByText(/Next step/i).first()).toBeVisible();
     await expect(page.getByText("Guest link").first()).toBeVisible();
-    await expect(page.getByText("QR code").first()).toBeVisible();
-    await expect(page.getByText("Event poster").first()).toBeVisible();
+    const qrPosterCard = page.getByRole("heading", { name: "QR code event poster" }).locator("..");
+    await expect(qrPosterCard).toBeVisible();
+    await expect(qrPosterCard.getByText("Scan, print, or share")).toBeVisible();
+    await expect(qrPosterCard.getByRole("link", { name: "Share" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
     await expect(page.getByText("Message to paste in group chat").first()).toBeVisible();
     await expect(page.getByText("Which link should I use?").first()).toBeVisible();
     await expect(page.getByRole("button", { name: "Copy message" })).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+    for (const tab of ["Share", "Photos", "Recap", "Settings"]) {
+      await expectLocatorFitsViewport(page, page.getByRole("button", { name: tab, exact: true }));
+    }
+    await expectLocatorFitsViewport(page, page.getByText("Message to paste in group chat").locator("..").getByText(/Add your photos here:/));
+    await expectLocatorFitsViewport(page, page.getByRole("button", { name: "Copy message" }));
+    await page.setViewportSize({ width: 1280, height: 720 });
     await page.getByRole("button", { name: "Settings" }).click();
     try {
       const updatedName = `${originalSettings.name} Smoke`;
@@ -405,8 +452,9 @@ test.describe("EventFilm browser smoke", () => {
       await page.getByRole("button", { name: "Share", exact: true }).click();
       await expect(page.locator("h1", { hasText: updatedName })).toBeVisible();
       await expect(page.getByText("Guest link").first()).toBeVisible();
-      await expect(page.getByText("QR code").first()).toBeVisible();
-      await expect(page.getByText("Event poster").first()).toBeVisible();
+      const refreshedQrPosterCard = page.getByRole("heading", { name: "QR code event poster" }).locator("..");
+      await expect(refreshedQrPosterCard).toBeVisible();
+      await expect(refreshedQrPosterCard.getByRole("link", { name: "Share" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
       await expect(page.getByText("Message to paste in group chat").first()).toBeVisible();
       await expect(page.getByRole("button", { name: "Copy message" })).toBeVisible();
       await expect(page.locator("input[aria-label='Guest link']")).toHaveValue(new RegExp(`/e/${seededSlug}`));
@@ -441,16 +489,29 @@ test.describe("EventFilm browser smoke", () => {
           revealAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
         },
       });
+      await page.setViewportSize({ width: 390, height: 844 });
       await page.goto("/dashboard");
       await expect(page.getByRole("heading", { name: "Event library" })).toBeVisible();
       await expect(page.getByLabel("Search events")).toBeVisible();
       await expect(page.getByText(updatedName).first()).toBeVisible();
-      await expect(page.getByRole("link", { name: "Open event" }).first()).toBeVisible();
+      await expectNoHorizontalOverflow(page);
+      const mobileEventCard = page.getByRole("link", { name: new RegExp(`Open event: ${escapeRegExp(updatedName)}`) }).first();
+      await expect(mobileEventCard).toBeVisible();
+      await expect(mobileEventCard).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}$`));
+      await expectLocatorFitsViewport(page, mobileEventCard);
+      await expect(mobileEventCard).not.toContainText("Open this event to manage");
+      const mobileEventCardBox = await mobileEventCard.boundingBox();
+      expect(mobileEventCardBox).not.toBeNull();
+      if (mobileEventCardBox) {
+        expect(Math.abs(mobileEventCardBox.height - mobileEventCardBox.width * 9 / 16)).toBeLessThanOrEqual(2);
+      }
       await expect(page.getByRole("button", { name: "Share guest link" })).toHaveCount(0);
       await expect(page.getByText("Recap ready")).toHaveCount(0);
       await expect(page.getByText("More")).toHaveCount(0);
       await page.getByLabel("Search events").fill(updatedName);
-      await expect(page.getByText(`${updatedName}`)).toBeVisible();
+      await expect(page.getByText(updatedName).first()).toBeVisible();
+      await expect(mobileEventCard).toBeVisible();
+      await page.setViewportSize({ width: 1280, height: 720 });
 
       await page.goto(`/dashboard/events/${eventId}?tab=recap`);
       await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
