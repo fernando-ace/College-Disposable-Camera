@@ -11,6 +11,7 @@ export {
   categoriesFromChallenge,
   challengeTypeName,
   colorBySlug,
+  colorTeamDisplayName,
   createCategoriesFromPack,
   createCategory,
   createDefaultAwardCategories,

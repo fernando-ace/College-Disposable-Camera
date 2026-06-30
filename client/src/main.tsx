@@ -23,6 +23,7 @@ import {
   categoriesFromChallenge,
   challengeLabel,
   colorBySlug,
+  colorTeamDisplayName,
   createCategoriesFromPack,
   createCategory,
   createDefaultAwardCategories,
@@ -70,6 +71,9 @@ const API_ORIGIN = new URL(API_BASE_URL).origin;
 const DEFAULT_LANDING_DEMO_SLUG = "eventfilm-beta-demo-storage-smoke";
 const LANDING_DEMO_SLUG = (import.meta.env.VITE_LANDING_DEMO_SLUG || DEFAULT_LANDING_DEMO_SLUG).trim() || DEFAULT_LANDING_DEMO_SLUG;
 const LANDING_DEMO_PATH = "/demo";
+const LANDING_DEMO_VIDEO_POSTER = "/demo/guest-upload-poster.webp";
+const LANDING_DEMO_VIDEO_MP4 = "/demo/guest-upload-demo.mp4";
+const LANDING_DEMO_VIDEO_WEBM = "/demo/guest-upload-demo.webm";
 const LANDING_USE_CASES = [
   { label: "Pregames", icon: "cup", image: "/landing/pregames.jpg" },
   { label: "Birthdays", icon: "cake", image: "/landing/birthdays.jpg" },
@@ -1036,13 +1040,24 @@ function ChallengeSetup({
     onChange({ ...draft, participants: draft.participants.filter((_, participantIndex) => participantIndex !== index) });
   }
 
-  function autoAssignColors() {
+  function randomizeColors() {
+    const shuffledPalette = [...COLOR_HUNT_PALETTE];
+    for (let index = shuffledPalette.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [shuffledPalette[index], shuffledPalette[swapIndex]] = [shuffledPalette[swapIndex], shuffledPalette[index]];
+    }
+
+    const hasDifferentAssignment = draft.participants.some((participant, index) => participant.colorSlug !== shuffledPalette[index % shuffledPalette.length].colorSlug);
+    if (!hasDifferentAssignment && shuffledPalette.length > 1) {
+      const firstColor = shuffledPalette.shift();
+      if (firstColor) shuffledPalette.push(firstColor);
+    }
+
     onChange({
       ...draft,
       participants: draft.participants.map((participant, index) => ({
         ...participant,
-        ...COLOR_HUNT_PALETTE[index % COLOR_HUNT_PALETTE.length],
-        displayName: participant.displayName,
+        ...shuffledPalette[index % shuffledPalette.length],
       })),
     });
   }
@@ -1194,13 +1209,13 @@ function ChallengeSetup({
               <h3 className="font-display text-lg font-bold">Set up Color Hunt</h3>
               <p className="text-sm text-stone-600">Assign each person a color. Guests will upload photos of things they find in their color.</p>
             </div>
-            <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={autoAssignColors}>Auto assign colors</SecondaryButton>
+            <SecondaryButton type="button" className="min-h-10 px-4 py-2" onClick={randomizeColors}>Randomize colors</SecondaryButton>
           </div>
 
           <div className="grid gap-3">
             {draft.participants.map((participant, index) => (
               <div className="grid gap-3 rounded-2xl bg-white p-3 sm:grid-cols-[1fr_190px_auto] sm:items-center" key={index}>
-                <TextInput value={participant.displayName} onChange={(event) => updateParticipantName(index, event.target.value)} placeholder="Participant name" />
+                <TextInput value={participant.displayName} onChange={(event) => updateParticipantName(index, event.target.value)} placeholder={colorTeamDisplayName({ ...participant, displayName: "" })} />
                 <label className="grid gap-1 text-xs font-bold uppercase text-stone-500">
                   Color
                   <select className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-sm font-bold text-stone-800 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-100" value={participant.colorSlug} onChange={(event) => updateParticipantColor(index, event.target.value)}>
@@ -2052,6 +2067,7 @@ function LandingRedesign() {
 
 function LandingDemoGate() {
   const [status, setStatus] = useState<"checking" | "ready" | "fallback">("checking");
+  const [videoLoadFailed, setVideoLoadFailed] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -2086,7 +2102,7 @@ function LandingDemoGate() {
           Dashboard
         </LandingButtonLink>
       </header>
-      <section className="mx-auto grid max-w-[1040px] items-center gap-8 px-5 py-10 md:grid-cols-[0.86fr_1.14fr] md:px-10 md:py-16">
+      <section className="mx-auto grid max-w-[1040px] items-center gap-5 px-5 py-8 md:grid-cols-[0.86fr_1.14fr] md:gap-8 md:px-10 md:py-10">
         <div>
           <p className="text-sm font-semibold text-[#e85d3f]">{status === "checking" ? "Finding the demo" : "Demo preview"}</p>
           <h1 className="mt-3 font-serif-display text-5xl font-bold leading-tight text-[#171717] md:text-[3.5rem]">
@@ -2106,17 +2122,32 @@ function LandingDemoGate() {
             </LandingButtonLink>
           </div>
         </div>
-        <video
-          className="w-full rounded-lg border border-[#eadfce] bg-white shadow-sm"
-          controls
-          muted
-          playsInline
-          poster="/demo/guest-upload-poster.webp"
-          preload="metadata"
+        <div
+          className="mx-auto h-[30dvh] w-full max-w-[180px] overflow-hidden rounded-lg border border-[#eadfce] bg-white shadow-sm sm:h-[48dvh] sm:max-w-[220px] md:h-[min(620px,calc(100dvh-10rem))] md:max-w-[300px]"
+          aria-label="EventFilm guest upload demo media"
         >
-          <source src="/demo/guest-upload-demo.webm" type="video/webm" />
-          <source src="/demo/guest-upload-demo.mp4" type="video/mp4" />
-        </video>
+          {videoLoadFailed ? (
+            <img
+              className="h-full w-full object-contain"
+              src={LANDING_DEMO_VIDEO_POSTER}
+              alt="EventFilm guest upload demo preview"
+            />
+          ) : (
+            <video
+              className="h-full w-full object-contain"
+              controls
+              muted
+              playsInline
+              poster={LANDING_DEMO_VIDEO_POSTER}
+              preload="metadata"
+              aria-label="EventFilm guest upload demo video"
+              onError={() => setVideoLoadFailed(true)}
+            >
+              <source src={LANDING_DEMO_VIDEO_MP4} type='video/mp4; codecs="avc1.640028"' />
+              <source src={LANDING_DEMO_VIDEO_WEBM} type='video/webm; codecs="vp9"' />
+            </video>
+          )}
+        </div>
       </section>
     </main>
   );

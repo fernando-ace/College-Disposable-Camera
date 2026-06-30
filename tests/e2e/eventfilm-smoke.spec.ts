@@ -228,6 +228,62 @@ test.describe("EventFilm browser smoke", () => {
     expect(consoleProblems).toEqual([]);
   });
 
+  test("demo preview fallback renders a mobile-safe MP4 video", async ({ page }) => {
+    const consoleProblems: string[] = [];
+    page.on("console", (message) => {
+      if (["error", "warning"].includes(message.type())) consoleProblems.push(message.text());
+    });
+    page.on("pageerror", (error) => consoleProblems.push(error.message));
+    await page.route(`**/api/events/${encodeURIComponent(landingDemoSlug)}`, async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: "demo unavailable during smoke",
+      });
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/demo");
+    await expect(page.getByRole("heading", { name: /See how guests add photos/i })).toBeVisible();
+
+    const mediaFrame = page.getByLabel("EventFilm guest upload demo media");
+    await expect(mediaFrame).toBeVisible();
+    await expectLocatorFullyFitsViewport(page, mediaFrame);
+    const demoVideo = page.getByLabel("EventFilm guest upload demo video");
+    await expect(demoVideo).toBeVisible();
+    await expectNoHorizontalOverflow(page);
+
+    const videoState = await demoVideo.evaluate((element) => {
+      const video = element as HTMLVideoElement;
+      const sources = Array.from(video.querySelectorAll("source")).map((source) => ({
+        src: source.getAttribute("src"),
+        type: source.getAttribute("type"),
+      }));
+      return {
+        controls: video.controls,
+        muted: video.muted,
+        networkNoSource: HTMLMediaElement.NETWORK_NO_SOURCE,
+        networkState: video.networkState,
+        playsInline: video.playsInline,
+        poster: video.getAttribute("poster"),
+        preload: video.getAttribute("preload"),
+        sources,
+      };
+    });
+
+    expect(videoState.controls).toBe(true);
+    expect(videoState.muted).toBe(true);
+    expect(videoState.playsInline).toBe(true);
+    expect(videoState.poster).toBe("/demo/guest-upload-poster.webp");
+    expect(videoState.preload).toBe("metadata");
+    expect(videoState.networkState).not.toBe(videoState.networkNoSource);
+    expect(videoState.sources).toEqual([
+      { src: "/demo/guest-upload-demo.mp4", type: 'video/mp4; codecs="avc1.640028"' },
+      { src: "/demo/guest-upload-demo.webm", type: 'video/webm; codecs="vp9"' },
+    ]);
+    expect(consoleProblems).toEqual([]);
+  });
+
   test("host auth routes handle unauthenticated dashboard access cleanly", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login$/);

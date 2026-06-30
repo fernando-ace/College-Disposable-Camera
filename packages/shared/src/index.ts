@@ -1578,8 +1578,15 @@ export function createCategoriesFromPack(slug?: PromptPackSlug | string | null) 
   return pack.items.map((label, order) => createCategory(label, order, `${pack.slug}-award-${order + 1}`));
 }
 
+export function colorTeamDisplayName(participant: Pick<ChallengeParticipant, "displayName" | "colorName">) {
+  const displayName = String(participant.displayName || "").trim();
+  if (displayName) return displayName;
+  const colorName = String(participant.colorName || "").trim();
+  return colorName ? `${colorName} Team` : "";
+}
+
 export function createDefaultParticipants() {
-  return COLOR_HUNT_PALETTE.slice(0, 6).map((color) => ({ ...color, displayName: `${color.colorName} Team` }));
+  return COLOR_HUNT_PALETTE.slice(0, 6).map((color) => ({ ...color, displayName: "" }));
 }
 
 export function createEmptyChallengeDraft(): ChallengeDraft {
@@ -1719,7 +1726,7 @@ export function hasDuplicateCategories(categories: ChallengeCategory[]) {
 }
 
 export function hasDuplicateParticipantNames(participants: ChallengeParticipant[]) {
-  return hasDuplicateLabels(participants.map((participant) => participant.displayName));
+  return hasDuplicateLabels(participants.map((participant) => colorTeamDisplayName(participant)));
 }
 
 export function hasDuplicateParticipantColors(participants: ChallengeParticipant[]) {
@@ -1736,8 +1743,8 @@ export function validateChallengeDraft(draft: ChallengeDraft) {
 
   if (draft.type === CHALLENGE_TYPES.COLOR_HUNT) {
     if (draft.participants.length < 2) return "Add at least 2 color teams to start Color Hunt.";
-    if (draft.participants.some((participant) => !participant.displayName.trim())) return "Color team names cannot be empty.";
     if (draft.participants.some((participant) => !participant.colorName || !participant.colorHex || !participant.colorSlug)) return "Each participant needs a color.";
+    if (draft.participants.some((participant) => !colorTeamDisplayName(participant))) return "Color team names cannot be empty.";
     if (hasDuplicateParticipantNames(draft.participants)) return "Color team names must be unique.";
     return "";
   }
@@ -1773,7 +1780,7 @@ export function buildChallengePayload(draft: ChallengeDraft): EventChallengeInpu
   if (draft.type === CHALLENGE_TYPES.COLOR_HUNT) {
     const participants = draft.participants.map((participant) => ({
       id: participant.id,
-      displayName: participant.displayName.trim(),
+      displayName: colorTeamDisplayName(participant),
       colorName: participant.colorName,
       colorHex: participant.colorHex,
       colorSlug: participant.colorSlug,

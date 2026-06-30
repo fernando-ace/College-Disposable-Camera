@@ -25,6 +25,7 @@ import {
   createDefaultAwardCategories,
   createEmptyChallengeDraft,
   createStarterPrompts,
+  colorTeamDisplayName,
   getChallengePack,
   getHostVisibleEventTemplates,
   getEventTemplate,
@@ -70,6 +71,40 @@ test("default prompts and award categories normalize in stable order", () => {
 
 test("no challenge builds a null payload", () => {
   assert.equal(buildChallengePayload(createEmptyChallengeDraft()), null);
+});
+
+test("default color hunt team names are derived cue text", () => {
+  const draft = { ...createEmptyChallengeDraft(), type: CHALLENGE_TYPES.COLOR_HUNT };
+
+  assert.equal(validateChallengeDraft(draft), "");
+  assert.deepEqual(draft.participants.slice(0, 2).map((participant) => participant.displayName), ["", ""]);
+  assert.deepEqual(draft.participants.slice(0, 2).map(colorTeamDisplayName), ["Red Team", "Orange Team"]);
+
+  const payload = buildChallengePayload(draft);
+  assert.deepEqual(payload?.participants?.slice(0, 2).map((participant) => participant.displayName), ["Red Team", "Orange Team"]);
+});
+
+test("typed color hunt names override color cue text", () => {
+  const draft = { ...createEmptyChallengeDraft(), type: CHALLENGE_TYPES.COLOR_HUNT };
+  draft.participants = [
+    { ...draft.participants[0], displayName: "  Ceremony Crew  " },
+    { ...draft.participants[1], displayName: "" },
+  ];
+
+  assert.deepEqual(draft.participants.map(colorTeamDisplayName), ["Ceremony Crew", "Orange Team"]);
+
+  const payload = buildChallengePayload(draft);
+  assert.deepEqual(payload?.participants?.map((participant) => participant.displayName), ["Ceremony Crew", "Orange Team"]);
+});
+
+test("duplicate color hunt cue names fail validation", () => {
+  const draft = { ...createEmptyChallengeDraft(), type: CHALLENGE_TYPES.COLOR_HUNT };
+  draft.participants = [
+    { ...draft.participants[0], displayName: "" },
+    { ...draft.participants[1], colorName: "Red", colorHex: "#dc2626", colorSlug: "red-copy", displayName: "" },
+  ];
+
+  assert.equal(validateChallengeDraft(draft), "Color team names must be unique.");
 });
 
 test("duplicate and empty prompt/category validation fails", () => {

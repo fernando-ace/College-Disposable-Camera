@@ -533,6 +533,7 @@ def write_video(path: Path, codec: str, quality: int = 8):
     if codec == "libvpx-vp9":
         kwargs["ffmpeg_params"] = ["-pix_fmt", "yuv420p", "-b:v", "0", "-crf", "34"]
     else:
+        kwargs["ffmpeg_params"] = ["-pix_fmt", "yuv420p", "-movflags", "+faststart"]
         kwargs["quality"] = quality
     with imageio.get_writer(path, **kwargs) as writer:
         for i in range(FRAME_COUNT):

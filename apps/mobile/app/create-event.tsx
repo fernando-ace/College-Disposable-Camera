@@ -36,6 +36,7 @@ import {
   challengeTypeName,
   createCategoriesFromPack,
   colorBySlug,
+  colorTeamDisplayName,
   createPromptsFromPack,
   createCategory,
   createDefaultAwardCategories,
@@ -139,7 +140,7 @@ function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
 
   function addParticipant() {
     const color = COLOR_HUNT_PALETTE[draft.participants.length % COLOR_HUNT_PALETTE.length];
-    onChange({ ...draft, participants: [...draft.participants, { ...color, displayName: `${color.colorName} Team` }] });
+    onChange({ ...draft, participants: [...draft.participants, { ...color, displayName: "" }] });
   }
 
   function removeParticipant(index: number) {
@@ -153,7 +154,7 @@ function ColorHuntSetup({ draft, onChange }: { draft: ChallengeDraft; onChange: 
         <View key={participant.id || index} style={{ gap: 10, borderRadius: 20, borderCurve: "continuous", backgroundColor: colors.wash, padding: 12 }}>
           <FieldGroup label={`Team ${index + 1}`}>
             <Field
-              placeholder="Team name"
+              placeholder={colorTeamDisplayName({ ...participant, displayName: "" })}
               value={participant.displayName}
               onChangeText={(displayName) => updateParticipant(index, { ...participant, displayName })}
               autoCapitalize="words"
@@ -612,7 +613,7 @@ export default function CreateEventScreen() {
           {challengeDraft.type === CHALLENGE_TYPES.COLOR_HUNT ? (
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
               {challengeDraft.participants.map((participant, index) => (
-                <Chip key={participant.id || index} swatch={participant.colorHex}>{participant.displayName || "Unnamed team"}</Chip>
+                <Chip key={participant.id || index} swatch={participant.colorHex}>{colorTeamDisplayName(participant)}</Chip>
               ))}
             </View>
           ) : null}
