@@ -18,8 +18,8 @@ export const colors = {
   amberSoft: "#fef3c7",
   amberWash: "#fff7dc",
   amberDark: "#653e00",
-  coral: "#ef6f58",
-  coralDark: "#d94f33",
+  coral: "#c2410c",
+  coralDark: "#9a3412",
   rose: "#fff1ec",
   plum: "#6d3f5b",
   danger: "#b91c1c",
@@ -323,12 +323,15 @@ export function Button({
   onPress?: () => void;
   disabled?: boolean;
 }) {
-  const backgroundColor = tone === "primary" ? colors.coral : tone === "danger" ? colors.danger : tone === "ghost" ? "transparent" : "#fff";
-  const color = tone === "primary" || tone === "danger" ? "#fff" : colors.ink;
+  const isDisabled = disabled || loading;
+  const enabledBackgroundColor = tone === "primary" ? colors.coral : tone === "danger" ? colors.danger : tone === "ghost" ? "transparent" : "#fff";
+  const enabledColor = tone === "primary" || tone === "danger" ? "#fff" : colors.ink;
+  const backgroundColor = disabled ? (tone === "ghost" ? "transparent" : colors.border) : enabledBackgroundColor;
+  const color = disabled ? colors.inkSoft : enabledColor;
 
   return (
     <Pressable
-      disabled={loading || disabled}
+      disabled={isDisabled}
       onPress={onPress}
       style={({ pressed }) => ({
         minHeight: 52,
@@ -339,7 +342,7 @@ export function Button({
         borderWidth: tone === "secondary" ? 1 : 0,
         borderColor: colors.border,
         backgroundColor,
-        opacity: disabled ? 0.42 : pressed || loading ? 0.72 : 1,
+        opacity: pressed && !isDisabled ? 0.78 : 1,
         paddingHorizontal: 18,
       })}
     >
