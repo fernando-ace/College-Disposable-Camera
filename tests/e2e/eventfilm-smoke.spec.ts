@@ -429,10 +429,15 @@ test.describe("EventFilm browser smoke", () => {
     test.skip(!eventResponse.ok(), `Seeded event ${seededSlug} not found. Run npm run demo:seed first.`);
     const eventPayload = await eventResponse.json();
     const eventName = eventPayload.event?.name || "EventFilm";
+    const photoCount = Number(eventPayload.event?.photoCount || 0);
+    const guestSubtitle = eventPayload.event?.challenge?.type === "MEMORY_CAPSULE" && !eventPayload.event?.isRevealed
+      ? "Photos locked"
+      : `${photoCount} ${photoCount === 1 ? "photo" : "photos"}`;
 
     await page.setViewportSize({ width: 390, height: 520 });
     await page.goto(`/e/${seededSlug}`);
     await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
     await expect(page.locator("body")).toContainText("Add photos");
     await expect(page.locator("#event-album")).toContainText(/album unlocks|Album reveal is locked|No photos yet|recent moments/i);
     await page.locator("#event-album").evaluate((element) => {
@@ -446,6 +451,32 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.locator("#guest-upload-card")).toContainText(/Take photo|Library/i);
     const uploadDialog = page.getByRole("dialog", { name: "Add photos" });
     await expect(uploadDialog).toContainText(/No account needed/i);
+    const headerSnapshot = page.getByTestId("guest-album-header-snapshot");
+    await expect(headerSnapshot).toBeVisible();
+    await expect(headerSnapshot.locator("h1")).toHaveText(eventName);
+    await expect(headerSnapshot.locator("p")).toHaveText(guestSubtitle);
+    await expect(headerSnapshot.locator("nav")).toContainText("Photos");
+    await expect(headerSnapshot.locator("nav")).toContainText("People");
+    await expect(headerSnapshot.locator("nav")).toContainText("Highlights");
+    const sheetPanel = page.getByTestId("upload-sheet-panel");
+    const sheetLayout = await page.evaluate(() => {
+      function rectFor(selector: string) {
+        const element = document.querySelector(selector);
+        if (!element) return null;
+        const rect = element.getBoundingClientRect();
+        return { top: rect.top, bottom: rect.bottom, height: rect.height };
+      }
+      return {
+        header: rectFor("[data-testid='guest-album-header-snapshot']"),
+        dialog: rectFor("[role='dialog'][aria-label='Add photos']"),
+        sheet: rectFor("[data-testid='upload-sheet-panel']"),
+      };
+    });
+    if (!sheetLayout.header || !sheetLayout.dialog || !sheetLayout.sheet) throw new Error("Guest upload sheet layout was missing expected elements.");
+    expect(Math.floor(sheetLayout.header.top)).toBeGreaterThanOrEqual(0);
+    expect(sheetLayout.header.height).toBeGreaterThan(0);
+    expect(sheetLayout.dialog.top).toBeGreaterThanOrEqual(sheetLayout.header.bottom - 1);
+    expect(sheetLayout.sheet.top).toBeGreaterThanOrEqual(sheetLayout.header.bottom - 1);
 
     const lockedPageState = await page.evaluate(() => ({
       bodyOverflow: document.body.style.overflow,
@@ -466,7 +497,6 @@ test.describe("EventFilm browser smoke", () => {
     const lockedScrollDelta = await page.evaluate((expectedScroll) => Math.abs(Number.parseFloat(document.body.style.top) + expectedScroll), pageScrollBeforeSheet);
     expect(lockedScrollDelta).toBeLessThanOrEqual(1);
 
-    const sheetPanel = page.getByTestId("upload-sheet-panel");
     const sheetScrollBefore = await sheetPanel.evaluate((element) => (element as HTMLElement).scrollTop);
     const sheetCanScroll = await sheetPanel.evaluate((element) => {
       const panel = element as HTMLElement;
@@ -482,6 +512,8 @@ test.describe("EventFilm browser smoke", () => {
 
     await uploadDialog.getByRole("button", { name: "Close upload sheet" }).last().click();
     await expect(uploadDialog).toHaveCount(0);
+    await expect(page.getByTestId("guest-album-header-snapshot")).toHaveCount(0);
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
     await page.waitForFunction((expectedScroll) => Math.abs(window.scrollY - expectedScroll) <= 1, pageScrollBeforeSheet);
     const restoredScrollDelta = await page.evaluate((expectedScroll) => Math.abs(window.scrollY - expectedScroll), pageScrollBeforeSheet);
     expect(restoredScrollDelta).toBeLessThanOrEqual(1);
@@ -624,16 +656,56 @@ test.describe("EventFilm browser smoke", () => {
       return route.fulfill(json({ ok: true }));
     });
 
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/e/${slug}`);
     await expect(page.getByRole("heading", { name: "Multi Save Party" })).toBeVisible();
     await expect(page.locator("#event-album img")).toHaveCount(2);
+
+    await page.locator("#event-album img[alt='multi-save-one.png']").click();
+    const viewer = page.getByRole("dialog", { name: "Photo viewer" });
+    await expect(viewer).toBeVisible();
+    const viewerStrip = viewer.getByTestId("photo-viewer-strip");
+    await expect(viewer.getByTestId("photo-viewer-slide")).toHaveCount(2);
+    await expect(viewer.getByText("1 of 2")).toBeVisible();
+    await expect(viewer.getByRole("heading", { name: "Ava" })).toBeVisible();
+    await expect(viewer.getByRole("button", { name: /^Like photo, 0 hearts?$/i })).toBeVisible();
+
+    await viewerStrip.evaluate((element) => {
+      element.scrollLeft = element.clientWidth;
+      element.dispatchEvent(new Event("scroll", { bubbles: true }));
+    });
+    await expect(viewer.getByText("2 of 2")).toBeVisible();
+    await expect(viewer.getByRole("heading", { name: "Mia" })).toBeVisible();
+    await page.keyboard.press("ArrowLeft");
+    await expect(viewer.getByText("1 of 2")).toBeVisible();
+    await expect(viewer.getByRole("heading", { name: "Ava" })).toBeVisible();
+    await page.keyboard.press("ArrowRight");
+    await expect(viewer.getByText("2 of 2")).toBeVisible();
+    await viewer.getByRole("button", { name: "Close photo viewer" }).click();
+    await expect(viewer).toBeHidden();
+
+    await page.locator("#event-album").evaluate((element) => {
+      element.setAttribute("style", `${element.getAttribute("style") || ""}; min-height: 1400px;`);
+    });
+    await page.evaluate(() => window.scrollTo(0, 80));
+    const pageScrollBeforeSelection = await page.evaluate(() => window.scrollY);
+    expect(pageScrollBeforeSelection).toBeGreaterThan(0);
+    const expectSelectionScrollPreserved = async () => {
+      await expect.poll(
+        () => page.evaluate((expectedScroll) => Math.abs(window.scrollY - expectedScroll), pageScrollBeforeSelection),
+        { timeout: 1000 },
+      ).toBeLessThanOrEqual(1);
+    };
+
     await page.getByRole("button", { name: "Open event options" }).click();
     await expect(page.getByRole("button", { name: "Select Photos" })).toBeVisible();
 
     await page.getByRole("button", { name: "Select Photos" }).click();
+    await expectSelectionScrollPreserved();
     await expect(page.getByText("0 selected")).toBeVisible();
     await expect(page.getByRole("button", { name: "Save selected" })).toBeDisabled();
     await page.getByRole("button", { name: "Select multi-save-one.png" }).click();
+    await expectSelectionScrollPreserved();
     await expect(page.getByText("1 selected")).toBeVisible();
     await page.getByRole("button", { name: "Cancel" }).click();
     await expect(page.getByText("1 selected")).toHaveCount(0);

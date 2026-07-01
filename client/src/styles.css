@@ -118,6 +118,16 @@ textarea {
   display: none;
 }
 
+.photo-viewer-strip {
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  touch-action: pan-x;
+}
+
+.photo-viewer-strip::-webkit-scrollbar {
+  display: none;
+}
+
 .poster-page {
   min-width: 0;
   overflow-x: clip;

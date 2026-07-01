@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter, Link, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { closestCenter, DndContext, KeyboardSensor, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
@@ -647,6 +647,8 @@ function recordGuestUploadMetadata(slug: string, photo: Photo) {
 type GuestUploadQueueStatus = "queued" | "uploading" | "uploaded" | "failed";
 type GuestPhotoPickerSource = "camera" | "library";
 type GuestAlbumSaveStatus = { tone: "info" | "success" | "error"; text: string };
+type GuestAlbumTabKey = "photos" | "people" | "highlights";
+type GuestAlbumTab = { key: GuestAlbumTabKey; label: string };
 
 const GUEST_LIBRARY_FILE_ACCEPT = [...ALLOWED_IMAGE_MIME_TYPES, ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"].join(",");
 
@@ -661,6 +663,109 @@ type GuestUploadQueueItem = {
 
 function createGuestUploadQueueId(index: number) {
   return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}-${Math.random()}`;
+}
+
+function GuestAlbumHeader({
+  activeTab,
+  canSelectPhotos,
+  eventName,
+  eventSlug,
+  headerRef,
+  isSnapshot = false,
+  onAddPhotos,
+  onBack,
+  onOptionsToggle,
+  onSelectPhotos,
+  onTabChange,
+  optionsOpen,
+  subtitle,
+  tabs,
+}: {
+  activeTab: GuestAlbumTabKey;
+  canSelectPhotos: boolean;
+  eventName: string;
+  eventSlug: string;
+  headerRef?: React.Ref<HTMLElement>;
+  isSnapshot?: boolean;
+  onAddPhotos: () => void;
+  onBack: () => void;
+  onOptionsToggle: () => void;
+  onSelectPhotos: () => void;
+  onTabChange: (tab: GuestAlbumTabKey) => void;
+  optionsOpen: boolean;
+  subtitle: string;
+  tabs: GuestAlbumTab[];
+}) {
+  const topControlClass = "grid h-10 w-10 place-items-center rounded-full text-stone-700 hover:bg-stone-100";
+
+  return (
+    <header
+      ref={headerRef}
+      className={cx(
+        "bg-white/96 backdrop-blur",
+        isSnapshot ? "fixed inset-x-0 top-0 z-50 pointer-events-auto" : "sticky top-0 z-20",
+      )}
+      data-testid={isSnapshot ? "guest-album-header-snapshot" : "guest-album-header"}
+      aria-hidden={isSnapshot || undefined}
+    >
+      <div className="mx-auto max-w-[430px] px-3 pt-3">
+        <div className="relative flex min-h-16 items-center justify-between">
+          {isSnapshot ? (
+            <span className={topControlClass}>
+              <CleanIcon name="chevronLeft" className="h-5 w-5" />
+            </span>
+          ) : (
+            <button type="button" className={topControlClass} aria-label="Go back" onClick={onBack}>
+              <CleanIcon name="chevronLeft" className="h-5 w-5" />
+            </button>
+          )}
+          <div className="absolute left-12 right-12 top-1/2 -translate-y-1/2 text-center">
+            <h1 className="truncate text-xl font-bold leading-6 text-stone-950">{eventName}</h1>
+            <p className="mt-1 text-xs font-semibold text-stone-500">{subtitle}</p>
+          </div>
+          <div className="relative">
+            {isSnapshot ? (
+              <span className={topControlClass}>
+                <CleanIcon name="more" className="h-5 w-5" />
+              </span>
+            ) : (
+              <button type="button" className={topControlClass} aria-label="Open event options" onClick={onOptionsToggle}>
+                <CleanIcon name="more" className="h-5 w-5" />
+              </button>
+            )}
+            {!isSnapshot && optionsOpen ? (
+              <div className="absolute right-0 top-11 z-30 w-44 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
+                <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/recap/${eventSlug}`}>Shared Recap</a>
+                <button type="button" className={cx("block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400 disabled:hover:bg-white", canSelectPhotos ? "" : "text-stone-400")} disabled={!canSelectPhotos} onClick={onSelectPhotos}>Select Photos</button>
+                <button type="button" className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50" onClick={onAddPhotos}>Add photos</button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+        <nav className="mt-1 grid grid-cols-3 border-b border-stone-200 text-sm font-semibold">
+          {tabs.map((tab) => (
+            isSnapshot ? (
+              <span
+                className={cx("border-b-2 px-2 py-3 text-center transition", activeTab === tab.key ? "border-[#e85d3f] text-[#e85d3f]" : "border-transparent text-stone-500 hover:text-stone-950")}
+                key={tab.key}
+              >
+                {tab.label}
+              </span>
+            ) : (
+              <button
+                type="button"
+                className={cx("border-b-2 px-2 py-3 transition", activeTab === tab.key ? "border-[#e85d3f] text-[#e85d3f]" : "border-transparent text-stone-500 hover:text-stone-950")}
+                onClick={() => onTabChange(tab.key)}
+                key={tab.key}
+              >
+                {tab.label}
+              </button>
+            )
+          ))}
+        </nav>
+      </div>
+    </header>
+  );
 }
 
 function getChallengeParticipantSession(slug: string) {
@@ -866,16 +971,38 @@ function FullScreenPhotoViewer({
   const [busy, setBusy] = useState("");
   const [localStatus, setLocalStatus] = useState("");
   const [activePhotoId, setActivePhotoId] = useState(photo?.id || "");
-  const swipeStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const viewerStripRef = useRef<HTMLDivElement | null>(null);
+  const scrollFrameRef = useRef<number | null>(null);
   const galleryPhotos = useMemo(() => (photos.length ? photos : photo ? [photo] : []), [photos, photo]);
   const currentIndex = activePhotoId ? galleryPhotos.findIndex((item) => item.id === activePhotoId) : -1;
   const visibleIndex = currentIndex >= 0 ? currentIndex : 0;
   const currentPhoto = currentIndex >= 0 ? galleryPhotos[currentIndex] : photo;
   const canNavigate = Boolean(currentPhoto && galleryPhotos.length > 1 && currentIndex >= 0);
 
+  useDocumentScrollLock(Boolean(photo));
+
   useEffect(() => {
     setActivePhotoId(photo?.id || "");
   }, [photo?.id]);
+
+  useEffect(() => {
+    if (!photo || !galleryPhotos.length || !activePhotoId) return;
+    if (galleryPhotos.some((item) => item.id === activePhotoId)) return;
+    setActivePhotoId(galleryPhotos[0].id);
+  }, [activePhotoId, galleryPhotos, photo]);
+
+  useEffect(() => {
+    if (!photo || !galleryPhotos.length) return;
+    const nextIndex = Math.max(0, galleryPhotos.findIndex((item) => item.id === photo.id));
+    const frame = window.requestAnimationFrame(() => scrollToIndex(nextIndex, "auto"));
+    return () => window.cancelAnimationFrame(frame);
+  }, [photo?.id, galleryPhotos.length]);
+
+  useEffect(() => {
+    return () => {
+      if (scrollFrameRef.current !== null) window.cancelAnimationFrame(scrollFrameRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     setBusy("");
@@ -906,8 +1033,29 @@ function FullScreenPhotoViewer({
   function navigatePhoto(direction: -1 | 1) {
     if (!canNavigate) return;
     const nextIndex = (visibleIndex + direction + galleryPhotos.length) % galleryPhotos.length;
-    const nextPhoto = galleryPhotos[nextIndex];
-    if (nextPhoto) setActivePhotoId(nextPhoto.id);
+    scrollToIndex(nextIndex);
+  }
+
+  function scrollToIndex(index: number, behavior: ScrollBehavior = "smooth") {
+    const nextPhoto = galleryPhotos[index];
+    if (!nextPhoto) return;
+    setActivePhotoId(nextPhoto.id);
+    const strip = viewerStripRef.current;
+    if (!strip) return;
+    strip.scrollTo({ left: strip.clientWidth * index, behavior });
+  }
+
+  function handleViewerScroll() {
+    const strip = viewerStripRef.current;
+    if (!strip || !galleryPhotos.length || scrollFrameRef.current !== null) return;
+
+    scrollFrameRef.current = window.requestAnimationFrame(() => {
+      scrollFrameRef.current = null;
+      const pageWidth = Math.max(1, strip.clientWidth);
+      const nextIndex = Math.max(0, Math.min(galleryPhotos.length - 1, Math.round(strip.scrollLeft / pageWidth)));
+      const nextPhoto = galleryPhotos[nextIndex];
+      if (nextPhoto && nextPhoto.id !== activePhotoId) setActivePhotoId(nextPhoto.id);
+    });
   }
 
   async function runHostAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete") {
@@ -927,38 +1075,33 @@ function FullScreenPhotoViewer({
   const guestName = currentPhoto.challengeParticipantName || currentPhoto.guestNickname || "Guest photo";
   const photoDate = formatEventCardDate(currentPhoto.createdAt);
 
-  function handlePhotoPointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (!canNavigate || (event.pointerType === "mouse" && event.button !== 0)) return;
-    swipeStartRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
-    event.currentTarget.setPointerCapture?.(event.pointerId);
-  }
-
-  function resetPhotoSwipe(event?: React.PointerEvent<HTMLDivElement>) {
-    if (event && swipeStartRef.current?.pointerId === event.pointerId && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-    swipeStartRef.current = null;
-  }
-
-  function handlePhotoPointerUp(event: React.PointerEvent<HTMLDivElement>) {
-    const swipeStart = swipeStartRef.current;
-    if (!swipeStart || swipeStart.pointerId !== event.pointerId) return;
-    resetPhotoSwipe(event);
-    const deltaX = event.clientX - swipeStart.x;
-    const deltaY = event.clientY - swipeStart.y;
-    if (Math.abs(deltaX) < 50 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return;
-    navigatePhoto(deltaX < 0 ? 1 : -1);
-  }
-
   return (
     <div className="fixed inset-0 z-50 overflow-hidden bg-app text-ink" role="dialog" aria-modal="true" aria-label="Photo viewer">
       <div
-        className="absolute inset-0 flex touch-pan-y select-none items-center justify-center px-0 pb-32 pt-24 sm:px-8 sm:pb-36 sm:pt-28"
-        onPointerDown={handlePhotoPointerDown}
-        onPointerUp={handlePhotoPointerUp}
-        onPointerCancel={resetPhotoSwipe}
+        ref={viewerStripRef}
+        className="photo-viewer-strip absolute inset-0 flex snap-x snap-mandatory overflow-x-auto pb-32 pt-24 sm:pb-36 sm:pt-28"
+        aria-label="Photo carousel"
+        data-testid="photo-viewer-strip"
+        onScroll={handleViewerScroll}
       >
-        <img className="max-h-full max-w-full object-contain" src={assetUrl(currentPhoto.url)} alt={currentPhoto.originalFilename} draggable={false} loading="eager" decoding="async" fetchPriority="high" />
+        {galleryPhotos.map((galleryPhoto, index) => (
+          <div
+            className="flex h-full w-full shrink-0 snap-center select-none items-center justify-center px-0 sm:px-8"
+            data-active={index === visibleIndex ? "true" : "false"}
+            data-testid="photo-viewer-slide"
+            key={galleryPhoto.id}
+          >
+            <img
+              className="max-h-full max-w-full object-contain"
+              src={assetUrl(galleryPhoto.url)}
+              alt={galleryPhoto.originalFilename}
+              draggable={false}
+              loading={Math.abs(index - visibleIndex) <= 1 ? "eager" : "lazy"}
+              decoding="async"
+              fetchPriority={index === visibleIndex ? "high" : "auto"}
+            />
+          </div>
+        ))}
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-4 pt-[max(env(safe-area-inset-top),1rem)] sm:px-6">
@@ -4458,6 +4601,7 @@ function GuestEvent() {
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
   const albumRef = useRef<HTMLElement | null>(null);
+  const guestHeaderRef = useRef<HTMLElement | null>(null);
   const myUploadsRef = useRef<HTMLElement | null>(null);
   const pageViewedTrackedRef = useRef(false);
   const joinedTrackedRef = useRef(false);
@@ -4479,7 +4623,8 @@ function GuestEvent() {
   const [selectedAlbumPhotoIds, setSelectedAlbumPhotoIds] = useState<Set<string>>(() => new Set());
   const [photoSaveStatus, setPhotoSaveStatus] = useState<GuestAlbumSaveStatus | null>(null);
   const [photoSaveBusy, setPhotoSaveBusy] = useState(false);
-  const [activeGuestTab, setActiveGuestTab] = useState<"photos" | "people" | "highlights">("photos");
+  const [activeGuestTab, setActiveGuestTab] = useState<GuestAlbumTabKey>("photos");
+  const [guestHeaderHeight, setGuestHeaderHeight] = useState(0);
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const navigate = useNavigate();
@@ -4889,6 +5034,30 @@ function GuestEvent() {
       .slice(0, 3),
   })), [contributorSummary, visibleAlbumPhotos]);
 
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return;
+    const header = guestHeaderRef.current;
+    if (!header) {
+      setGuestHeaderHeight(0);
+      return;
+    }
+
+    const updateHeaderHeight = () => {
+      const nextHeight = Math.ceil(header.getBoundingClientRect().height);
+      setGuestHeaderHeight((currentHeight) => currentHeight === nextHeight ? currentHeight : nextHeight);
+    };
+
+    updateHeaderHeight();
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateHeaderHeight) : null;
+    resizeObserver?.observe(header);
+    window.addEventListener("resize", updateHeaderHeight);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateHeaderHeight);
+    };
+  }, [activeGuestTab, event?.name, guestSubtitle, uploadSheetOpen]);
+
   useEffect(() => {
     const visibleIds = new Set(visibleAlbumPhotos.map((photo) => photo.id));
     setSelectedAlbumPhotoIds((current) => {
@@ -4919,7 +5088,6 @@ function GuestEvent() {
       return;
     }
     setPhotoSelectionMode(true);
-    setTimeout(() => albumRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function cancelPhotoSelection() {
@@ -4999,11 +5167,12 @@ function GuestEvent() {
     }
   }
 
-  const guestTabs: Array<{ key: "photos" | "people" | "highlights"; label: string }> = [
+  const guestTabs: GuestAlbumTab[] = [
     { key: "photos", label: "Photos" },
     { key: "people", label: "People" },
     { key: "highlights", label: "Highlights" },
   ];
+  const uploadSheetTop = uploadSheetOpen ? guestHeaderHeight : 0;
   const uploadQueueTotal = uploadQueue.length;
   const uploadedQueueCount = uploadQueue.filter((item) => item.status === "uploaded").length;
   const failedQueueCount = uploadQueue.filter((item) => item.status === "failed").length;
@@ -5039,41 +5208,22 @@ function GuestEvent() {
       )}
       {event && (
         <>
-          <header className="sticky top-0 z-20 bg-white/96 px-3 pt-3 backdrop-blur">
-            <div className="relative flex min-h-16 items-center justify-between">
-              <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-stone-700 hover:bg-stone-100" aria-label="Go back" onClick={goBackFromGuestAlbum}>
-                <CleanIcon name="chevronLeft" className="h-5 w-5" />
-              </button>
-              <div className="absolute left-12 right-12 top-1/2 -translate-y-1/2 text-center">
-                <h1 className="truncate text-xl font-bold leading-6 text-stone-950">{event.name}</h1>
-                <p className="mt-1 text-xs font-semibold text-stone-500">{guestSubtitle}</p>
-              </div>
-              <div className="relative">
-                <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-stone-700 hover:bg-stone-100" aria-label="Open event options" onClick={() => setOptionsOpen((open) => !open)}>
-                  <CleanIcon name="more" className="h-5 w-5" />
-                </button>
-                {optionsOpen ? (
-                  <div className="absolute right-0 top-11 z-30 w-44 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
-                    <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/recap/${event.slug}`}>Shared Recap</a>
-                    <button type="button" className={cx("block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400 disabled:hover:bg-white", visibleAlbumPhotos.length ? "" : "text-stone-400")} disabled={!visibleAlbumPhotos.length} onClick={openPhotoSelectionMode}>Select Photos</button>
-                    <button type="button" className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50" onClick={openUploadSheet}>Add photos</button>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-            <nav className="mt-1 grid grid-cols-3 border-b border-stone-200 text-sm font-semibold">
-              {guestTabs.map((tab) => (
-                <button
-                  type="button"
-                  className={cx("border-b-2 px-2 py-3 transition", activeGuestTab === tab.key ? "border-[#e85d3f] text-[#e85d3f]" : "border-transparent text-stone-500 hover:text-stone-950")}
-                  onClick={() => setActiveGuestTab(tab.key)}
-                  key={tab.key}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          </header>
+          <GuestAlbumHeader
+            activeTab={activeGuestTab}
+            canSelectPhotos={Boolean(visibleAlbumPhotos.length)}
+            eventName={event.name}
+            eventSlug={event.slug}
+            headerRef={guestHeaderRef}
+            isSnapshot={uploadSheetOpen}
+            onAddPhotos={openUploadSheet}
+            onBack={goBackFromGuestAlbum}
+            onOptionsToggle={() => setOptionsOpen((open) => !open)}
+            onSelectPhotos={openPhotoSelectionMode}
+            onTabChange={setActiveGuestTab}
+            optionsOpen={optionsOpen}
+            subtitle={guestSubtitle}
+            tabs={guestTabs}
+          />
 
           <section id="event-album" ref={albumRef} className="scroll-mt-24 px-2 pt-2">
             {activeGuestTab === "photos" ? (
@@ -5223,9 +5373,9 @@ function GuestEvent() {
           )}
 
           {uploadSheetOpen ? (
-            <div className="fixed inset-0 z-40 flex items-end justify-center overflow-hidden overscroll-contain bg-black/25 px-0 sm:px-4" role="dialog" aria-modal="true" aria-label="Add photos">
+            <div className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-center overflow-hidden overscroll-contain bg-black/25 px-0 sm:px-4" style={{ top: uploadSheetTop }} role="dialog" aria-modal="true" aria-label="Add photos">
               <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload sheet" onClick={() => setUploadSheetOpen(false)} />
-              <div className="relative max-h-[88vh] w-full max-w-[430px] overflow-y-auto overscroll-contain rounded-t-xl bg-white p-4 shadow-sm" data-testid="upload-sheet-panel">
+              <div className="relative max-h-full w-full max-w-[430px] overflow-y-auto overscroll-contain rounded-t-xl bg-white p-4 shadow-sm" data-testid="upload-sheet-panel">
                 <div className="sticky top-0 z-10 -mx-4 -mt-4 flex items-center justify-between border-b border-stone-100 bg-white px-4 py-3">
                   <div>
                     <h2 className="text-xl font-bold text-stone-950">Add photos</h2>
