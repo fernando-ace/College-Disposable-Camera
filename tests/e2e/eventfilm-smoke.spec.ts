@@ -430,13 +430,62 @@ test.describe("EventFilm browser smoke", () => {
     const eventPayload = await eventResponse.json();
     const eventName = eventPayload.event?.name || "EventFilm";
 
+    await page.setViewportSize({ width: 390, height: 520 });
     await page.goto(`/e/${seededSlug}`);
     await expect(page.getByRole("heading", { name: eventName })).toBeVisible();
     await expect(page.locator("body")).toContainText("Add photos");
     await expect(page.locator("#event-album")).toContainText(/album unlocks|Album reveal is locked|No photos yet|recent moments/i);
+    await page.locator("#event-album").evaluate((element) => {
+      element.setAttribute("style", `${element.getAttribute("style") || ""}; min-height: 1600px;`);
+    });
+    await page.evaluate(() => window.scrollTo(0, 260));
+    const pageScrollBeforeSheet = await page.evaluate(() => window.scrollY);
+    expect(pageScrollBeforeSheet).toBeGreaterThan(0);
+
     await page.getByRole("button", { name: "Add photos" }).first().click();
     await expect(page.locator("#guest-upload-card")).toContainText(/Take photo|Library/i);
-    await expect(page.getByRole("dialog", { name: "Add photos" })).toContainText(/No account needed/i);
+    const uploadDialog = page.getByRole("dialog", { name: "Add photos" });
+    await expect(uploadDialog).toContainText(/No account needed/i);
+
+    const lockedPageState = await page.evaluate(() => ({
+      bodyOverflow: document.body.style.overflow,
+      bodyPosition: document.body.style.position,
+      bodyTop: document.body.style.top,
+      htmlOverflow: document.documentElement.style.overflow,
+    }));
+    expect(lockedPageState).toMatchObject({
+      bodyOverflow: "hidden",
+      bodyPosition: "fixed",
+      htmlOverflow: "hidden",
+    });
+    expect(Math.abs(Number.parseFloat(lockedPageState.bodyTop) + pageScrollBeforeSheet)).toBeLessThanOrEqual(1);
+
+    await page.mouse.move(20, 20);
+    await page.mouse.wheel(0, 700);
+    await page.waitForFunction((expectedScroll) => Math.abs(Number.parseFloat(document.body.style.top) + expectedScroll) <= 1, pageScrollBeforeSheet);
+    const lockedScrollDelta = await page.evaluate((expectedScroll) => Math.abs(Number.parseFloat(document.body.style.top) + expectedScroll), pageScrollBeforeSheet);
+    expect(lockedScrollDelta).toBeLessThanOrEqual(1);
+
+    const sheetPanel = page.getByTestId("upload-sheet-panel");
+    const sheetScrollBefore = await sheetPanel.evaluate((element) => (element as HTMLElement).scrollTop);
+    const sheetCanScroll = await sheetPanel.evaluate((element) => {
+      const panel = element as HTMLElement;
+      return panel.scrollHeight > panel.clientHeight;
+    });
+    if (sheetCanScroll) {
+      await page.locator("#my-uploads").scrollIntoViewIfNeeded();
+      const sheetScrollAfter = await sheetPanel.evaluate((element) => (element as HTMLElement).scrollTop);
+      expect(sheetScrollAfter).toBeGreaterThan(sheetScrollBefore);
+    } else {
+      await expect(page.locator("#my-uploads")).toBeVisible();
+    }
+
+    await uploadDialog.getByRole("button", { name: "Close upload sheet" }).last().click();
+    await expect(uploadDialog).toHaveCount(0);
+    await page.waitForFunction((expectedScroll) => Math.abs(window.scrollY - expectedScroll) <= 1, pageScrollBeforeSheet);
+    const restoredScrollDelta = await page.evaluate((expectedScroll) => Math.abs(window.scrollY - expectedScroll), pageScrollBeforeSheet);
+    expect(restoredScrollDelta).toBeLessThanOrEqual(1);
+    await page.setViewportSize({ width: 1280, height: 720 });
 
     const removedLiveWallResponse = await request.get(`${apiUrl}/api/events/${seededSlug}/live-wall`);
     expect(removedLiveWallResponse.status()).toBe(404);
@@ -458,17 +507,33 @@ test.describe("EventFilm browser smoke", () => {
       await expect(page.getByRole("link", { name: /Add photos/i }).first()).toBeVisible();
       if ((revealedRecap.photos || []).length > 0) {
         await expect(page.locator("#recap-photos img").first()).toBeVisible();
+        if ((revealedRecap.photos || []).length > 1) {
+          await page.locator("#recap-photos img").first().click();
+          const viewer = page.getByRole("dialog", { name: "Photo viewer" });
+          await expect(viewer).toBeVisible();
+          const viewerCounter = viewer.getByText(new RegExp(`\\d+ of ${revealedRecap.photos.length}`));
+          const beforeCounter = await viewerCounter.textContent();
+          await page.keyboard.press("ArrowRight");
+          await expect.poll(async () => viewerCounter.textContent()).not.toBe(beforeCounter);
+          await viewer.getByRole("button", { name: "Close photo viewer" }).click();
+          await expect(viewer).toBeHidden();
+        }
         const likeButton = page.getByRole("button", { name: /^Like photo, \d+ hearts?$/i }).first();
         await expect(likeButton).toBeVisible();
         const beforeCount = heartCountFromLabel(await likeButton.getAttribute("aria-label"));
+        const likeSaved = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/likes") && response.ok());
         await likeButton.click();
+        const likeResponse = await likeSaved;
+        const likePayload = await likeResponse.json();
+        expect(likePayload.liked).toBe(true);
         const unlikeButton = page.getByRole("button", { name: /^Unlike photo, \d+ hearts?$/i }).first();
         await expect(unlikeButton).toBeVisible();
         expect(heartCountFromLabel(await unlikeButton.getAttribute("aria-label"))).toBe(beforeCount + 1);
-        await page.reload();
-        const persistedUnlikeButton = page.getByRole("button", { name: /^Unlike photo, \d+ hearts?$/i }).first();
-        await expect(persistedUnlikeButton).toBeVisible();
-        await persistedUnlikeButton.click();
+        const unlikeSaved = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/likes") && response.ok());
+        await unlikeButton.click();
+        const unlikeResponse = await unlikeSaved;
+        const unlikePayload = await unlikeResponse.json();
+        expect(unlikePayload.liked).toBe(false);
         await expect(page.getByRole("button", { name: /^Like photo, \d+ hearts?$/i }).first()).toBeVisible();
       }
       if ((revealedRecap.awardResults?.categories || []).length > 0) {
@@ -476,6 +541,112 @@ test.describe("EventFilm browser smoke", () => {
         await expect(page.locator("body")).toContainText(/Hearts decide winners|heart favorite photos/i);
       }
     }
+  });
+
+  test("guest can select multiple album photos and open save options", async ({ page }) => {
+    const slug = "multi-save-smoke";
+    const origin = parsedUrl(baseUrl).origin;
+    const corsHeaders = {
+      "access-control-allow-origin": origin,
+      "access-control-allow-credentials": "true",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "content-type, authorization",
+    };
+    const event = {
+      id: "multi-save-event",
+      name: "Multi Save Party",
+      description: null,
+      slug,
+      eventDate: "2026-06-14T20:00:00.000Z",
+      revealAt: "2026-06-14T20:00:00.000Z",
+      photoLimitPerGuest: 0,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      isRevealed: true,
+      photoCount: 2,
+      challenge: null,
+    };
+    const photos = [
+      {
+        id: "multi-save-photo-1",
+        url: `${apiUrl}/api/photos/multi-save-photo-1/file`,
+        previewUrl: `${apiUrl}/api/photos/multi-save-photo-1/preview`,
+        originalFilename: "multi-save-one.png",
+        mimeType: "image/png",
+        sizeBytes: 68,
+        createdAt: "2026-06-14T20:01:00.000Z",
+        guestNickname: "Ava",
+        likeCount: 0,
+        likedByMe: false,
+      },
+      {
+        id: "multi-save-photo-2",
+        url: `${apiUrl}/api/photos/multi-save-photo-2/file`,
+        previewUrl: `${apiUrl}/api/photos/multi-save-photo-2/preview`,
+        originalFilename: "multi-save-two.png",
+        mimeType: "image/png",
+        sizeBytes: 68,
+        createdAt: "2026-06-14T20:02:00.000Z",
+        guestNickname: "Mia",
+        likeCount: 0,
+        likedByMe: false,
+      },
+    ];
+    const imageBody = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
+    const json = (body: unknown) => ({
+      status: 200,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "canShare", {
+        configurable: true,
+        value: (data: { files?: File[] }) => Boolean(data.files?.length),
+      });
+      Object.defineProperty(navigator, "share", {
+        configurable: true,
+        value: async (data: { files?: File[] }) => {
+          const shareWindow = window as Window & { __eventfilmSharedFileCount?: number; __eventfilmSharedFileNames?: string[] };
+          shareWindow.__eventfilmSharedFileCount = data.files?.length || 0;
+          shareWindow.__eventfilmSharedFileNames = (data.files || []).map((file) => file.name);
+        },
+      });
+    });
+    await page.route(`**/api/events/${slug}`, (route) => route.fulfill(json({ event })));
+    await page.route(`**/api/events/${slug}/guest-status**`, (route) => route.fulfill(json({ nickname: null })));
+    await page.route(`**/api/events/${slug}/my-uploads**`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
+    await page.route(`**/api/events/${slug}/photos**`, (route) => route.fulfill(json({ photos })));
+    await page.route("**/api/photos/multi-save-photo-*/file", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/photos/multi-save-photo-*/preview", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/analytics**", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ ok: true }));
+    });
+
+    await page.goto(`/e/${slug}`);
+    await expect(page.getByRole("heading", { name: "Multi Save Party" })).toBeVisible();
+    await expect(page.locator("#event-album img")).toHaveCount(2);
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await expect(page.getByRole("button", { name: "Select Photos" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Select Photos" }).click();
+    await expect(page.getByText("0 selected")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save selected" })).toBeDisabled();
+    await page.getByRole("button", { name: "Select multi-save-one.png" }).click();
+    await expect(page.getByText("1 selected")).toBeVisible();
+    await page.getByRole("button", { name: "Cancel" }).click();
+    await expect(page.getByText("1 selected")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Add photos" }).first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await page.getByRole("button", { name: "Select Photos" }).click();
+    await page.getByRole("button", { name: "Select all" }).click();
+    await expect(page.getByText("2 selected")).toBeVisible();
+    await page.getByRole("button", { name: "Save selected" }).click();
+    await expect.poll(() => page.evaluate(() => (window as Window & { __eventfilmSharedFileCount?: number }).__eventfilmSharedFileCount || 0)).toBe(2);
+    await expect(page.getByRole("status")).toContainText("Opened save options for 2 photos.");
+    await expect(page.getByRole("button", { name: "Add photos" }).first()).toBeVisible();
   });
 
   test("seeded host event shows event library, share kit, and ordinary host help", async ({ page, request }) => {

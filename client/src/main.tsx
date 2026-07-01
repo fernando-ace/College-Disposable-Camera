@@ -7,6 +7,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { createEventFilmApiClient } from "@eventfilm/api-client";
 import type { AnalyticsSummary, EventAnalyticsSummary, EventRecapResponse } from "@eventfilm/api-client";
 import {
+  ALLOWED_IMAGE_MIME_TYPES,
   CHALLENGE_PACKS,
   CHALLENGE_TYPES,
   COLOR_HUNT_PALETTE,
@@ -190,6 +191,41 @@ function isEditableKeyboardTarget(target: EventTarget | null): target is HTMLEle
   return target.matches("input:not([type='file']):not([type='checkbox']):not([type='radio']):not([type='range']):not([type='color']), textarea, select");
 }
 
+function useDocumentScrollLock(locked: boolean) {
+  useEffect(() => {
+    if (!locked || typeof window === "undefined") return;
+
+    const { body, documentElement } = document;
+    const scrollY = window.scrollY;
+    const originalHtmlOverflow = documentElement.style.overflow;
+    const originalBodyOverflow = body.style.overflow;
+    const originalBodyPosition = body.style.position;
+    const originalBodyTop = body.style.top;
+    const originalBodyLeft = body.style.left;
+    const originalBodyRight = body.style.right;
+    const originalBodyWidth = body.style.width;
+
+    documentElement.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+
+    return () => {
+      documentElement.style.overflow = originalHtmlOverflow;
+      body.style.overflow = originalBodyOverflow;
+      body.style.position = originalBodyPosition;
+      body.style.top = originalBodyTop;
+      body.style.left = originalBodyLeft;
+      body.style.right = originalBodyRight;
+      body.style.width = originalBodyWidth;
+      window.scrollTo(0, scrollY);
+    };
+  }, [locked]);
+}
+
 function useMobileKeyboardZoomRecovery() {
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia("(max-width: 767px)").matches) return;
@@ -285,6 +321,65 @@ function assetUrl(value?: string | null) {
 
 function photoImageSrc(photo: Pick<Photo, "previewUrl" | "url">) {
   return assetUrl(photo.previewUrl || photo.url);
+}
+
+const preloadedPhotoUrls = new Set<string>();
+
+function preloadPhotoUrl(value?: string | null) {
+  const src = assetUrl(value);
+  if (!src || preloadedPhotoUrls.has(src) || typeof Image === "undefined") return;
+  preloadedPhotoUrls.add(src);
+  const image = new Image();
+  image.decoding = "async";
+  image.src = src;
+  if (image.decode) void image.decode().catch(() => undefined);
+}
+
+function photoFileExtension(photo: Pick<Photo, "originalFilename" | "mimeType">) {
+  const originalExtension = photo.originalFilename.match(/\.(avif|bmp|gif|heic|heif|jpe?g|png|webp)$/i)?.[0].toLowerCase();
+  if (originalExtension) return originalExtension;
+  if (/png/i.test(photo.mimeType)) return ".png";
+  if (/webp/i.test(photo.mimeType)) return ".webp";
+  if (/gif/i.test(photo.mimeType)) return ".gif";
+  if (/heic/i.test(photo.mimeType)) return ".heic";
+  if (/heif/i.test(photo.mimeType)) return ".heif";
+  return ".jpg";
+}
+
+function selectedPhotoFilename(photo: Pick<Photo, "id" | "originalFilename" | "mimeType">, index: number) {
+  const withoutExtension = photo.originalFilename.replace(/\.[^.]+$/, "");
+  const baseName = safeFilename(withoutExtension) || `event-photo-${photo.id.slice(0, 8)}`;
+  return `${String(index + 1).padStart(2, "0")}-${baseName}${photoFileExtension(photo)}`;
+}
+
+async function fetchSelectedPhotoFile(photo: Pick<Photo, "id" | "url" | "originalFilename" | "mimeType">, index: number) {
+  const response = await fetch(assetUrl(photo.url));
+  if (!response.ok) throw new Error("Could not load one of the selected photos.");
+  const blob = await response.blob();
+  return new File([blob], selectedPhotoFilename(photo, index), { type: blob.type || photo.mimeType || "image/jpeg" });
+}
+
+function canSharePhotoFiles(files: File[]) {
+  if (typeof navigator === "undefined" || typeof navigator.share !== "function" || typeof navigator.canShare !== "function") return false;
+  try {
+    return navigator.canShare({ files });
+  } catch {
+    return false;
+  }
+}
+
+function downloadPhotoFile(file: File) {
+  const url = URL.createObjectURL(file);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = file.name;
+  anchor.style.display = "none";
+  document.body.appendChild(anchor);
+  anchor.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    anchor.remove();
+  }, 1000);
 }
 
 function useAuth() {
@@ -506,10 +601,15 @@ async function shareOrCopyText({ title, text, url, fallbackLabel, onStatus, anal
 
 function getGuestSession(slug: string) {
   const key = `eventfilm_guest_${slug}`;
-  const saved = localStorage.getItem(key);
-  if (saved) return { key, session: JSON.parse(saved) as { clientId: string; nickname: string } };
-  const clientId = crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
-  return { key, session: { clientId, nickname: "" } };
+  try {
+    const saved = localStorage.getItem(key);
+    if (saved) return { key, session: JSON.parse(saved) as { clientId: string; nickname: string } };
+    const session = { clientId: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, nickname: "" };
+    localStorage.setItem(key, JSON.stringify(session));
+    return { key, session };
+  } catch {
+    return { key, session: { clientId: `${Date.now()}-${Math.random()}`, nickname: "" } };
+  }
 }
 
 function getGuestUploadMetadataKey(slug: string) {
@@ -545,6 +645,10 @@ function recordGuestUploadMetadata(slug: string, photo: Photo) {
 }
 
 type GuestUploadQueueStatus = "queued" | "uploading" | "uploaded" | "failed";
+type GuestPhotoPickerSource = "camera" | "library";
+type GuestAlbumSaveStatus = { tone: "info" | "success" | "error"; text: string };
+
+const GUEST_LIBRARY_FILE_ACCEPT = [...ALLOWED_IMAGE_MIME_TYPES, ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"].join(",");
 
 type GuestUploadQueueItem = {
   id: string;
@@ -749,7 +853,6 @@ function FullScreenPhotoViewer({
   photos = [],
   mode,
   onClose,
-  onSelectPhoto,
   onHostAction,
   onPhotoLike,
 }: {
@@ -757,22 +860,35 @@ function FullScreenPhotoViewer({
   photos?: Photo[];
   mode: "public" | "host";
   onClose: () => void;
-  onSelectPhoto?: (photo: Photo) => void;
   onHostAction?: (action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) => Promise<void>;
   onPhotoLike?: PhotoLikeToggleHandler;
 }) {
   const [busy, setBusy] = useState("");
   const [localStatus, setLocalStatus] = useState("");
+  const [activePhotoId, setActivePhotoId] = useState(photo?.id || "");
   const swipeStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
-  const galleryPhotos = photos.length ? photos : photo ? [photo] : [];
-  const currentIndex = photo ? galleryPhotos.findIndex((item) => item.id === photo.id) : -1;
+  const galleryPhotos = useMemo(() => (photos.length ? photos : photo ? [photo] : []), [photos, photo]);
+  const currentIndex = activePhotoId ? galleryPhotos.findIndex((item) => item.id === activePhotoId) : -1;
   const visibleIndex = currentIndex >= 0 ? currentIndex : 0;
-  const canNavigate = Boolean(photo && onSelectPhoto && galleryPhotos.length > 1 && currentIndex >= 0);
+  const currentPhoto = currentIndex >= 0 ? galleryPhotos[currentIndex] : photo;
+  const canNavigate = Boolean(currentPhoto && galleryPhotos.length > 1 && currentIndex >= 0);
+
+  useEffect(() => {
+    setActivePhotoId(photo?.id || "");
+  }, [photo?.id]);
 
   useEffect(() => {
     setBusy("");
     setLocalStatus("");
-  }, [photo?.id]);
+  }, [currentPhoto?.id]);
+
+  useEffect(() => {
+    if (!currentPhoto) return;
+    preloadPhotoUrl(currentPhoto.url);
+    if (!canNavigate) return;
+    preloadPhotoUrl(galleryPhotos[(visibleIndex + 1) % galleryPhotos.length]?.url);
+    preloadPhotoUrl(galleryPhotos[(visibleIndex - 1 + galleryPhotos.length) % galleryPhotos.length]?.url);
+  }, [canNavigate, currentPhoto?.url, galleryPhotos, visibleIndex]);
 
   useEffect(() => {
     if (!photo) return;
@@ -783,22 +899,23 @@ function FullScreenPhotoViewer({
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [photo?.id, currentIndex, galleryPhotos, onClose, onSelectPhoto]);
+  }, [photo, currentIndex, galleryPhotos, onClose]);
 
-  if (!photo) return null;
-  const currentPhoto = photo;
+  if (!photo || !currentPhoto) return null;
 
   function navigatePhoto(direction: -1 | 1) {
-    if (!canNavigate || !onSelectPhoto) return;
+    if (!canNavigate) return;
     const nextIndex = (visibleIndex + direction + galleryPhotos.length) % galleryPhotos.length;
-    onSelectPhoto(galleryPhotos[nextIndex]);
+    const nextPhoto = galleryPhotos[nextIndex];
+    if (nextPhoto) setActivePhotoId(nextPhoto.id);
   }
 
   async function runHostAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete") {
-    if (!onHostAction) return;
+    const photoForAction = currentPhoto;
+    if (!onHostAction || !photoForAction) return;
     setBusy(action);
     try {
-      await onHostAction(action, currentPhoto);
+      await onHostAction(action, photoForAction);
       if (action !== "delete") setLocalStatus("Updated");
     } catch (err) {
       setLocalStatus((err as Error).message);
@@ -807,8 +924,8 @@ function FullScreenPhotoViewer({
     }
   }
 
-  const guestName = photo.challengeParticipantName || photo.guestNickname || "Guest photo";
-  const photoDate = formatEventCardDate(photo.createdAt);
+  const guestName = currentPhoto.challengeParticipantName || currentPhoto.guestNickname || "Guest photo";
+  const photoDate = formatEventCardDate(currentPhoto.createdAt);
 
   function handlePhotoPointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (!canNavigate || (event.pointerType === "mouse" && event.button !== 0)) return;
@@ -841,7 +958,7 @@ function FullScreenPhotoViewer({
         onPointerUp={handlePhotoPointerUp}
         onPointerCancel={resetPhotoSwipe}
       >
-        <img className="max-h-full max-w-full object-contain" src={assetUrl(photo.url)} alt={photo.originalFilename} draggable={false} />
+        <img className="max-h-full max-w-full object-contain" src={assetUrl(currentPhoto.url)} alt={currentPhoto.originalFilename} draggable={false} loading="eager" decoding="async" fetchPriority="high" />
       </div>
 
       <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-4 pt-[max(env(safe-area-inset-top),1rem)] sm:px-6">
@@ -852,11 +969,11 @@ function FullScreenPhotoViewer({
           {galleryPhotos.length > 1 ? <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base font-bold tabular-nums text-stone-950">{visibleIndex + 1} of {galleryPhotos.length}</p> : null}
           <div className="flex min-h-11 min-w-11 justify-end">
             {mode === "public" && onPhotoLike ? (
-              <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" />
+              <PhotoHeartButton photo={currentPhoto} onToggle={onPhotoLike} variant="solid" />
             ) : (
-              <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-stone-800 shadow-sm ring-1 ring-[#eadfce]" aria-label={photoHeartLabel(Math.max(0, Number(photo.likeCount || 0)))}>
+              <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-stone-800 shadow-sm ring-1 ring-[#eadfce]" aria-label={photoHeartLabel(Math.max(0, Number(currentPhoto.likeCount || 0)))}>
                 <CleanIcon name="heart" className="h-4 w-4" />
-                <span className="tabular-nums">{Math.max(0, Number(photo.likeCount || 0))}</span>
+                <span className="tabular-nums">{Math.max(0, Number(currentPhoto.likeCount || 0))}</span>
               </span>
             )}
           </div>
@@ -883,15 +1000,15 @@ function FullScreenPhotoViewer({
         </div>
         {mode === "host" && onHostAction ? (
           <div className="mx-auto mt-4 flex max-w-5xl flex-wrap gap-2">
-            {photo.visibilityStatus === "HIDDEN" ? (
+            {currentPhoto.visibilityStatus === "HIDDEN" ? (
               <button type="button" className="min-h-11 rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("restore")}>Restore photo</button>
             ) : (
               <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-800 ring-1 ring-[#eadfce] disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</button>
             )}
-            {photo.isFeatured ? (
+            {currentPhoto.isFeatured ? (
               <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-800 ring-1 ring-[#eadfce] disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove host pick</button>
             ) : (
-              <button type="button" className="min-h-11 rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300 disabled:text-stone-700" disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</button>
+              <button type="button" className="min-h-11 rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300 disabled:text-stone-700" disabled={Boolean(busy) || currentPhoto.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</button>
             )}
             <button type="button" className="min-h-11 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete</button>
           </div>
@@ -1483,9 +1600,8 @@ function AwardResultsPanel({
   onPhotoClick?: (photo: Photo) => void;
   onPhotoLike?: PhotoLikeToggleHandler;
 }) {
+  const photosById = useMemo(() => new Map(photos.filter(isPhotoVisible).map((photo) => [photo.id, photo])), [photos]);
   if (!awardResults?.categories.length) return null;
-
-  const photosById = new Map(photos.filter(isPhotoVisible).map((photo) => [photo.id, photo]));
 
   return (
     <section className="rounded-[2rem] border border-[#eadfce] bg-white p-5 shadow-[0_24px_70px_rgba(101,62,0,0.08)] sm:p-6">
@@ -1523,7 +1639,7 @@ function AwardResultsPanel({
                   {leaderPhotos.map((photo) => (
                     <div className="flex items-center gap-3 rounded-2xl bg-white p-3 ring-1 ring-amber-200" key={photo.id}>
                       <button type="button" className="shrink-0 overflow-hidden rounded-2xl" onClick={() => onPhotoClick?.(photo)} aria-label={`Open ${category.categoryLabel} leader photo`}>
-                        <img className="h-16 w-16 object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                        <img className="h-16 w-16 object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
                       </button>
                       <div className="min-w-0 flex-1">
                         <p className="text-xs font-bold uppercase text-[#653e00]">{category.isTie ? "Tied leader" : "Current leader"}</p>
@@ -1543,7 +1659,7 @@ function AwardResultsPanel({
                   {topPhotos.map(({ photo }) => (
                     <div className="overflow-hidden rounded-[1.15rem] bg-white p-2 ring-1 ring-[#eadfce]" key={photo.id}>
                       <button type="button" className="block w-full overflow-hidden rounded-[0.95rem]" onClick={() => onPhotoClick?.(photo)}>
-                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
                       </button>
                       <div className="flex items-center justify-between gap-2 p-2">
                         <p className="min-w-0 truncate text-sm font-bold text-stone-900">{photo.guestNickname || "Guest photo"}</p>
@@ -3514,35 +3630,38 @@ function ManageEvent() {
   }
 
   const challengeParticipants = event?.challenge?.participants || [];
-  const challengeColors = Array.from(new Map(challengeParticipants.map((participant) => [participant.colorSlug, participant])).values());
+  const challengeColors = useMemo(() => Array.from(new Map(challengeParticipants.map((participant) => [participant.colorSlug, participant])).values()), [challengeParticipants]);
   const challengePrompts = promptsFromChallenge(event?.challenge);
   const challengeAwards = categoriesFromChallenge(event?.challenge);
   const showPromptPackSetup = usesPromptPackSetup(challengeDraft.type);
-  const filteredPhotos = event?.photos.filter((photo) => {
-    if (galleryFilter === "all") return true;
-    if (galleryFilter === "visible") return isPhotoVisible(photo);
-    if (galleryFilter === "hidden") return photo.visibilityStatus === "HIDDEN";
-    if (galleryFilter === "featured") return Boolean(photo.isFeatured);
-    if (galleryFilter === "liked") return Number(photo.likeCount || 0) > 0;
-    if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
-    if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
-    if (galleryFilter.startsWith("prompt:")) return photo.challengePromptId === galleryFilter.replace("prompt:", "");
-    if (galleryFilter.startsWith("award:")) return photo.challengeItemId === galleryFilter.replace("award:", "");
-    return true;
-  }).sort((first, second) => {
-    if (galleryFilter !== "liked") return 0;
-    return Number(second.likeCount || 0) - Number(first.likeCount || 0) || new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
-  }) || [];
-  const visiblePhotos = event?.photos.filter(isPhotoVisible) || [];
-  const hostContributorSummary = buildContributorSummary(visiblePhotos);
-  const hiddenCount = event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0;
-  const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
-  const likedCount = event?.photos.filter((photo) => Number(photo.likeCount || 0) > 0).length || 0;
-  const hostAwardResults = event ? eventAnalytics?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visiblePhotos }) : null;
-  const lifecycle = event ? deriveEventLifecycleStatus(event, eventAnalytics || undefined) : null;
-  const shareAssets = event ? buildHostShareAssets(event) : null;
+  const filteredPhotos = useMemo(() => {
+    const eventPhotos = event?.photos || [];
+    return eventPhotos.filter((photo) => {
+      if (galleryFilter === "all") return true;
+      if (galleryFilter === "visible") return isPhotoVisible(photo);
+      if (galleryFilter === "hidden") return photo.visibilityStatus === "HIDDEN";
+      if (galleryFilter === "featured") return Boolean(photo.isFeatured);
+      if (galleryFilter === "liked") return Number(photo.likeCount || 0) > 0;
+      if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
+      if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
+      if (galleryFilter.startsWith("prompt:")) return photo.challengePromptId === galleryFilter.replace("prompt:", "");
+      if (galleryFilter.startsWith("award:")) return photo.challengeItemId === galleryFilter.replace("award:", "");
+      return true;
+    }).sort((first, second) => {
+      if (galleryFilter !== "liked") return 0;
+      return Number(second.likeCount || 0) - Number(first.likeCount || 0) || new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
+    });
+  }, [event?.photos, galleryFilter]);
+  const visiblePhotos = useMemo(() => event?.photos.filter(isPhotoVisible) || [], [event?.photos]);
+  const hostContributorSummary = useMemo(() => buildContributorSummary(visiblePhotos), [visiblePhotos]);
+  const hiddenCount = useMemo(() => event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0, [event?.photos]);
+  const featuredCount = useMemo(() => event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0, [event?.photos]);
+  const likedCount = useMemo(() => event?.photos.filter((photo) => Number(photo.likeCount || 0) > 0).length || 0, [event?.photos]);
+  const hostAwardResults = useMemo(() => event ? eventAnalytics?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visiblePhotos }) : null, [event, eventAnalytics?.eventAwardResults, visiblePhotos]);
+  const lifecycle = useMemo(() => event ? deriveEventLifecycleStatus(event, eventAnalytics || undefined) : null, [event, eventAnalytics]);
+  const shareAssets = useMemo(() => event ? buildHostShareAssets(event) : null, [event]);
   const canViewFounderTools = Boolean(auth.user?.isFounder);
-  const savedSettingsForm = event ? eventSettingsFormFromEvent(event) : null;
+  const savedSettingsForm = useMemo(() => event ? eventSettingsFormFromEvent(event) : null, [event]);
   const settingsDirty = Boolean(settingsForm && savedSettingsForm && JSON.stringify(settingsForm) !== JSON.stringify(savedSettingsForm));
   const liveSettingsValidation = settingsForm ? validateEventSettingsInput(eventSettingsInputFromForm(settingsForm, { requireRevealAt: event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE }), { requireRevealAt: event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE }) : null;
   const visibleSettingsFieldErrors = {
@@ -3950,13 +4069,13 @@ function ManageEvent() {
               )}
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {filteredPhotos.map((photo) => (
+              {filteredPhotos.map((photo, index) => (
                 <div className={cx("overflow-hidden rounded-[1.45rem] border bg-white p-2 shadow-[0_12px_30px_rgba(101,62,0,0.055)]", photo.visibilityStatus === "HIDDEN" ? "border-red-200 opacity-80" : "border-[#eadfce]")} key={photo.id}>
                   <button className="block w-full text-left" onClick={() => {
                     setSelectedPhoto(photo);
                     trackAnalytics("photo_lightbox_opened", { eventId, eventSlug: event.slug, metadata: { surface: "host", photoId: photo.id } });
                   }}>
-                    <img className="aspect-square w-full rounded-[1.1rem] object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                    <img className="aspect-square w-full rounded-[1.1rem] object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading={index < 8 ? "eager" : "lazy"} decoding="async" />
                   </button>
                   <div className="p-3 text-sm">
                     <PhotoStatusBadges photo={photo} host />
@@ -3991,7 +4110,7 @@ function ManageEvent() {
             {!filteredPhotos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet</h3><p className="mt-2 font-semibold text-stone-600">Share the QR code or guest link to start collecting photos.</p></Card>}
           </section>
           ) : null}
-          <FullScreenPhotoViewer photo={selectedPhoto} photos={filteredPhotos} mode="host" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onHostAction={handleHostPhotoAction} />
+          <FullScreenPhotoViewer photo={selectedPhoto} photos={filteredPhotos} mode="host" onClose={() => setSelectedPhoto(null)} onHostAction={handleHostPhotoAction} />
         </>
       )}
     </AppShell>
@@ -4017,7 +4136,7 @@ function PhotoMosaic({ photos, dark = false, onPhotoClick, onPhotoLike }: { phot
           <div className="relative">
             {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" className="absolute right-2 top-2 z-10" /> : null}
           <button className="block h-full w-full text-left" type="button" onClick={() => onPhotoClick?.(photo)}>
-            <img className="aspect-square h-full w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+            <img className="aspect-square h-full w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading={index < 4 ? "eager" : "lazy"} decoding="async" />
           </button>
           </div>
           <figcaption className={cx("p-3 text-xs font-bold", dark ? "text-stone-100" : "text-stone-700")}>
@@ -4060,7 +4179,7 @@ function RecapChallengeMoments({ story, awardResults, photos, onPhotoClick, onPh
                   <div className="relative overflow-hidden rounded-[0.9rem] bg-stone-100" key={photo.id}>
                     {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" /> : null}
                     <button className="block w-full" type="button" onClick={() => onPhotoClick(photo)}>
-                      <img className="aspect-square h-full w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                      <img className="aspect-square h-full w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
                     </button>
                   </div>
                 ))}
@@ -4122,16 +4241,17 @@ function EventRecap() {
   }, [slug]);
 
   const event = data?.event;
-  const awardResults = event ? buildAwardResultsSummary({ challenge: event.challenge, photos: data.photos.filter(isPhotoVisible) }) : null;
-  const story = event ? buildEventRecapStory(event, data.photos, { awardResults, awardVoting: data.awardVoting }) : null;
+  const visibleRecapPhotos = useMemo(() => data?.photos.filter(isPhotoVisible) || [], [data?.photos]);
+  const awardResults = useMemo(() => event ? buildAwardResultsSummary({ challenge: event.challenge, photos: visibleRecapPhotos }) : null, [event, visibleRecapPhotos]);
+  const story = useMemo(() => event && data ? buildEventRecapStory(event, data.photos, { awardResults, awardVoting: data.awardVoting }) : null, [awardResults, data, event]);
   const recapHeroSentence = data?.isLocked
     ? `Photos are saved for the reveal. The recap unlocks after ${event ? formatDateTime(event.revealAt) : "the reveal time"}.`
     : story?.totalPhotos
       ? "Photos from the event, all in one place."
       : "No photos yet. Share the guest link so people can add theirs.";
-  const selectedFilter = story?.albumFilters.find((filter) => filter.key === activeAlbumFilter) || story?.albumFilters[0] || null;
-  const albumPhotoIds = new Set(selectedFilter?.photoIds || []);
-  const albumPhotos = data?.photos.filter((photo) => !selectedFilter || albumPhotoIds.has(photo.id)) || [];
+  const selectedFilter = useMemo(() => story?.albumFilters.find((filter) => filter.key === activeAlbumFilter) || story?.albumFilters[0] || null, [activeAlbumFilter, story?.albumFilters]);
+  const albumPhotoIds = useMemo(() => new Set(selectedFilter?.photoIds || []), [selectedFilter]);
+  const albumPhotos = useMemo(() => data?.photos.filter((photo) => !selectedFilter || albumPhotoIds.has(photo.id)) || [], [albumPhotoIds, data?.photos, selectedFilter]);
 
   useEffect(() => {
     if (!event || !story) return;
@@ -4225,7 +4345,7 @@ function EventRecap() {
                   <div className="relative overflow-hidden rounded-xl bg-stone-100" key={photo.id}>
                     <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-2 top-2 z-10" />
                     <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
-                      <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                      <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="eager" decoding="async" />
                     </button>
                   </div>
                 ))}
@@ -4253,7 +4373,7 @@ function EventRecap() {
                       <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
                         <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
                         <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
-                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
                         </button>
                       </div>
                     ))}
@@ -4274,7 +4394,7 @@ function EventRecap() {
                       <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
                         <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
                         <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
-                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
                         </button>
                       </div>
                     ))}
@@ -4315,7 +4435,7 @@ function EventRecap() {
             ) : null}
 
             {event.challenge && !data.isLocked && story.challengeMoments.some((moment) => moment.photos.length || moment.count) ? <RecapChallengeMoments story={story} awardResults={awardResults} photos={data.photos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} /> : null}
-            <FullScreenPhotoViewer photo={selectedPhoto} photos={data.photos} mode="public" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onPhotoLike={handleRecapPhotoLike} />
+            <FullScreenPhotoViewer photo={selectedPhoto} photos={data.photos} mode="public" onClose={() => setSelectedPhoto(null)} onPhotoLike={handleRecapPhotoLike} />
           </>
         )}
       </div>
@@ -4335,7 +4455,8 @@ function GuestEvent() {
   const [selectedItemId, setSelectedItemId] = useState(() => localStorage.getItem(getChallengeItemSession(slug)) || "");
   const participantSelectRef = useRef<HTMLSelectElement | null>(null);
   const uploadCardRef = useRef<HTMLElement | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const cameraInputRef = useRef<HTMLInputElement | null>(null);
+  const libraryInputRef = useRef<HTMLInputElement | null>(null);
   const albumRef = useRef<HTMLElement | null>(null);
   const myUploadsRef = useRef<HTMLElement | null>(null);
   const pageViewedTrackedRef = useRef(false);
@@ -4354,10 +4475,15 @@ function GuestEvent() {
   const [uploadSuccess, setUploadSuccess] = useState<GuestUploadSuccessSummary | null>(null);
   const [awardResults, setAwardResults] = useState<AwardResultsSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
+  const [photoSelectionMode, setPhotoSelectionMode] = useState(false);
+  const [selectedAlbumPhotoIds, setSelectedAlbumPhotoIds] = useState<Set<string>>(() => new Set());
+  const [photoSaveStatus, setPhotoSaveStatus] = useState<GuestAlbumSaveStatus | null>(null);
+  const [photoSaveBusy, setPhotoSaveBusy] = useState(false);
   const [activeGuestTab, setActiveGuestTab] = useState<"photos" | "people" | "highlights">("photos");
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const navigate = useNavigate();
+  useDocumentScrollLock(uploadSheetOpen);
 
   async function load() {
     const eventData = await api<{ event: PublicEvent }>(`/api/events/${slug}`);
@@ -4494,20 +4620,42 @@ function GuestEvent() {
     return "";
   }
 
-  function handlePhotoPickerClick(clickEvent: React.MouseEvent<HTMLInputElement>) {
+  function blockPhotoPickerForContext() {
     if (loading) {
-      clickEvent.preventDefault();
-      return;
+      return true;
     }
     const contextError = uploadContextError();
-    if (!contextError) return;
-    clickEvent.preventDefault();
+    if (!contextError) return false;
     setMessage("");
     setUploadSuccess(null);
     setError(contextError);
+    return true;
   }
 
-  async function handlePhotoFilesSelected(inputEvent: React.ChangeEvent<HTMLInputElement>, source: "camera" | "library") {
+  function openPhotoPicker(source: GuestPhotoPickerSource) {
+    if (blockPhotoPickerForContext()) return;
+    const input = source === "camera" ? cameraInputRef.current : libraryInputRef.current;
+    if (!input) return;
+
+    const pickerInput = input as HTMLInputElement & { showPicker?: () => void };
+    if (typeof pickerInput.showPicker === "function") {
+      try {
+        pickerInput.showPicker();
+        return;
+      } catch {
+        input.click();
+        return;
+      }
+    }
+    input.click();
+  }
+
+  function handlePhotoPickerClick(clickEvent: React.MouseEvent<HTMLInputElement>) {
+    if (!blockPhotoPickerForContext()) return;
+    clickEvent.preventDefault();
+  }
+
+  async function handlePhotoFilesSelected(inputEvent: React.ChangeEvent<HTMLInputElement>, source: GuestPhotoPickerSource) {
     const selectedFiles = Array.from(inputEvent.currentTarget.files || []);
     inputEvent.currentTarget.value = "";
     if (!selectedFiles.length) return;
@@ -4661,18 +4809,18 @@ function GuestEvent() {
     await uploadPhotoBatch(retryFiles, "retry");
   }
 
-  const selectedParticipant = event?.challenge?.participants.find((participant) => participant.id === selectedParticipantId);
-  const guestPrompts = promptsFromChallenge(event?.challenge);
-  const guestAwards = categoriesFromChallenge(event?.challenge);
-  const selectedPrompt = guestPrompts.find((prompt) => prompt.id === selectedPromptId);
-  const selectedAward = guestAwards.find((category) => category.id === selectedItemId);
-  const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
-  const guestProgress = event ? buildGuestChallengeProgress(event.challenge, photos, { participantId: selectedParticipantId, promptId: selectedPromptId, itemId: selectedItemId }) : null;
-  const contributorSummary = buildContributorSummary(photos);
-  const visibleMyUploadIds = new Set(myUploads.map((photo) => photo.id));
-  const unavailableUploads = localUploads.filter((item) => !visibleMyUploadIds.has(item.photoId));
-  const compactPromptItems = showAllChallengeItems ? guestPrompts : guestPrompts.slice(0, 3);
-  const compactAwardItems = showAllChallengeItems ? guestAwards : guestAwards.slice(0, 3);
+  const selectedParticipant = useMemo(() => event?.challenge?.participants.find((participant) => participant.id === selectedParticipantId), [event?.challenge?.participants, selectedParticipantId]);
+  const guestPrompts = useMemo(() => promptsFromChallenge(event?.challenge), [event?.challenge]);
+  const guestAwards = useMemo(() => categoriesFromChallenge(event?.challenge), [event?.challenge]);
+  const selectedPrompt = useMemo(() => guestPrompts.find((prompt) => prompt.id === selectedPromptId), [guestPrompts, selectedPromptId]);
+  const selectedAward = useMemo(() => guestAwards.find((category) => category.id === selectedItemId), [guestAwards, selectedItemId]);
+  const capsuleCopy = useMemo(() => event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null, [event?.challenge]);
+  const guestProgress = useMemo(() => event ? buildGuestChallengeProgress(event.challenge, photos, { participantId: selectedParticipantId, promptId: selectedPromptId, itemId: selectedItemId }) : null, [event, photos, selectedItemId, selectedParticipantId, selectedPromptId]);
+  const contributorSummary = useMemo(() => buildContributorSummary(photos), [photos]);
+  const visibleMyUploadIds = useMemo(() => new Set(myUploads.map((photo) => photo.id)), [myUploads]);
+  const unavailableUploads = useMemo(() => localUploads.filter((item) => !visibleMyUploadIds.has(item.photoId)), [localUploads, visibleMyUploadIds]);
+  const compactPromptItems = useMemo(() => showAllChallengeItems ? guestPrompts : guestPrompts.slice(0, 3), [guestPrompts, showAllChallengeItems]);
+  const compactAwardItems = useMemo(() => showAllChallengeItems ? guestAwards : guestAwards.slice(0, 3), [guestAwards, showAllChallengeItems]);
   useEffect(() => {
     if (!event || !guestProgress || progressTrackedRef.current) return;
     progressTrackedRef.current = true;
@@ -4710,6 +4858,8 @@ function GuestEvent() {
   function openUploadSheet() {
     setUploadSheetOpen(true);
     setOptionsOpen(false);
+    setPhotoSelectionMode(false);
+    setSelectedAlbumPhotoIds(new Set());
   }
 
   function goBackFromGuestAlbum() {
@@ -4718,23 +4868,137 @@ function GuestEvent() {
   }
 
   const isMemoryCapsuleLocked = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !event.isRevealed;
-  const visibleAlbumPhotos = isMemoryCapsuleLocked ? [] : photos;
+  const visibleAlbumPhotos = useMemo(() => isMemoryCapsuleLocked ? [] : photos, [isMemoryCapsuleLocked, photos]);
+  const selectedAlbumPhotos = useMemo(() => visibleAlbumPhotos.filter((photo) => selectedAlbumPhotoIds.has(photo.id)), [selectedAlbumPhotoIds, visibleAlbumPhotos]);
+  const selectedAlbumPhotoCount = selectedAlbumPhotos.length;
+  const allVisibleAlbumPhotosSelected = visibleAlbumPhotos.length > 0 && selectedAlbumPhotoCount === visibleAlbumPhotos.length;
   const displayedPhotoCount = event?.photoCount ?? visibleAlbumPhotos.length;
   const guestSubtitle = isMemoryCapsuleLocked ? "Photos locked" : `${displayedPhotoCount} ${displayedPhotoCount === 1 ? "photo" : "photos"}`;
-  const guestAwardResults = event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? buildAwardResultsSummary({ challenge: event.challenge, photos: visibleAlbumPhotos }) : awardResults;
-  const highlightPhotos = [...visibleAlbumPhotos].sort((first, second) => {
+  const guestAwardResults = useMemo(() => event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? buildAwardResultsSummary({ challenge: event.challenge, photos: visibleAlbumPhotos }) : awardResults, [awardResults, event, visibleAlbumPhotos]);
+  const highlightPhotos = useMemo(() => [...visibleAlbumPhotos].sort((first, second) => {
     const featuredDelta = Number(Boolean(second.isFeatured)) - Number(Boolean(first.isFeatured));
     if (featuredDelta) return featuredDelta;
     const likeDelta = Number(second.likeCount || 0) - Number(first.likeCount || 0);
     if (likeDelta) return likeDelta;
     return new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
-  }).slice(0, 8);
-  const contributorTiles = contributorSummary.topContributors.map((contributor) => ({
+  }).slice(0, 8), [visibleAlbumPhotos]);
+  const contributorTiles = useMemo(() => contributorSummary.topContributors.map((contributor) => ({
     ...contributor,
     photos: visibleAlbumPhotos
       .filter((photo) => sanitizeGuestDisplayName(photo.challengeParticipantName || photo.guestNickname).toLowerCase() === contributor.displayName.toLowerCase())
       .slice(0, 3),
-  }));
+  })), [contributorSummary, visibleAlbumPhotos]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleAlbumPhotos.map((photo) => photo.id));
+    setSelectedAlbumPhotoIds((current) => {
+      const next = new Set(Array.from(current).filter((photoId) => visibleIds.has(photoId)));
+      return next.size === current.size ? current : next;
+    });
+    if (!visibleAlbumPhotos.length && photoSelectionMode) setPhotoSelectionMode(false);
+  }, [photoSelectionMode, visibleAlbumPhotos]);
+
+  useEffect(() => {
+    if (activeGuestTab !== "photos" && photoSelectionMode) {
+      setPhotoSelectionMode(false);
+      setSelectedAlbumPhotoIds(new Set());
+    }
+  }, [activeGuestTab, photoSelectionMode]);
+
+  function openPhotoSelectionMode() {
+    setOptionsOpen(false);
+    setUploadSheetOpen(false);
+    setActiveGuestTab("photos");
+    setSelectedAlbumPhotoIds(new Set());
+    setPhotoSaveStatus(null);
+    if (!visibleAlbumPhotos.length) {
+      setPhotoSaveStatus({
+        tone: "info",
+        text: isMemoryCapsuleLocked ? "Photos unlock after reveal." : "No photos to select yet.",
+      });
+      return;
+    }
+    setPhotoSelectionMode(true);
+    setTimeout(() => albumRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+  }
+
+  function cancelPhotoSelection() {
+    setPhotoSelectionMode(false);
+    setSelectedAlbumPhotoIds(new Set());
+    setPhotoSaveStatus(null);
+  }
+
+  function toggleAlbumPhotoSelection(photoId: string) {
+    setPhotoSaveStatus(null);
+    setSelectedAlbumPhotoIds((current) => {
+      const next = new Set(current);
+      if (next.has(photoId)) next.delete(photoId);
+      else next.add(photoId);
+      return next;
+    });
+  }
+
+  function selectAllAlbumPhotos() {
+    setPhotoSaveStatus(null);
+    setSelectedAlbumPhotoIds(new Set(visibleAlbumPhotos.map((photo) => photo.id)));
+  }
+
+  function clearSelectedAlbumPhotos() {
+    setPhotoSaveStatus(null);
+    setSelectedAlbumPhotoIds(new Set());
+  }
+
+  async function saveSelectedAlbumPhotos() {
+    if (!event || photoSaveBusy) return;
+    if (!selectedAlbumPhotos.length) {
+      setPhotoSaveStatus({ tone: "info", text: "Select at least one photo." });
+      return;
+    }
+
+    setPhotoSaveBusy(true);
+    setPhotoSaveStatus({ tone: "info", text: `Preparing ${selectedAlbumPhotoCount} ${selectedAlbumPhotoCount === 1 ? "photo" : "photos"}...` });
+
+    try {
+      const files = await Promise.all(selectedAlbumPhotos.map((photo, index) => fetchSelectedPhotoFile(photo, index)));
+      const analyticsMetadata = {
+        surface: "guest_album_select",
+        photoCount: files.length,
+        photoIds: selectedAlbumPhotos.map((photo) => photo.id).join(","),
+      };
+
+      if (canSharePhotoFiles(files)) {
+        try {
+          trackAnalytics("native_share_opened", { eventId: event.id, eventSlug: event.slug, metadata: analyticsMetadata });
+          await navigator.share({
+            files,
+            title: `${event.name} photos`,
+            text: `Save photos from ${event.name}.`,
+          });
+          trackAnalytics("album_downloaded", { eventId: event.id, eventSlug: event.slug, metadata: { ...analyticsMetadata, method: "native_share" } });
+          setPhotoSaveStatus({ tone: "success", text: `Opened save options for ${files.length} ${files.length === 1 ? "photo" : "photos"}.` });
+          setPhotoSelectionMode(false);
+          setSelectedAlbumPhotoIds(new Set());
+          return;
+        } catch (err) {
+          if ((err as DOMException).name === "AbortError") {
+            setPhotoSaveStatus({ tone: "info", text: "Save canceled." });
+            return;
+          }
+        }
+      }
+
+      files.forEach(downloadPhotoFile);
+      trackAnalytics("album_downloaded", { eventId: event.id, eventSlug: event.slug, metadata: { ...analyticsMetadata, method: "download_fallback" } });
+      setPhotoSaveStatus({ tone: "success", text: `${files.length} ${files.length === 1 ? "photo" : "photos"} downloaded.` });
+      setPhotoSelectionMode(false);
+      setSelectedAlbumPhotoIds(new Set());
+    } catch (err) {
+      setPhotoSaveStatus({ tone: "error", text: publicRouteErrorMessage(err, "Could not save selected photos. Try again or long-press one photo.") });
+    } finally {
+      setPhotoSaveBusy(false);
+    }
+  }
+
   const guestTabs: Array<{ key: "photos" | "people" | "highlights"; label: string }> = [
     { key: "photos", label: "Photos" },
     { key: "people", label: "People" },
@@ -4749,6 +5013,11 @@ function GuestEvent() {
   const uploadQueueStatusText = loading && uploadQueueTotal
     ? `Adding ${Math.max(1, currentUploadNumber)} of ${uploadQueueTotal}...`
     : message || (uploadQueueTotal && failedQueueCount ? `${uploadedQueueCount} ${uploadedQueueCount === 1 ? "photo" : "photos"} added. ${failedQueueCount} ${failedQueueCount === 1 ? "photo" : "photos"} could not upload.` : "");
+  const photoSaveStatusClass = photoSaveStatus?.tone === "error"
+    ? "bg-red-50 text-red-700"
+    : photoSaveStatus?.tone === "success"
+      ? "bg-green-50 text-green-800"
+      : "bg-stone-100 text-stone-700";
 
   return (
     <main className="min-h-screen bg-white text-[#171717]">
@@ -4784,8 +5053,9 @@ function GuestEvent() {
                   <CleanIcon name="more" className="h-5 w-5" />
                 </button>
                 {optionsOpen ? (
-                  <div className="absolute right-0 top-11 z-30 w-40 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
+                  <div className="absolute right-0 top-11 z-30 w-44 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
                     <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/recap/${event.slug}`}>Shared Recap</a>
+                    <button type="button" className={cx("block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400 disabled:hover:bg-white", visibleAlbumPhotos.length ? "" : "text-stone-400")} disabled={!visibleAlbumPhotos.length} onClick={openPhotoSelectionMode}>Select Photos</button>
                     <button type="button" className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50" onClick={openUploadSheet}>Add photos</button>
                   </div>
                 ) : null}
@@ -4817,21 +5087,37 @@ function GuestEvent() {
                 </div>
               ) : visibleAlbumPhotos.length ? (
                 <div className="columns-2 gap-1.5">
-                  {visibleAlbumPhotos.map((photo) => (
-                    <div className="relative mb-1.5 break-inside-avoid overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
-                      <PhotoHeartButton photo={photo} onToggle={handleGuestPhotoLike} variant="solid" className="absolute right-1.5 top-1.5 z-10" />
-                      <button
-                        type="button"
-                        className="block w-full text-left"
-                        onClick={() => {
-                          setSelectedPhoto(photo);
-                          trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
-                        }}
-                      >
-                        <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
-                      </button>
-                    </div>
-                  ))}
+                  {visibleAlbumPhotos.map((photo, index) => {
+                    const photoSelected = selectedAlbumPhotoIds.has(photo.id);
+                    return (
+                      <div className={cx("relative mb-1.5 break-inside-avoid overflow-hidden rounded-lg bg-stone-100", photoSelectionMode && photoSelected ? "ring-2 ring-[#e85d3f]" : "")} key={photo.id}>
+                        {!photoSelectionMode ? <PhotoHeartButton photo={photo} onToggle={handleGuestPhotoLike} variant="solid" className="absolute right-1.5 top-1.5 z-10" /> : null}
+                        <button
+                          type="button"
+                          className="relative block w-full text-left"
+                          aria-pressed={photoSelectionMode ? photoSelected : undefined}
+                          aria-label={photoSelectionMode ? `${photoSelected ? "Deselect" : "Select"} ${photo.originalFilename}` : undefined}
+                          onClick={() => {
+                            if (photoSelectionMode) {
+                              toggleAlbumPhotoSelection(photo.id);
+                              return;
+                            }
+                            setSelectedPhoto(photo);
+                            trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
+                          }}
+                        >
+                          <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading={index < 6 ? "eager" : "lazy"} decoding="async" />
+                          {photoSelectionMode ? (
+                            <span className={cx("absolute inset-0 flex items-start justify-end p-2 transition", photoSelected ? "bg-black/20" : "bg-black/0")}>
+                              <span className={cx("grid h-8 w-8 place-items-center rounded-full border text-white shadow-sm", photoSelected ? "border-[#e85d3f] bg-[#e85d3f]" : "border-white/90 bg-black/30")}>
+                                {photoSelected ? <CleanIcon name="check" className="h-4 w-4" /> : null}
+                              </span>
+                            </span>
+                          ) : null}
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="mx-2 mt-10 rounded-lg border border-dashed border-stone-200 bg-white p-6 text-center">
@@ -4852,7 +5138,7 @@ function GuestEvent() {
                       <div className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white p-3" key={contributor.displayName}>
                         <div className="flex h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-stone-100">
                           {contributor.photos.length ? contributor.photos.map((photo) => (
-                            <img className="h-full min-w-0 flex-1 object-cover" src={photoImageSrc(photo)} alt="" key={photo.id} />
+                            <img className="h-full min-w-0 flex-1 object-cover" src={photoImageSrc(photo)} alt="" key={photo.id} loading="lazy" decoding="async" />
                           )) : <CleanIcon name="users" className="m-auto h-5 w-5 text-stone-400" />}
                         </div>
                         <div className="min-w-0 flex-1">
@@ -4890,7 +5176,7 @@ function GuestEvent() {
                             trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_highlights", photoId: photo.id } });
                           }}
                         >
-                          <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                          <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
                         </button>
                       </div>
                     ))}
@@ -4905,19 +5191,41 @@ function GuestEvent() {
             ) : null}
           </section>
 
-          <FullScreenPhotoViewer photo={selectedPhoto} photos={visibleAlbumPhotos} mode="public" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onPhotoLike={handleGuestPhotoLike} />
+          <FullScreenPhotoViewer photo={selectedPhoto} photos={visibleAlbumPhotos} mode="public" onClose={() => setSelectedPhoto(null)} onPhotoLike={handleGuestPhotoLike} />
 
-          <div className="fixed inset-x-0 bottom-7 z-30 flex justify-center px-4 pointer-events-none">
-            <button type="button" className="pointer-events-auto inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-7 py-3 text-base font-bold text-white shadow-[0_6px_16px_rgba(232,93,63,0.24)] transition hover:bg-[#d84d32]" onClick={openUploadSheet}>
-              <CleanIcon name="upload" className="h-5 w-5" />
-              Add photos
-            </button>
-          </div>
+          {photoSelectionMode ? (
+            <div className="fixed inset-x-0 bottom-0 z-30 border-t border-stone-200 bg-white/95 px-3 pb-[max(env(safe-area-inset-bottom),0.85rem)] pt-3 shadow-[0_-6px_16px_rgba(23,23,23,0.08)] backdrop-blur">
+              <div className="mx-auto max-w-[430px]">
+                {photoSaveStatus ? <p className={cx("mb-2 rounded-lg px-3 py-2 text-sm font-semibold", photoSaveStatusClass)} role="status">{photoSaveStatus.text}</p> : null}
+                <div className="flex items-center gap-2">
+                  <button type="button" className="min-h-11 rounded-lg px-3 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100" onClick={cancelPhotoSelection} disabled={photoSaveBusy}>Cancel</button>
+                  <p className="min-w-0 flex-1 text-center text-sm font-bold text-stone-900">{selectedAlbumPhotoCount} selected</p>
+                  <button type="button" className="min-h-11 rounded-lg px-3 py-2 text-sm font-bold text-stone-700 hover:bg-stone-100 disabled:text-stone-400" onClick={allVisibleAlbumPhotosSelected ? clearSelectedAlbumPhotos : selectAllAlbumPhotos} disabled={photoSaveBusy || !visibleAlbumPhotos.length}>
+                    {allVisibleAlbumPhotosSelected ? "Clear" : "Select all"}
+                  </button>
+                </div>
+                <button type="button" className="mt-2 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#d84d32] disabled:cursor-not-allowed disabled:bg-stone-300 disabled:text-stone-600" disabled={photoSaveBusy || !selectedAlbumPhotoCount} onClick={() => {
+                  void saveSelectedAlbumPhotos();
+                }}>
+                  <CleanIcon name="download" className="h-5 w-5" />
+                  {photoSaveBusy ? "Preparing..." : "Save selected"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="fixed inset-x-0 bottom-7 z-30 flex flex-col items-center gap-2 px-4 pointer-events-none">
+              {photoSaveStatus ? <p className={cx("pointer-events-auto max-w-[390px] rounded-lg px-3 py-2 text-center text-sm font-semibold shadow-sm", photoSaveStatusClass)} role="status">{photoSaveStatus.text}</p> : null}
+              <button type="button" className="pointer-events-auto inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-7 py-3 text-base font-bold text-white shadow-[0_6px_16px_rgba(232,93,63,0.24)] transition hover:bg-[#d84d32]" onClick={openUploadSheet}>
+                <CleanIcon name="upload" className="h-5 w-5" />
+                Add photos
+              </button>
+            </div>
+          )}
 
           {uploadSheetOpen ? (
-            <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/25 px-0 sm:px-4" role="dialog" aria-modal="true" aria-label="Add photos">
+            <div className="fixed inset-0 z-40 flex items-end justify-center overflow-hidden overscroll-contain bg-black/25 px-0 sm:px-4" role="dialog" aria-modal="true" aria-label="Add photos">
               <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload sheet" onClick={() => setUploadSheetOpen(false)} />
-              <div className="relative max-h-[88vh] w-full max-w-[430px] overflow-y-auto rounded-t-xl bg-white p-4 shadow-sm">
+              <div className="relative max-h-[88vh] w-full max-w-[430px] overflow-y-auto overscroll-contain rounded-t-xl bg-white p-4 shadow-sm" data-testid="upload-sheet-panel">
                 <div className="sticky top-0 z-10 -mx-4 -mt-4 flex items-center justify-between border-b border-stone-100 bg-white px-4 py-3">
                   <div>
                     <h2 className="text-xl font-bold text-stone-950">Add photos</h2>
@@ -5005,21 +5313,21 @@ function GuestEvent() {
                       <span className="text-xs font-semibold text-stone-500">Leave blank to post as Anonymous guest.</span>
                     </label>
                   ) : null}
-                  <div className="mt-4 grid gap-3 grid-cols-2">
-                    <label className={cx("flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#d84d32]", loading ? "cursor-not-allowed opacity-70" : "cursor-pointer")} aria-disabled={loading}>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <button type="button" className={cx("flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#d84d32]", loading ? "cursor-not-allowed opacity-70" : "")} disabled={loading} onClick={() => openPhotoPicker("camera")}>
                       <Icon>photo_camera</Icon>
                       Take photo
-                      <input ref={fileInputRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="Take a photo" disabled={loading} onClick={handlePhotoPickerClick} onChange={(event) => {
-                        void handlePhotoFilesSelected(event, "camera");
-                      }} />
-                    </label>
-                    <label className={cx("flex min-h-12 items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-[#e85d3f] hover:bg-[#fff0ed]", loading ? "cursor-not-allowed opacity-70" : "cursor-pointer")} aria-disabled={loading}>
+                    </button>
+                    <button type="button" className={cx("flex min-h-12 items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-[#e85d3f] hover:bg-[#fff0ed]", loading ? "cursor-not-allowed opacity-70" : "")} disabled={loading} onClick={() => openPhotoPicker("library")}>
                       <Icon>photo_library</Icon>
                       Library
-                      <input className="sr-only" type="file" accept="image/*" multiple aria-label="Choose from phone" disabled={loading} onClick={handlePhotoPickerClick} onChange={(event) => {
-                        void handlePhotoFilesSelected(event, "library");
-                      }} />
-                    </label>
+                    </button>
+                    <input ref={cameraInputRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="Take a photo" disabled={loading} onClick={handlePhotoPickerClick} onChange={(event) => {
+                      void handlePhotoFilesSelected(event, "camera");
+                    }} />
+                    <input ref={libraryInputRef} className="sr-only" type="file" accept={GUEST_LIBRARY_FILE_ACCEPT} multiple aria-label="Choose from phone" disabled={loading} onClick={handlePhotoPickerClick} onChange={(event) => {
+                      void handlePhotoFilesSelected(event, "library");
+                    }} />
                   </div>
 
                   {uploadQueueTotal ? (
@@ -5098,7 +5406,7 @@ function GuestEvent() {
                       {myUploads.map((photo) => (
                         <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
                           <PhotoHeartButton photo={photo} onToggle={handleGuestPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
-                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} />
+                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
                         </div>
                       ))}
                     </div>
