@@ -32,7 +32,6 @@ import {
   getPromptPack,
   plainModeLabel,
   isAnonymousGuestDisplayName,
-  normalizeReportReason,
   sanitizeGuestDisplayName,
   deriveEventLifecycleStatus,
   validateUploadFile,
@@ -135,7 +134,6 @@ test("upload metadata requirements are registry-driven", () => {
 test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("landing_page_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("host_launch_kit_opened"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("photo_reported"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("album_downloaded"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("event_template_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("event_template_selected"), true);
@@ -186,7 +184,6 @@ test("analytics event registry is stable and unique", () => {
   assert.equal(ANALYTICS_EVENT_NAMES.includes("recap_shared_after_event"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_dashboard_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_feedback_inbox_viewed"), true);
-  assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_reported_photo_review_viewed"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_event_opened_from_dashboard"), true);
   assert.equal(ANALYTICS_EVENT_NAMES.includes("founder_metrics_exported"), true);
   assert.equal(new Set(ANALYTICS_EVENT_NAMES).size, ANALYTICS_EVENT_NAMES.length);
@@ -430,7 +427,7 @@ test("post-event host summary combines visible photos, contributors, analytics, 
     event,
     [
       photo({ id: "one", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T01:00:00.000Z", isFeatured: true, likeCount: 2 }),
-      photo({ id: "two", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T02:00:00.000Z", reportCount: 1 }),
+      photo({ id: "two", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T02:00:00.000Z" }),
       photo({ id: "hidden", guestNickname: "Alex", visibilityStatus: "HIDDEN", createdAt: "2026-06-02T02:00:00.000Z" }),
     ],
     {
@@ -446,7 +443,6 @@ test("post-event host summary combines visible photos, contributors, analytics, 
   assert.equal(summary.totalPhotos, 3);
   assert.equal(summary.visiblePhotos, 2);
   assert.equal(summary.hiddenPhotos, 1);
-  assert.equal(summary.reportedPhotos, 1);
   assert.equal(summary.totalContributors, 1);
   assert.equal(summary.guestJoins, 8);
   assert.equal(summary.uploadsOverTime[0].count, 2);
@@ -515,9 +511,7 @@ test("event settings validation trims safe fields and rejects unsafe basics", ()
   }
 });
 
-test("report reasons and upload validation stay beta-safe", () => {
-  assert.equal(normalizeReportReason("privacy"), "privacy");
-  assert.equal(normalizeReportReason("bad"), null);
+test("upload validation stays beta-safe", () => {
   assert.deepEqual(validateUploadFile({ type: "image/jpeg", size: 500 }), { ok: true });
   assert.equal(validateUploadFile(null).reason, "missing");
   assert.equal(validateUploadFile({ type: "application/pdf", size: 500 }).reason, "unsupported_type");

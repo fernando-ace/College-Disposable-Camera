@@ -16,7 +16,6 @@ const FOUNDER_METRIC_DEFINITIONS = {
   totalContributors: "Guest rows created across all events.",
   totalRecapOpens: "Tracked recap_opened analytics events.",
   totalFeedbackSubmissions: "Saved host feedback rows, including skipped feedback.",
-  totalReportedPhotos: "Photo report rows submitted by guests.",
   hiddenPhotoCount: "Non-deleted photos currently hidden by a host.",
 };
 
@@ -32,7 +31,6 @@ function compactEvent(event, { requesterUserId, clientUrl }) {
   const challenge = event.challenges?.[0] || null;
   const photoCount = event._count?.photos ?? event.photoCount ?? 0;
   const guestCount = event._count?.guests ?? event.guestCount ?? 0;
-  const reportCount = event._count?.photoReports ?? event.reportCount ?? 0;
   return {
     id: event.id,
     name: event.name,
@@ -49,7 +47,6 @@ function compactEvent(event, { requesterUserId, clientUrl }) {
     modeLabel: challenge?.title || (challenge?.type ? challenge.type : "No Challenge"),
     photoCount,
     guestCount,
-    reportCount,
     eventLink: publicEventUrl(clientUrl, event.slug),
     recapLink: recapUrl(clientUrl, event.slug),
     hostEventPath: event.hostId === requesterUserId ? `/dashboard/events/${event.id}` : null,
@@ -94,32 +91,6 @@ function compactFeedback(feedback, { requesterUserId }) {
   };
 }
 
-function compactReport(report, { requesterUserId, clientUrl, serverUrl, getPhotoPreviewUrl }) {
-  const photo = report.photo || {};
-  const event = report.event || photo.event || {};
-  return {
-    id: report.id,
-    photoId: report.photoId,
-    eventId: report.eventId,
-    eventName: event.name || "Untitled event",
-    eventSlug: event.slug || "",
-    hostEmail: event.host?.email || null,
-    isOwnEvent: event.hostId === requesterUserId,
-    hostEventPath: event.hostId === requesterUserId ? `/dashboard/events/${report.eventId}` : null,
-    reason: String(report.reason || "").toLowerCase(),
-    note: report.note,
-    createdAt: report.createdAt,
-    reviewedAt: report.reviewedAt,
-    dismissedAt: report.dismissedAt,
-    reportCount: photo._count?.reports ?? 1,
-    visibilityStatus: photo.visibilityStatus || PHOTO_VISIBILITY_VISIBLE,
-    hiddenReason: photo.hiddenReason,
-    previewUrl: photo.visibilityStatus === PHOTO_VISIBILITY_VISIBLE ? `${serverUrl}${getPhotoPreviewUrl(photo.id)}` : null,
-    eventLink: event.slug ? publicEventUrl(clientUrl, event.slug) : null,
-    recapLink: event.slug ? recapUrl(clientUrl, event.slug) : null,
-  };
-}
-
 function usageRows(items, total, labelFor) {
   return items
     .map((item) => ({
@@ -155,7 +126,7 @@ function analyticsActivityLabel(name) {
   return labels[name] || name.replace(/_/g, " ");
 }
 
-function mergeActivity({ recentEvents, recentAnalytics, recentFeedback, recentReports }) {
+function mergeActivity({ recentEvents, recentAnalytics, recentFeedback }) {
   const eventActivities = recentEvents.map((event) => ({
     id: `event-${event.id}`,
     type: "event_created",
@@ -183,17 +154,7 @@ function mergeActivity({ recentEvents, recentAnalytics, recentFeedback, recentRe
     eventSlug: feedback.event?.slug || "",
     createdAt: feedback.createdAt,
   }));
-  const reportActivities = recentReports.map((report) => ({
-    id: `report-${report.id}`,
-    type: "photo_reported",
-    label: "Photo reported",
-    eventId: report.eventId,
-    eventName: report.event?.name || "Event",
-    eventSlug: report.event?.slug || "",
-    createdAt: report.createdAt,
-  }));
-
-  return [...eventActivities, ...analyticsActivities, ...feedbackActivities, ...reportActivities]
+  return [...eventActivities, ...analyticsActivities, ...feedbackActivities]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
     .slice(0, ACTIVITY_LIMIT);
 }
@@ -217,7 +178,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
       select: {
         guests: true,
         photos: { where: { deletedAt: null } },
-        photoReports: true,
       },
     },
   };
@@ -234,14 +194,12 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     totalContributors,
     totalRecapOpens,
     totalFeedbackSubmissions,
-    totalReportedPhotos,
     hiddenPhotoCount,
     recentEvents,
     activeEvents,
     recentUploads,
     recentFeedback,
     recentBetaIssues,
-    reportedPhotos,
     recentAnalytics,
     allEventsForUsage,
     awardVoteCount,
@@ -257,7 +215,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     prisma.guest.count(),
     prisma.analyticsEvent.count({ where: { name: "recap_opened" } }),
     prisma.hostEventFeedback.count(),
-    prisma.photoReport.count(),
     prisma.photo.count({ where: { deletedAt: null, visibilityStatus: PHOTO_VISIBILITY_HIDDEN } }),
     prisma.event.findMany({ orderBy: { createdAt: "desc" }, take: LIST_LIMIT, include: eventInclude }),
     prisma.event.findMany({
@@ -290,15 +247,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
       orderBy: { createdAt: "desc" },
       take: LIST_LIMIT,
       include: { event: { select: { id: true, name: true, slug: true } }, host: { select: { email: true } } },
-    }),
-    prisma.photoReport.findMany({
-      where: { reviewedAt: null, dismissedAt: null },
-      orderBy: { createdAt: "desc" },
-      take: LIST_LIMIT,
-      include: {
-        event: { include: { host: { select: { email: true } } } },
-        photo: { include: { _count: { select: { reports: true } } } },
-      },
     }),
     prisma.analyticsEvent.findMany({
       where: {
@@ -351,7 +299,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
       totalContributors,
       totalRecapOpens,
       totalFeedbackSubmissions,
-      totalReportedPhotos,
       hiddenPhotoCount,
     },
     funnel: {
@@ -367,7 +314,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     recentUploads: recentUploads.map((photo) => compactUpload(photo, common)),
     recentFeedback: recentFeedback.map((feedback) => compactFeedback(feedback, common)),
     recentBetaIssues: recentBetaIssues.map((feedback) => compactFeedback(feedback, common)),
-    reportedPhotos: reportedPhotos.map((report) => compactReport(report, common)),
     usage: {
       eventModes: usageRows(modeCounts, totalEvents, modeLabel),
       eventTemplates: usageRows(templateCounts, totalEvents, templateLabel),
@@ -376,7 +322,7 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
       colorHuntEvents: modeCounts.find((item) => item.key === "COLOR_HUNT")?.count || 0,
       memoryCapsuleEvents: modeCounts.find((item) => item.key === "MEMORY_CAPSULE")?.count || 0,
     },
-    activity: mergeActivity({ recentEvents, recentAnalytics: hydratedRecentAnalytics, recentFeedback: [...recentBetaIssues, ...recentFeedback], recentReports: reportedPhotos }),
+    activity: mergeActivity({ recentEvents, recentAnalytics: hydratedRecentAnalytics, recentFeedback: [...recentBetaIssues, ...recentFeedback] }),
     metricDefinitions: FOUNDER_METRIC_DEFINITIONS,
   };
 }

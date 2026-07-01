@@ -87,6 +87,6 @@ QR poster: [QR poster link or attachment]
 - Number of guest joins.
 - Number of successful uploads.
 - Number of Recap opens.
-- Number of hidden, reported, and featured photos.
+- Number of hidden and featured photos.
 - Time from link sharing to first upload.
 - Any upload failures and device/browser details.

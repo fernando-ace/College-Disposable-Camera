@@ -55,6 +55,14 @@ async function expectLocatorFullyFitsViewport(page: Page, locator: Locator) {
   expect(Math.ceil(box.y + box.height)).toBeLessThanOrEqual(viewport.height);
 }
 
+async function expectLandingCreateLinks(page: Page, href: RegExp) {
+  const createLinks = page.getByRole("link", { name: /^Create your first event$/i });
+  await expect(createLinks).toHaveCount(3);
+  for (let index = 0; index < 3; index += 1) {
+    await expect(createLinks.nth(index)).toHaveAttribute("href", href);
+  }
+}
+
 const isDeployedBrowserSmoke = !isLocalUrl(baseUrl);
 
 function requireHttpsUrl(value: string, envName: string) {
@@ -200,7 +208,7 @@ test.describe("EventFilm browser smoke", () => {
 
     await page.goto("/");
     await expect(page.getByRole("heading", { name: /Stop chasing photos after the event/i })).toBeVisible();
-    await expect(page.getByRole("link", { name: /Create your first event/i }).first()).toBeVisible();
+    await expectLandingCreateLinks(page, /\/signup$/);
     await expect(page.getByRole("link", { name: /^Dashboard$/i }).first()).toHaveAttribute("href", /\/dashboard$/);
     await expect(page.getByRole("link", { name: /Try a demo/i })).toHaveAttribute("href", /\/demo$/);
 
@@ -223,6 +231,44 @@ test.describe("EventFilm browser smoke", () => {
     for (const path of ["/privacy", "/terms", "/support"]) {
       await page.goto(path);
       await expect(page.locator("body")).toContainText(/EventFilm|Privacy|Terms|Support/i);
+    }
+
+    expect(consoleProblems).toEqual([]);
+  });
+
+  test("main landing create CTA opens the create screen for signed-in hosts", async ({ browser }) => {
+    const consoleProblems: string[] = [];
+    const signedInContext = await browser.newContext({
+      baseURL: baseUrl,
+      storageState: {
+        cookies: [],
+        origins: [
+          {
+            origin: parsedUrl(baseUrl).origin,
+            localStorage: [
+              { name: "eventfilm_token", value: "browser-smoke-token" },
+              { name: "eventfilm_user", value: JSON.stringify({ id: "browser-smoke-user", email: "host@example.com", isFounder: false }) },
+            ],
+          },
+        ],
+      },
+    });
+
+    try {
+      const signedInPage = await signedInContext.newPage();
+      signedInPage.on("console", (message) => {
+        if (["error", "warning"].includes(message.type())) consoleProblems.push(message.text());
+      });
+      signedInPage.on("pageerror", (error) => consoleProblems.push(error.message));
+
+      await signedInPage.goto("/");
+      await expect(signedInPage.getByRole("heading", { name: /Stop chasing photos after the event/i })).toBeVisible();
+      await expectLandingCreateLinks(signedInPage, /\/dashboard\/events\/new$/);
+      await signedInPage.getByRole("link", { name: /^Create your first event$/i }).first().click();
+      await expect(signedInPage).toHaveURL(/\/dashboard\/events\/new$/);
+      await expect(signedInPage.getByRole("heading", { name: /^Create an event$/i })).toBeVisible();
+    } finally {
+      await signedInContext.close();
     }
 
     expect(consoleProblems).toEqual([]);
@@ -503,21 +549,32 @@ test.describe("EventFilm browser smoke", () => {
       window.localStorage.setItem("eventfilm_token", token);
       window.localStorage.setItem("eventfilm_user", JSON.stringify(user));
     }, { token: auth.token, user: auth.user });
+    await page.context().grantPermissions(["clipboard-write"], { origin: parsedUrl(baseUrl).origin });
 
     await page.goto(`/dashboard/events/${eventId}?created=1`);
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     const createdHandoff = page.getByLabel("Event creation success");
     await expect(page.getByRole("heading", { name: "Your event is ready." })).toBeVisible();
     await expect(createdHandoff).toContainText("Guests can add photos without an account.");
-    await expect(createdHandoff.getByRole("button", { name: "Copy guest link" })).toBeVisible();
+    const handoffCopyGuestLink = createdHandoff.getByRole("button", { name: "Copy guest link" });
+    await expect(handoffCopyGuestLink).toBeVisible();
     await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
     await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
     await expect(createdHandoff).toContainText("Review photos");
     await expect(createdHandoff).toContainText("Share the recap");
+    await page.setViewportSize({ width: 390, height: 844 });
+    const mobileEventSignOut = page.getByRole("button", { name: "Sign out" });
+    await expect(mobileEventSignOut).toBeVisible();
+    await expectLocatorFitsViewport(page, mobileEventSignOut);
+    await handoffCopyGuestLink.scrollIntoViewIfNeeded();
+    await handoffCopyGuestLink.click();
+    const handoffCopyStatus = createdHandoff.getByRole("status");
+    await expect(handoffCopyStatus).toContainText("Guest link copied");
+    await expectLocatorFitsViewport(page, handoffCopyStatus);
     await page.getByRole("button", { name: "Dismiss" }).click();
     await expect(page.getByRole("heading", { name: "Your event is ready." })).toHaveCount(0);
     await expect(page).not.toHaveURL(/created=1/);
 
-    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto(`/dashboard/events/${eventId}?tab=share`);
     await expect(page.getByText(/Next step/i).first()).toBeVisible();
     await expect(page.getByText("Guest link").first()).toBeVisible();
@@ -603,6 +660,9 @@ test.describe("EventFilm browser smoke", () => {
       await page.goto("/dashboard");
       await expect(page.getByRole("heading", { name: "Event library" })).toBeVisible();
       await expect(page.getByLabel("Search events")).toBeVisible();
+      const mobileDashboardSignOut = page.getByRole("button", { name: "Sign out" });
+      await expect(mobileDashboardSignOut).toBeVisible();
+      await expectLocatorFitsViewport(page, mobileDashboardSignOut);
       await expect(page.getByText(updatedName).first()).toBeVisible();
       await expectNoHorizontalOverflow(page);
       const mobileEventCard = page.getByRole("link", { name: new RegExp(`Open event: ${escapeRegExp(updatedName)}`) }).first();
@@ -641,6 +701,15 @@ test.describe("EventFilm browser smoke", () => {
     await page.getByText("Help and repeat event").click();
     await expect(page.getByRole("button", { name: "Create similar event" })).toBeVisible();
     await expect(page.locator("body")).toContainText("Turn this event into the next one.");
+    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
+    const signedOutStorage = await page.evaluate(() => ({
+      token: window.localStorage.getItem("eventfilm_token"),
+      user: window.localStorage.getItem("eventfilm_user"),
+    }));
+    expect(signedOutStorage).toEqual({ token: null, user: null });
   });
 
   test("guest can upload without signing in when local storage smoke is enabled", async ({ page, request }) => {

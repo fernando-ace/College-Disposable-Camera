@@ -13,7 +13,6 @@ export type ChallengeItemKind = "color" | "prompt" | "award" | "capsule";
 export type UploadMetadataRequirement = "none" | "participant" | "prompt" | "award";
 export type SetupComplexity = "None" | "Easy" | "Medium";
 export type PhotoVisibilityStatus = "VISIBLE" | "HIDDEN";
-export type PhotoReportReason = "inappropriate" | "privacy" | "spam" | "other";
 export type PromptPackKind = "prompt" | "award" | "custom";
 export type PromptPackSlug =
   | "birthday"
@@ -37,7 +36,6 @@ export type EventTemplateSlug =
   | "family-gathering"
   | "open-custom-event";
 
-export const PHOTO_REPORT_REASONS: PhotoReportReason[] = ["inappropriate", "privacy", "spam", "other"];
 export const ALLOWED_IMAGE_MIME_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"] as const;
 export const DEFAULT_MAX_UPLOAD_SIZE_MB = 10;
 export const DEFAULT_MAX_UPLOAD_SIZE_BYTES = DEFAULT_MAX_UPLOAD_SIZE_MB * 1024 * 1024;
@@ -165,15 +163,6 @@ export type Photo = {
   featuredAt?: ISODateString | null;
   likeCount?: number;
   likedByMe?: boolean;
-  reportCount?: number;
-  reports?: PhotoReport[];
-};
-
-export type PhotoReport = {
-  id: string;
-  reason: PhotoReportReason;
-  note?: string | null;
-  createdAt: ISODateString;
 };
 
 export type ChallengeProgressRow = {
@@ -308,7 +297,6 @@ export type PostEventHostSummary = {
   totalPhotos: number;
   visiblePhotos: number;
   hiddenPhotos: number;
-  reportedPhotos: number;
   featuredPhotos: number;
   totalContributors: number;
   topContributors: ContributorSummaryItem[];
@@ -428,7 +416,6 @@ export const ANALYTICS_EVENT_NAMES = [
   "photo_restored",
   "photo_featured",
   "photo_unfeatured",
-  "photo_reported",
   "photo_like_added",
   "photo_like_removed",
   "album_downloaded",
@@ -467,7 +454,6 @@ export const ANALYTICS_EVENT_NAMES = [
   "recap_shared_after_event",
   "founder_dashboard_viewed",
   "founder_feedback_inbox_viewed",
-  "founder_reported_photo_review_viewed",
   "founder_event_opened_from_dashboard",
   "founder_metrics_exported",
 ] as const;
@@ -568,7 +554,6 @@ export type FounderOverviewMetrics = {
   totalContributors: number;
   totalRecapOpens: number;
   totalFeedbackSubmissions: number;
-  totalReportedPhotos: number;
   hiddenPhotoCount: number;
 };
 
@@ -597,7 +582,6 @@ export type FounderEventSummary = {
   modeLabel: string;
   photoCount: number;
   guestCount: number;
-  reportCount: number;
   eventLink: string;
   recapLink: string;
   hostEventPath?: string | null;
@@ -637,28 +621,6 @@ export type FounderFeedbackSummary = {
   updatedAt: ISODateString;
 };
 
-export type FounderReportedPhotoSummary = {
-  id: string;
-  photoId: string;
-  eventId: string;
-  eventName: string;
-  eventSlug: string;
-  hostEmail?: string | null;
-  isOwnEvent: boolean;
-  hostEventPath?: string | null;
-  reason: string;
-  note?: string | null;
-  createdAt: ISODateString;
-  reviewedAt?: ISODateString | null;
-  dismissedAt?: ISODateString | null;
-  reportCount: number;
-  visibilityStatus: PhotoVisibilityStatus;
-  hiddenReason?: string | null;
-  previewUrl?: string | null;
-  eventLink?: string | null;
-  recapLink?: string | null;
-};
-
 export type FounderUsageRow = {
   key: string;
   label: string;
@@ -694,7 +656,6 @@ export type FounderOverview = {
   recentUploads: FounderUploadSummary[];
   recentFeedback: FounderFeedbackSummary[];
   recentBetaIssues: FounderFeedbackSummary[];
-  reportedPhotos: FounderReportedPhotoSummary[];
   usage: FounderUsageInsights;
   activity: FounderActivityItem[];
   metricDefinitions: Record<string, string>;
@@ -1363,10 +1324,6 @@ export function isAnalyticsEventName(value: string): value is AnalyticsEventName
   return (ANALYTICS_EVENT_NAMES as readonly string[]).includes(value);
 }
 
-export function normalizeReportReason(value: string): PhotoReportReason | null {
-  return PHOTO_REPORT_REASONS.includes(value as PhotoReportReason) ? (value as PhotoReportReason) : null;
-}
-
 export function validateUploadFile(input: { type?: string | null; size?: number | null } | null | undefined, maxBytes = DEFAULT_MAX_UPLOAD_SIZE_BYTES): UploadValidationResult {
   if (!input) return { ok: false, reason: "missing", message: "Choose a photo first." };
   const type = String(input.type || "").toLowerCase();
@@ -2002,7 +1959,6 @@ export function buildPostEventHostSummary(
   const contributorSummary = buildContributorSummary(photos, 5);
   const visible = visiblePhotos(photos);
   const hiddenPhotos = photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length;
-  const reportedPhotos = photos.filter((photo) => Boolean(photo.reportCount)).length;
   const featuredPhotos = analytics.featuredPhotos ?? photos.filter((photo) => Boolean(photo.isFeatured)).length;
   const awardResults = analytics.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visible });
   const winners = (awardResults.categories || []).map((category) => {
@@ -2022,7 +1978,6 @@ export function buildPostEventHostSummary(
     totalPhotos: photos.length,
     visiblePhotos: visible.length,
     hiddenPhotos,
-    reportedPhotos,
     featuredPhotos,
     totalContributors: contributorSummary.contributorCount,
     topContributors: contributorSummary.topContributors,

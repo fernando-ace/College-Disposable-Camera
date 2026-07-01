@@ -10,7 +10,6 @@ import type {
   AwardResultsSummary,
   AwardVotingSummary,
   Photo,
-  PhotoReportReason,
   PhotoVisibilityStatus,
   PublicEvent,
   UpdateEventSettingsInput,
@@ -47,12 +46,6 @@ export type ReactNativeUploadAsset = {
 
 export type UploadPhotoInput = UploadPhotoMetadata & {
   photo: File | Blob | ReactNativeUploadAsset;
-};
-
-export type ReportPhotoInput = {
-  reason: PhotoReportReason;
-  note?: string;
-  reporterId?: string;
 };
 
 export type EventRecapResponse = {
@@ -103,7 +96,6 @@ export type EventAnalyticsSummary = {
   photoCount: number;
   visiblePhotos: number;
   hiddenPhotos: number;
-  reportedPhotos: number;
   featuredPhotos: number;
   photoLikes?: number;
   guestJoins: number;
@@ -369,11 +361,10 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
         body: JSON.stringify({ challenge }),
       });
     },
-    getHostPhotos(eventId: string, query: { visibility?: PhotoVisibilityStatus | "ALL"; featured?: boolean; reported?: boolean; challengeItemId?: string } = {}, token?: string | null) {
+    getHostPhotos(eventId: string, query: { visibility?: PhotoVisibilityStatus | "ALL"; featured?: boolean; challengeItemId?: string } = {}, token?: string | null) {
       const params = new URLSearchParams();
       if (query.visibility && query.visibility !== "ALL") params.set("visibility", query.visibility);
       if (query.featured !== undefined) params.set("featured", String(query.featured));
-      if (query.reported !== undefined) params.set("reported", String(query.reported));
       if (query.challengeItemId) params.set("challengeItemId", query.challengeItemId);
       const suffix = params.toString() ? `?${params.toString()}` : "";
       return request<{ photos: Photo[] }>(`/api/host/events/${encodeURIComponent(eventId)}/photos${suffix}`, {
@@ -436,12 +427,6 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
       return request<GuestMyUploadsResponse>(`/api/events/${encodeURIComponent(slug)}/my-uploads?clientId=${encodeURIComponent(clientId)}`);
     },
     uploadPhoto,
-    reportPhoto(photoId: string, input: ReportPhotoInput) {
-      return request<{ ok: true }>(`/api/photos/${encodeURIComponent(photoId)}/reports`, {
-        method: "POST",
-        body: JSON.stringify(input),
-      });
-    },
     getAlbumPhotos(slug: string, clientId?: string) {
       const query = clientId ? `?clientId=${encodeURIComponent(clientId)}` : "";
       return request<{ photos: Photo[] }>(`/api/events/${encodeURIComponent(slug)}/photos${query}`);

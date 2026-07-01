@@ -97,7 +97,7 @@ npm run demo:cleanup
 
 The script uploads a tiny PNG through the actual guest upload API, verifies the
 photo record, public file/preview routes, guest album, Recap,
-feature/unfeature, guest report, host moderation state, hide/restore behavior,
+feature/unfeature, guest hearts, host moderation state, hide/restore behavior,
 event analytics summary, and cleanup. It prints whether required environment
 variables are present, but it does not require or print Supabase secrets. If the
 previous failure was `Could not upload photo: fetch failed`, confirm the API is
@@ -113,8 +113,8 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Share the Recap link and confirm reveal behavior.
 - Hide and restore one photo.
 - Feature one photo.
-- Report one photo as a guest.
-- Confirm host metrics update after guest, upload, Recap, moderation, feature, and report activity.
+- Open one photo as a guest and confirm hearts work.
+- Confirm host metrics update after guest, upload, Recap, moderation, feature, and heart activity.
 - Confirm analytics records event activity.
 - Run `npm run demo:cleanup` or otherwise remove test data before real beta use.
 
@@ -160,7 +160,7 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Restore the photo.
 - Feature one visible photo.
 - Confirm featured photos sort ahead of non-featured photos.
-- Report a public photo and confirm the host sees the reported status.
+- Open a public photo and confirm the full image, details overlay, and hearts render cleanly.
 - Prefer hide/restore during beta. Permanent deletion should be reserved for clear cleanup.
 
 ## Analytics Smoke
@@ -169,7 +169,7 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Upload one photo successfully.
 - Trigger one upload validation failure if practical.
 - Confirm host analytics summary changes after events are recorded.
-- Open the host event detail page and confirm event-level beta metrics show guest joins, uploads, Recap opens, hidden photos, reported photos, and featured photos.
+- Open the host event detail page and confirm event-level beta metrics show guest joins, uploads, Recap opens, hidden photos, hearts, and featured photos.
 - If checking directly in the database, filter `AnalyticsEvent` by the test event id or slug and confirm event names such as `guest_joined_event`, `photo_upload_succeeded`, and `recap_opened`.
 
 Metric definitions:

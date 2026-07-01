@@ -176,13 +176,13 @@ After signing in with an allowlisted host account, open `/dashboard/founder`.
 
 Use it to check:
 
-- overview metrics: hosts, active hosts in the last 30 days, events, guest joins, uploads, contributors, Recap opens, feedback submissions, reports, and hidden photos.
-- recent activity: event creation, guest joins, uploads, Recap opens, host feedback, reported photos, duplicate events, and Event Awards votes when tracked.
-- founder inboxes: recent host feedback and read-only reported photo review.
+- overview metrics: hosts, active hosts in the last 30 days, events, guest joins, uploads, contributors, Recap opens, feedback submissions, and hidden photos.
+- recent activity: event creation, guest joins, uploads, Recap opens, host feedback, duplicate events, and Event Awards votes when tracked.
+- founder inboxes: recent host feedback.
 - product usage: event modes, event templates, prompt packs, Event Awards votes, Color Hunt usage, and Memory Capsule usage.
 - Unlock Alabama reporting: export the summarized CSV from the dashboard and report the metric definitions shown on the page.
 
-The founder reported-photo section is intentionally read-only. Host-owned moderation remains in the existing event dashboard, and hidden photos are still not exposed through public photo routes.
+Host-owned moderation remains in the existing event dashboard, and hidden photos are still not exposed through public photo routes.
 
 ## Provider Readiness
 
@@ -338,7 +338,7 @@ npm run smoke:deployed:storage
 
 Raw `npm run smoke:browser` also accepts `BROWSER_SMOKE_BASE_URL` and `BROWSER_SMOKE_API_URL` for deployed-style browser checks. If `BROWSER_SMOKE_BASE_URL` is not localhost, `BROWSER_SMOKE_API_URL` must include `https://` and `BROWSER_SMOKE_HOST_EMAIL` plus `BROWSER_SMOKE_HOST_PASSWORD` must be set.
 
-`smoke:deployed:storage` reuses the real storage smoke. It uploads a tiny PNG through the deployed guest API, verifies DB record, file/preview routes, guest album, Recap, feature/unfeature, report, hide/restore, analytics summary, and cleanup. Run it only against a safe target event.
+`smoke:deployed:storage` reuses the real storage smoke. It uploads a tiny PNG through the deployed guest API, verifies DB record, file/preview routes, guest album, Recap, heart, feature/unfeature, hide/restore, analytics summary, and cleanup. Run it only against a safe target event.
 
 If no deployed URLs are configured, deployed smoke commands must fail with clear missing-env output. That is expected during local validation.
 
@@ -403,7 +403,7 @@ Before giving the preview build to a beta host:
 - Upload a photo.
 - Keep the QR poster visible on a laptop or printout.
 - Open Recap.
-- Hide, restore, feature, unfeature, and report a test photo.
+- Hide, restore, feature, unfeature, and open a test photo in the full-screen viewer.
 - Verify analytics summary changes.
 - Replace icon, splash, privacy URL, support URL, screenshots, and final app metadata before any public submission.
 

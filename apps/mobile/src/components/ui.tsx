@@ -1,5 +1,6 @@
 import * as React from "react";
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Image, Modal, Pressable, ScrollView, Text, TextInput, useWindowDimensions, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { EventSummary, Photo } from "@eventfilm/shared";
 import { challengeLabel, photoChallengeLabel } from "@eventfilm/shared";
 
@@ -586,44 +587,200 @@ export function LinkBlock({
   );
 }
 
-export function PhotoCard({ photo, compact = false }: { photo: Photo; compact?: boolean }) {
+export function PhotoCard({ photo, compact = false, onPress }: { photo: Photo; compact?: boolean; onPress?: () => void }) {
   const [loaded, setLoaded] = React.useState(false);
   const [imageError, setImageError] = React.useState(false);
   const imageUrl = photo.previewUrl || photo.url;
   const usesLocalhost = isLocalhostUrl(imageUrl);
 
   return (
-    <Card padding={compact ? 8 : 11}>
-      <View style={{ width: "100%", aspectRatio: 1, borderRadius: compact ? 16 : 20, borderCurve: "continuous", backgroundColor: colors.wash, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
-        {imageUrl && !imageError ? (
-          <>
-            {!loaded ? <ActivityIndicator color={colors.amberDark} /> : null}
+    <Pressable disabled={!onPress} onPress={onPress} style={({ pressed }) => ({ opacity: pressed ? 0.78 : 1 })}>
+      <Card padding={compact ? 8 : 11}>
+        <View style={{ width: "100%", aspectRatio: 1, borderRadius: compact ? 16 : 20, borderCurve: "continuous", backgroundColor: colors.wash, overflow: "hidden", alignItems: "center", justifyContent: "center" }}>
+          {imageUrl && !imageError ? (
+            <>
+              {!loaded ? <ActivityIndicator color={colors.amberDark} /> : null}
+              <Image
+                source={{ uri: imageUrl }}
+                resizeMode="cover"
+                onLoadEnd={() => setLoaded(true)}
+                onError={() => {
+                  setLoaded(true);
+                  setImageError(true);
+                }}
+                style={{ position: "absolute", width: "100%", height: "100%" }}
+              />
+            </>
+          ) : (
+            <Body tone="muted">Photo preview unavailable.</Body>
+          )}
+        </View>
+        {usesLocalhost || imageError ? (
+          <Body tone={usesLocalhost ? "danger" : "muted"}>
+            {usesLocalhost ? "Photo link is not reachable from this phone. Restart the API with a LAN SERVER_URL." : "Could not load this photo preview."}
+          </Body>
+        ) : null}
+        <View style={{ gap: 5 }}>
+          <Text selectable style={{ color: colors.ink, fontSize: compact ? 14 : 16, lineHeight: compact ? 18 : 20, fontWeight: "700" }}>{photo.challengeParticipantName || photo.guestNickname || "Guest"}</Text>
+          {photo.challengeColorName ? <Badge tone="stone">{photo.challengeColorName}</Badge> : null}
+          {photoChallengeLabel(photo) && !photo.challengeColorName ? <Caption>{photoChallengeLabel(photo)}</Caption> : null}
+          {Number(photo.likeCount || 0) > 0 ? <Badge tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</Badge> : null}
+        </View>
+      </Card>
+    </Pressable>
+  );
+}
+
+type PhotoViewerAction = "hide" | "restore" | "feature" | "unfeature" | "delete";
+
+function formatPhotoDate(value?: string) {
+  if (!value) return "";
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", year: "numeric" }).format(new Date(value));
+}
+
+function ViewerButton({ children, onPress, tone = "light", disabled = false }: { children: React.ReactNode; onPress?: () => void; tone?: "light" | "danger" | "subtle"; disabled?: boolean }) {
+  const palette = {
+    light: { backgroundColor: "#f8fafc", color: "#0f172a", borderColor: "#ffffff44" },
+    subtle: { backgroundColor: "#27272bcc", color: "#f8fafc", borderColor: "#ffffff24" },
+    danger: { backgroundColor: "#b91c1ccc", color: "#fff", borderColor: "#fecaca44" },
+  }[tone];
+
+  return (
+    <Pressable
+      disabled={disabled}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        minHeight: 42,
+        alignItems: "center",
+        justifyContent: "center",
+        borderRadius: 999,
+        borderWidth: 1,
+        borderColor: palette.borderColor,
+        backgroundColor: palette.backgroundColor,
+        opacity: disabled ? 0.38 : pressed ? 0.72 : 1,
+        paddingHorizontal: 14,
+      })}
+    >
+      <Text style={{ color: palette.color, fontSize: 14, lineHeight: 18, fontWeight: "700", textAlign: "center" }}>{children}</Text>
+    </Pressable>
+  );
+}
+
+export function PhotoViewer({
+  photo,
+  photos = [],
+  mode = "public",
+  onClose,
+  onSelectPhoto,
+  onHostAction,
+  onPhotoLike,
+}: {
+  photo: Photo | null;
+  photos?: Photo[];
+  mode?: "public" | "host";
+  onClose: () => void;
+  onSelectPhoto?: (photo: Photo) => void;
+  onHostAction?: (action: PhotoViewerAction, photo: Photo) => Promise<void> | void;
+  onPhotoLike?: (photo: Photo, liked: boolean) => Promise<void> | void;
+}) {
+  const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const [busyAction, setBusyAction] = React.useState<PhotoViewerAction | "like" | null>(null);
+  const galleryPhotos = photo ? (photos.length ? photos : [photo]) : [];
+  const currentIndex = photo ? galleryPhotos.findIndex((item) => item.id === photo.id) : -1;
+  const activeIndex = currentIndex >= 0 ? currentIndex : 0;
+  const canNavigate = Boolean(onSelectPhoto && galleryPhotos.length > 1);
+  const promptLabel = photo ? photoChallengeLabel(photo) : "";
+  const imageUrl = photo?.url || photo?.previewUrl;
+  const detailLabel = photo?.challengeColorName || promptLabel || (photo?.isFeatured ? "Host pick" : "");
+  const heartCount = Number(photo?.likeCount || 0);
+  const photoName = photo?.challengeParticipantName || photo?.guestNickname || "Guest";
+
+  function navigate(offset: number) {
+    if (!canNavigate) return;
+    const nextIndex = (activeIndex + offset + galleryPhotos.length) % galleryPhotos.length;
+    const nextPhoto = galleryPhotos[nextIndex];
+    if (nextPhoto) onSelectPhoto?.(nextPhoto);
+  }
+
+  async function runHostAction(action: PhotoViewerAction) {
+    if (!photo || !onHostAction) return;
+    setBusyAction(action);
+    try {
+      await onHostAction(action, photo);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function toggleLike() {
+    if (!photo || !onPhotoLike) return;
+    const nextLiked = !photo.likedByMe;
+    setBusyAction("like");
+    try {
+      await onPhotoLike(photo, nextLiked);
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  return (
+    <Modal visible={Boolean(photo)} animationType="fade" presentationStyle="fullScreen" onRequestClose={onClose}>
+      <View style={{ flex: 1, minHeight: height, backgroundColor: "#000" }}>
+        <View style={{ position: "absolute", zIndex: 3, top: insets.top + 10, left: 16, right: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <ViewerButton tone="subtle" onPress={onClose}>Close</ViewerButton>
+          {galleryPhotos.length > 1 ? <Text style={{ color: "#fff", fontSize: 17, lineHeight: 22, fontWeight: "700" }}>{activeIndex + 1} of {galleryPhotos.length}</Text> : <View />}
+          <ViewerButton tone="subtle" onPress={() => navigate(1)} disabled={!canNavigate}>Next</ViewerButton>
+        </View>
+
+        <View style={{ flex: 1, alignItems: "center", justifyContent: "center", paddingTop: insets.top + 66, paddingBottom: insets.bottom + 190 }}>
+          {imageUrl ? (
             <Image
               source={{ uri: imageUrl }}
-              resizeMode="cover"
-              onLoadEnd={() => setLoaded(true)}
-              onError={() => {
-                setLoaded(true);
-                setImageError(true);
-              }}
-              style={{ position: "absolute", width: "100%", height: "100%" }}
+              resizeMode="contain"
+              style={{ width, height: Math.max(220, height - insets.top - insets.bottom - 220) }}
             />
-          </>
-        ) : (
-          <Body tone="muted">Photo preview unavailable.</Body>
-        )}
+          ) : (
+            <Text style={{ color: "#fff", fontSize: 16 }}>Photo unavailable.</Text>
+          )}
+        </View>
+
+        {canNavigate ? (
+          <View style={{ position: "absolute", left: 16, right: 16, top: "48%", flexDirection: "row", justifyContent: "space-between" }}>
+            <ViewerButton tone="subtle" onPress={() => navigate(-1)}>Previous</ViewerButton>
+            <ViewerButton tone="subtle" onPress={() => navigate(1)}>Next</ViewerButton>
+          </View>
+        ) : null}
+
+        {photo ? (
+          <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 18, paddingTop: 22, paddingBottom: insets.bottom + 18, gap: 14, backgroundColor: "#000000d9" }}>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+              <View style={{ flex: 1, gap: 5 }}>
+                <Text style={{ color: "#fff", fontSize: 23, lineHeight: 28, fontWeight: "700" }}>{photoName}</Text>
+                <Text style={{ color: "#d4d4d8", fontSize: 14, lineHeight: 19 }}>{formatPhotoDate(photo.createdAt)}</Text>
+                {detailLabel ? <Text style={{ color: "#f4f4f5", fontSize: 14, lineHeight: 19, fontWeight: "700" }}>{detailLabel}</Text> : null}
+              </View>
+              {onPhotoLike ? (
+                <ViewerButton tone={photo.likedByMe ? "light" : "subtle"} onPress={toggleLike} disabled={busyAction === "like"}>{photo.likedByMe ? "Hearted" : "Heart"} {heartCount}</ViewerButton>
+              ) : (
+                <ViewerButton tone="subtle" disabled>{heartCount} {heartCount === 1 ? "heart" : "hearts"}</ViewerButton>
+              )}
+            </View>
+
+            {mode === "host" && onHostAction ? (
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                <ViewerButton tone="subtle" onPress={() => runHostAction(photo.visibilityStatus === "HIDDEN" ? "restore" : "hide")} disabled={Boolean(busyAction)}>
+                  {photo.visibilityStatus === "HIDDEN" ? "Restore" : "Hide"}
+                </ViewerButton>
+                <ViewerButton tone="subtle" onPress={() => runHostAction(photo.isFeatured ? "unfeature" : "feature")} disabled={Boolean(busyAction) || photo.visibilityStatus === "HIDDEN"}>
+                  {photo.isFeatured ? "Remove pick" : "Host pick"}
+                </ViewerButton>
+                <ViewerButton tone="danger" onPress={() => runHostAction("delete")} disabled={Boolean(busyAction)}>Delete</ViewerButton>
+              </View>
+            ) : null}
+          </View>
+        ) : null}
       </View>
-      {usesLocalhost || imageError ? (
-        <Body tone={usesLocalhost ? "danger" : "muted"}>
-          {usesLocalhost ? "Photo link is not reachable from this phone. Restart the API with a LAN SERVER_URL." : "Could not load this photo preview."}
-        </Body>
-      ) : null}
-      <View style={{ gap: 5 }}>
-        <Text selectable style={{ color: colors.ink, fontSize: compact ? 14 : 16, lineHeight: compact ? 18 : 20, fontWeight: "900" }}>{photo.challengeParticipantName || photo.guestNickname || "Guest"}</Text>
-        {photo.challengeColorName ? <Badge tone="stone">{photo.challengeColorName}</Badge> : null}
-        {photoChallengeLabel(photo) && !photo.challengeColorName ? <Caption>{photoChallengeLabel(photo)}</Caption> : null}
-        {Number(photo.likeCount || 0) > 0 ? <Badge tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</Badge> : null}
-      </View>
-    </Card>
+    </Modal>
   );
 }

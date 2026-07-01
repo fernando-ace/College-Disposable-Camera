@@ -219,16 +219,11 @@ async function main() {
     });
     if (unfeatured.data.photo.isFeatured) throw new Error("Host unfeature request left photo marked as featured.");
 
-    setStep("Guest report flow");
-    await request(apiUrl, `/api/photos/${encodeURIComponent(state.photoId)}/reports`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ reason: "privacy", note: "Storage smoke report check", reporterId: clientId }),
-    });
-    const reportedPhotos = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/photos?reported=true`, {
+    setStep("Host photo review");
+    const hostPhotos = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/photos`, {
       headers: authHeaders,
     });
-    assertPhotoInList(reportedPhotos.data.photos, state.photoId, "host reported-photo queue");
+    assertPhotoInList(hostPhotos.data.photos, state.photoId, "host photo review");
 
     setStep("Host hide moderation");
     const hidden = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/photos/${encodeURIComponent(state.photoId)}/visibility`, {
@@ -258,8 +253,8 @@ async function main() {
     const analytics = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/analytics/summary`, {
       headers: authHeaders,
     });
-    if (analytics.data.summary.photoCount < 1 || analytics.data.summary.reportedPhotos < 1) {
-      throw new Error("Event analytics summary did not include the uploaded/reported smoke photo.");
+    if (analytics.data.summary.photoCount < 1 || analytics.data.summary.visiblePhotos < 1) {
+      throw new Error("Event analytics summary did not include the uploaded smoke photo.");
     }
 
     state.smokeAssertionsPassed = true;
@@ -283,7 +278,7 @@ async function main() {
   }
 
   if (state.smokeAssertionsPassed && state.cleanupSucceeded) {
-    console.log("\nStorage smoke passed: upload, record, album, Recap, feature/unfeature, report, hide/restore, public visibility, analytics, and cleanup.");
+    console.log("\nStorage smoke passed: upload, record, album, Recap, heart, feature/unfeature, hide/restore, host review, public visibility, analytics, and cleanup.");
   }
 }
 

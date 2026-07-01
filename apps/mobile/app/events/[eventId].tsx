@@ -2,11 +2,11 @@ import * as React from "react";
 import DateTimePicker, { type DateTimePickerEvent } from "@react-native-community/datetimepicker";
 import * as Clipboard from "expo-clipboard";
 import { Link, router, useLocalSearchParams } from "expo-router";
-import { Linking, Pressable, Share, Text, View } from "react-native";
+import { Alert, Linking, Pressable, Share, Text, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
 import type { AnalyticsEventName, EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus, UpdateEventSettingsInput } from "@eventfilm/shared";
 import { CHALLENGE_TYPES, buildAwardResultsSummary, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, isPhotoVisible, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
-import { ActionButton, Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, Screen, SectionHeader, StatTile, TaskHeader, colors } from "../../src/components/ui";
+import { ActionButton, Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, PhotoViewer, Screen, SectionHeader, StatTile, TaskHeader, colors } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
 function formatDate(value: string) {
@@ -115,6 +115,7 @@ export default function EventDetailScreen() {
   const [event, setEvent] = React.useState<(EventSummary & { photos: Photo[] }) | null>(null);
   const [analyticsSummary, setAnalyticsSummary] = React.useState<EventAnalyticsSummary | null>(null);
   const [linkChecks, setLinkChecks] = React.useState<LaunchLinkVerification[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = React.useState<Photo | null>(null);
   const [error, setError] = React.useState("");
   const [loading, setLoading] = React.useState(false);
   const [settingsForm, setSettingsForm] = React.useState<EventSettingsForm | null>(null);
@@ -145,11 +146,16 @@ export default function EventDetailScreen() {
     }
   }
 
+  function replaceEventPhoto(photo: Photo) {
+    setEvent((current) => current ? { ...current, photos: current.photos.map((item) => item.id === photo.id ? photo : item) } : current);
+    setSelectedPhoto((current) => current?.id === photo.id ? photo : current);
+  }
+
   async function updateVisibility(photo: Photo, visibilityStatus: PhotoVisibilityStatus) {
     if (!eventId) return;
     try {
       const data = await api.updatePhotoVisibility(eventId, photo.id, visibilityStatus, visibilityStatus === "HIDDEN" ? "Hidden by host" : undefined);
-      setEvent((current) => current ? { ...current, photos: current.photos.map((item) => item.id === photo.id ? data.photo : item) } : current);
+      replaceEventPhoto(data.photo);
     } catch (err) {
       setError((err as Error).message);
     }
@@ -159,10 +165,45 @@ export default function EventDetailScreen() {
     if (!eventId) return;
     try {
       const data = await api.updatePhotoFeatured(eventId, photo.id, isFeatured);
-      setEvent((current) => current ? { ...current, photos: current.photos.map((item) => item.id === photo.id ? data.photo : item) } : current);
+      replaceEventPhoto(data.photo);
     } catch (err) {
       setError((err as Error).message);
     }
+  }
+
+  async function deletePhoto(photo: Photo) {
+    if (!eventId) return;
+    try {
+      await api.deletePhoto(eventId, photo.id);
+      setEvent((current) => current ? {
+        ...current,
+        photoCount: Math.max(0, Number(current.photoCount || 0) - 1),
+        photos: current.photos.filter((item) => item.id !== photo.id),
+      } : current);
+      setSelectedPhoto(null);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  }
+
+  function handleViewerAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) {
+    if (action === "hide") return updateVisibility(photo, "HIDDEN");
+    if (action === "restore") return updateVisibility(photo, "VISIBLE");
+    if (action === "feature") return updateFeatured(photo, true);
+    if (action === "unfeature") return updateFeatured(photo, false);
+    return new Promise<void>((resolve) => {
+      Alert.alert("Delete photo?", "This permanently removes the photo from this event.", [
+        { text: "Cancel", style: "cancel", onPress: () => resolve() },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            await deletePhoto(photo);
+            resolve();
+          },
+        },
+      ]);
+    });
   }
 
   function updateSettingsField(field: keyof EventSettingsForm, value: string | Date) {
@@ -452,13 +493,12 @@ export default function EventDetailScreen() {
               <View style={{ gap: 14 }}>
                 {event.photos.map((photo) => (
                   <View key={photo.id} style={{ gap: 10 }}>
-                    <PhotoCard photo={photo} compact />
+                    <PhotoCard photo={photo} compact onPress={() => setSelectedPhoto(photo)} />
                     <Card padding={13}>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                         {photo.isFeatured ? <Badge>Host pick</Badge> : null}
                         {Number(photo.likeCount || 0) > 0 ? <Badge tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</Badge> : null}
                         {photo.visibilityStatus === "HIDDEN" ? <Badge tone="red">Hidden</Badge> : null}
-                        {photo.reportCount ? <Badge tone="red">{photo.reportCount} reported</Badge> : null}
                       </View>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                         <View style={{ flex: 1, minWidth: 132 }}>
@@ -489,6 +529,7 @@ export default function EventDetailScreen() {
               />
             )}
           </View>
+          <PhotoViewer photo={selectedPhoto} photos={event.photos} mode="host" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onHostAction={handleViewerAction} />
         </>
       ) : null}
     </Screen>
@@ -747,7 +788,6 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
         <StatTile label="Guest joins" value={postSummary.guestJoins} />
         <StatTile label="Recap views" value={postSummary.recapOpens} />
         <StatTile label="Hidden" value={postSummary.hiddenPhotos} />
-        <StatTile label="Reported" value={postSummary.reportedPhotos} />
       </View>
       {postSummary.topContributors.length ? (
         <View style={{ gap: 8 }}>
@@ -927,7 +967,6 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
     ["Hearts", summary.photoLikes || 0],
     ["Recaps", summary.recapOpens],
     ["Hidden", summary.hiddenPhotos],
-    ["Reported", summary.reportedPhotos],
   ];
 
   return (
@@ -999,7 +1038,7 @@ function LinkHealthPanel({ linkChecks }: { linkChecks: LaunchLinkVerification[] 
 function RunOfShow() {
   const rows = [
     ["Before", "Create the event, verify the guest link, and place the QR code where guests will see it."],
-    ["During", "Review incoming uploads and hide any reported or off-tone photos instead of deleting them."],
+    ["During", "Review incoming uploads and hide any off-tone photos instead of deleting them."],
     ["After", "Refresh the album, feature favorites, then share the Recap link when the album is ready."],
   ];
 

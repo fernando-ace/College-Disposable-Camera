@@ -49,7 +49,7 @@ import {
   validateEventSettingsInput,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardResultsSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PhotoReportReason, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardResultsSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
 import {
   AppShell,
   BrandMark,
@@ -330,13 +330,6 @@ function publicRouteErrorMessage(error: unknown, fallback = "This event link is 
   return fallback;
 }
 
-const REPORT_REASONS: Array<{ value: PhotoReportReason; label: string }> = [
-  { value: "inappropriate", label: "Inappropriate" },
-  { value: "privacy", label: "Privacy concern" },
-  { value: "spam", label: "Spam" },
-  { value: "other", label: "Other" },
-];
-
 function toDateTimeLocal(date = new Date()) {
   const offset = date.getTimezoneOffset();
   return new Date(date.getTime() - offset * 60_000).toISOString().slice(0, 16);
@@ -592,7 +585,6 @@ function PhotoStatusBadges({ photo, host = false }: { photo: Photo; host?: boole
       {photo.isFeatured && <StatusPill tone="amber">Host pick</StatusPill>}
       {Number(photo.likeCount || 0) > 0 && <StatusPill tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</StatusPill>}
       {host && photo.visibilityStatus === "HIDDEN" && <StatusPill tone="red">Hidden</StatusPill>}
-      {host && Boolean(photo.reportCount) && <StatusPill tone="red">{photo.reportCount} reported</StatusPill>}
       {photoChallengeLabel(photo) && <StatusPill tone="stone">{photoChallengeLabel(photo)}</StatusPill>}
     </div>
   );
@@ -639,7 +631,7 @@ function PhotoHeartButton({
   return (
     <button
       type="button"
-      className={cx("inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60", baseTone, className)}
+      className={cx("inline-flex min-h-11 min-w-11 items-center justify-center gap-1.5 rounded-full px-3 py-2 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-60", baseTone, className)}
       aria-pressed={liked}
       aria-label={label}
       title={label}
@@ -670,37 +662,54 @@ function MetricCard({ label, value, tone = "default" }: { label: string; value: 
   );
 }
 
-function PhotoDetailModal({
+function FullScreenPhotoViewer({
   photo,
+  photos = [],
   mode,
   onClose,
-  onReport,
-  reportStatus,
+  onSelectPhoto,
   onHostAction,
   onPhotoLike,
 }: {
   photo: Photo | null;
+  photos?: Photo[];
   mode: "public" | "host";
   onClose: () => void;
-  onReport?: (reason: PhotoReportReason, note: string) => Promise<void>;
-  reportStatus?: string;
+  onSelectPhoto?: (photo: Photo) => void;
   onHostAction?: (action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) => Promise<void>;
   onPhotoLike?: PhotoLikeToggleHandler;
 }) {
-  const [reason, setReason] = useState<PhotoReportReason>("inappropriate");
-  const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const [localStatus, setLocalStatus] = useState("");
+  const galleryPhotos = photos.length ? photos : photo ? [photo] : [];
+  const currentIndex = photo ? galleryPhotos.findIndex((item) => item.id === photo.id) : -1;
+  const visibleIndex = currentIndex >= 0 ? currentIndex : 0;
+  const canNavigate = Boolean(photo && onSelectPhoto && galleryPhotos.length > 1 && currentIndex >= 0);
 
   useEffect(() => {
-    setReason("inappropriate");
-    setNote("");
     setBusy("");
     setLocalStatus("");
   }, [photo?.id]);
 
+  useEffect(() => {
+    if (!photo) return;
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+      if (event.key === "ArrowLeft") navigatePhoto(-1);
+      if (event.key === "ArrowRight") navigatePhoto(1);
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [photo?.id, currentIndex, galleryPhotos, onClose, onSelectPhoto]);
+
   if (!photo) return null;
   const currentPhoto = photo;
+
+  function navigatePhoto(direction: -1 | 1) {
+    if (!canNavigate || !onSelectPhoto) return;
+    const nextIndex = (visibleIndex + direction + galleryPhotos.length) % galleryPhotos.length;
+    onSelectPhoto(galleryPhotos[nextIndex]);
+  }
 
   async function runHostAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete") {
     if (!onHostAction) return;
@@ -715,88 +724,77 @@ function PhotoDetailModal({
     }
   }
 
-  async function submitReport() {
-    if (!onReport) return;
-    setBusy("report");
-    try {
-      await onReport(reason, note);
-      setNote("");
-    } catch (err) {
-      setLocalStatus((err as Error).message);
-    } finally {
-      setBusy("");
-    }
-  }
+  const guestName = photo.challengeParticipantName || photo.guestNickname || "Guest photo";
+  const detailRows = [
+    formatDateTime(photo.createdAt),
+    photoChallengeLabel(photo),
+    mode === "host" && photo.hiddenReason ? `Hidden: ${photo.hiddenReason}` : "",
+  ].filter((row): row is string => Boolean(row));
 
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-stone-950/80 p-4" role="dialog" aria-modal="true">
-      <div className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-[2rem] bg-white p-4 shadow-2xl sm:p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black text-white" role="dialog" aria-modal="true" aria-label="Photo viewer">
+      <div className="absolute inset-0 flex items-center justify-center px-0 py-24 sm:px-8 sm:py-28">
+        <img className="max-h-full max-w-full object-contain" src={assetUrl(photo.url)} alt={photo.originalFilename} />
+      </div>
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/35 to-transparent px-4 pb-10 pt-[max(env(safe-area-inset-top),1rem)] sm:px-6">
+        <div className="pointer-events-auto flex items-center justify-between gap-3">
+          <button type="button" className="grid h-11 w-11 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/20 transition hover:bg-white/20" onClick={onClose} aria-label="Close photo viewer">
+            <Icon>close</Icon>
+          </button>
+          {galleryPhotos.length > 1 ? <p className="text-base font-bold tabular-nums">{visibleIndex + 1} of {galleryPhotos.length}</p> : <span />}
+          <span className="h-11 w-11" aria-hidden="true" />
+        </div>
+      </div>
+
+      {canNavigate ? (
+        <>
+          <button type="button" className="absolute left-3 top-1/2 hidden h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/20 transition hover:bg-white/20 sm:grid" onClick={() => navigatePhoto(-1)} aria-label="Previous photo">
+            <CleanIcon name="chevronLeft" />
+          </button>
+          <button type="button" className="absolute right-3 top-1/2 hidden h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/20 transition hover:bg-white/20 sm:grid" onClick={() => navigatePhoto(1)} aria-label="Next photo">
+            <span className="rotate-180"><CleanIcon name="chevronLeft" /></span>
+          </button>
+        </>
+      ) : null}
+
+      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/82 to-transparent px-4 pb-[max(env(safe-area-inset-bottom),1.25rem)] pt-16 sm:px-6">
+        <div className="mx-auto flex max-w-5xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div className="min-w-0">
             <PhotoStatusBadges photo={photo} host={mode === "host"} />
-            <h2 className="mt-3 font-display text-2xl font-bold text-stone-950">{photo.challengeParticipantName || photo.guestNickname || "Guest photo"}</h2>
-            <p className="mt-1 text-sm text-stone-600">{formatDateTime(photo.createdAt)} {photo.sizeBytes ? `- ${formatBytes(photo.sizeBytes)}` : ""}</p>
+            <h2 className="mt-3 truncate text-2xl font-bold text-white">{guestName}</h2>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm font-semibold text-white/70">
+              {detailRows.map((row) => <span key={row}>{row}</span>)}
+              {photo.sizeBytes ? <span>{formatBytes(photo.sizeBytes)}</span> : null}
+            </div>
           </div>
-          <button className="rounded-full bg-stone-100 p-3 text-stone-700 hover:bg-stone-200" onClick={onClose} aria-label="Close photo detail"><Icon>close</Icon></button>
-        </div>
-        <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_320px]">
-          <img className="max-h-[68vh] w-full rounded-[1.5rem] bg-stone-100 object-contain" src={assetUrl(photo.url)} alt={photo.originalFilename} />
-          <aside className="grid content-start gap-4">
-            <Card className="shadow-none">
-              <p className="text-sm font-bold text-stone-950">Photo details</p>
-              <div className="mt-3 grid gap-2 text-sm text-stone-600">
-                <p><strong className="text-stone-900">Guest:</strong> {photo.challengeParticipantName || photo.guestNickname || "Guest"}</p>
-                <p><strong className="text-stone-900">Uploaded:</strong> {formatDateTime(photo.createdAt)}</p>
-                <p><strong className="text-stone-900">Hearts:</strong> {photoHeartLabel(Math.max(0, Number(photo.likeCount || 0)))}</p>
-                {photoChallengeLabel(photo) && <p><strong className="text-stone-900">Challenge:</strong> {photoChallengeLabel(photo)}</p>}
-                {mode === "host" && photo.hiddenReason && <p><strong className="text-stone-900">Hidden reason:</strong> {photo.hiddenReason}</p>}
-                {mode === "host" && Boolean(photo.reports?.length) && <p><strong className="text-stone-900">Latest report:</strong> {photo.reports?.[0]?.reason}</p>}
-              </div>
-            </Card>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
             {mode === "public" && onPhotoLike ? (
-              <Card className="shadow-none">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-bold text-stone-950">Guest favorite</p>
-                    <p className="mt-1 text-sm text-stone-600">Hearts decide recap favorites and award leaders.</p>
-                  </div>
-                  <PhotoHeartButton photo={photo} onToggle={onPhotoLike} />
-                </div>
-              </Card>
-            ) : null}
-            {mode === "host" && onHostAction && (
-              <Card className="shadow-none">
-                <p className="text-sm font-bold text-stone-950">Host controls</p>
-                <div className="mt-3 grid gap-2">
-                  {photo.visibilityStatus === "HIDDEN" ? (
-                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("restore")}>Restore photo</SecondaryButton>
-                  ) : (
-                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</SecondaryButton>
-                  )}
-                  {photo.isFeatured ? (
-                    <SecondaryButton disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove host pick</SecondaryButton>
-                  ) : (
-                    <Button disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</Button>
-                  )}
-                  <button className="min-h-12 rounded-full bg-red-700 px-5 py-3 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete permanently</button>
-                </div>
-              </Card>
+              <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" />
+            ) : (
+              <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/20">
+                <CleanIcon name="heart" className="h-4 w-4" />
+                {photoHeartLabel(Math.max(0, Number(photo.likeCount || 0)))}
+              </span>
             )}
-            {mode === "public" && onReport && (
-              <Card className="shadow-none">
-                <p className="text-sm font-bold text-stone-950">Report photo</p>
-                <div className="mt-3 grid gap-3">
-                  <select className="h-12 rounded-2xl border border-stone-200 bg-white px-3 text-sm font-bold text-stone-800" value={reason} onChange={(event) => setReason(event.target.value as PhotoReportReason)}>
-                    {REPORT_REASONS.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}
-                  </select>
-                  <TextArea rows={3} maxLength={500} placeholder="Optional note" value={note} onChange={(event) => setNote(event.target.value)} />
-                  <SecondaryButton disabled={busy === "report"} onClick={submitReport}>{busy === "report" ? "Sending..." : "Submit report"}</SecondaryButton>
-                </div>
-              </Card>
-            )}
-            {(reportStatus || localStatus) && <p className="rounded-2xl bg-amber-50 p-3 text-sm font-bold text-[#653e00]">{reportStatus || localStatus}</p>}
-          </aside>
+          </div>
         </div>
+        {mode === "host" && onHostAction ? (
+          <div className="mx-auto mt-4 flex max-w-5xl flex-wrap gap-2">
+            {photo.visibilityStatus === "HIDDEN" ? (
+              <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-950 disabled:bg-white/40" disabled={Boolean(busy)} onClick={() => runHostAction("restore")}>Restore photo</button>
+            ) : (
+              <button type="button" className="min-h-11 rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/20 disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</button>
+            )}
+            {photo.isFeatured ? (
+              <button type="button" className="min-h-11 rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/20 disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove host pick</button>
+            ) : (
+              <button type="button" className="min-h-11 rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white disabled:bg-white/30" disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</button>
+            )}
+            <button type="button" className="min-h-11 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:bg-white/30" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete</button>
+          </div>
+        ) : null}
+        {localStatus ? <p className="mx-auto mt-3 max-w-5xl rounded-lg bg-white/12 px-3 py-2 text-sm font-bold text-white ring-1 ring-white/20">{localStatus}</p> : null}
       </div>
     </div>
   );
@@ -1356,7 +1354,7 @@ function Shell({ children, wide = false }: { children: React.ReactNode; wide?: b
             {auth.token ? (
               <>
                 <Link className="rounded-lg px-3 py-2 font-semibold text-muted hover:bg-stone-100 hover:text-ink" to="/dashboard">Dashboard</Link>
-                <button className="rounded-lg px-3 py-2 font-semibold text-muted hover:bg-stone-100 hover:text-ink" onClick={auth.logout}>Log out</button>
+                <button className="rounded-lg px-3 py-2 font-semibold text-muted hover:bg-stone-100 hover:text-ink" onClick={auth.logout}>Sign out</button>
               </>
             ) : (
               <>
@@ -1447,7 +1445,7 @@ function AwardResultsPanel({
                       </button>
                       <div className="flex items-center justify-between gap-2 p-2">
                         <p className="min-w-0 truncate text-sm font-bold text-stone-900">{photo.guestNickname || "Guest photo"}</p>
-                        {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" /> : <span className="shrink-0 rounded-full bg-[#fff0ed] px-3 py-2 text-xs font-black text-[#d94f33]">{photo.likeCount || 0}</span>}
+                      {onPhotoLike ? <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" /> : <span className="shrink-0 rounded-full bg-[#fff0ed] px-3 py-2 text-xs font-bold text-[#d94f33]">{photo.likeCount || 0}</span>}
                       </div>
                     </div>
                   ))}
@@ -1799,7 +1797,7 @@ function EventPosterPage() {
   const assets = event ? buildHostShareAssets(event) : null;
 
   return (
-    <AppShell>
+    <AppShell userEmail={auth.user?.email} canViewFounder={Boolean(auth.user?.isFounder)} onSignOut={auth.logout}>
       {!event && <Card className="text-center"><h1 className="font-serif-display text-3xl font-bold">Loading poster</h1><p className="mt-2 text-muted">{error || "Building the host invite poster..."}</p></Card>}
       {event && assets && (
         <div className="poster-page mx-auto grid max-w-5xl gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
@@ -1914,6 +1912,9 @@ function LandingStepArrow({ className = "" }: { className?: string }) {
 }
 
 function LandingRedesign() {
+  const auth = useAuth();
+  const createEventHref = auth.token ? "/dashboard/events/new" : "/signup";
+
   useEffect(() => {
     trackAnalytics("landing_page_viewed");
   }, []);
@@ -1944,7 +1945,7 @@ function LandingRedesign() {
               Dashboard
             </LandingButtonLink>
             <span className="hidden sm:block">
-              <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event nav")}>
+              <LandingButtonLink to={createEventHref} onClick={() => trackCta("Create your first event nav")}>
                 Create your first event
               </LandingButtonLink>
             </span>
@@ -1964,7 +1965,7 @@ function LandingRedesign() {
               Create one link for your event. Guests add photos without an account, and everyone gets a shared recap after.
             </p>
             <div className="mt-8 flex flex-col gap-4 sm:flex-row">
-              <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event hero")}>
+              <LandingButtonLink to={createEventHref} onClick={() => trackCta("Create your first event hero")}>
                 Create your first event
               </LandingButtonLink>
               <LandingButtonLink variant="secondary" to={LANDING_DEMO_PATH} onClick={() => trackCta("Try a demo")}>
@@ -2053,7 +2054,7 @@ function LandingRedesign() {
               <h2 className="font-serif-display text-4xl font-bold leading-tight text-[#171717] md:whitespace-nowrap md:text-[2rem]">Ready to make it easy?</h2>
               <p className="mt-3 max-w-[360px] text-base leading-6 text-[#69645f]">Create your event, share the link, and enjoy the memories.</p>
               <div className="mt-5">
-                <LandingButtonLink to="/signup" onClick={() => trackCta("Create your first event bottom")}>
+                <LandingButtonLink to={createEventHref} onClick={() => trackCta("Create your first event bottom")}>
                   Create your first event
                 </LandingButtonLink>
               </div>
@@ -2248,11 +2249,9 @@ function AuthForm({ mode }: { mode: "signup" | "login" }) {
         <TextInput autoComplete={mode === "signup" ? "new-password" : "current-password"} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} />
         {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <Button className="mt-5 w-full" disabled={loading}>{loading ? "Working..." : mode === "signup" ? "Sign up" : "Log in"}</Button>
-        {mode === "signup" && (
-          <Link className="mt-4 block text-center text-sm font-bold text-stone-700 underline decoration-amber-500 underline-offset-4 transition hover:text-stone-950" to="/login">
-            Already have an account? Sign in &rarr;
-          </Link>
-        )}
+        <Link className="mt-4 block text-center text-sm font-bold text-stone-700 underline decoration-amber-500 underline-offset-4 transition hover:text-stone-950" to={mode === "signup" ? "/login" : "/signup"}>
+          {mode === "signup" ? "Already have an account? Sign in \u2192" : "Don't have an account? Sign up \u2192"}
+        </Link>
       </form>
     </Shell>
   );
@@ -2292,7 +2291,7 @@ function Dashboard() {
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
 
   return (
-    <AppShell userEmail={auth.user?.email} canViewFounder={canViewFounder}>
+    <AppShell userEmail={auth.user?.email} canViewFounder={canViewFounder} onSignOut={auth.logout}>
       <div className="rounded-xl border border-line bg-white p-6 shadow-sm sm:p-8">
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -2577,7 +2576,6 @@ const FOUNDER_METRIC_LABELS: Array<[keyof FounderOverview["overview"], string, "
   ["totalContributors", "Contributors", "green"],
   ["totalRecapOpens", "Recap opens", "plum"],
   ["totalFeedbackSubmissions", "Feedback", "default"],
-  ["totalReportedPhotos", "Reports", "default"],
   ["hiddenPhotoCount", "Hidden photos", "default"],
 ];
 
@@ -2604,7 +2602,6 @@ function FounderDashboard() {
     if (!overview || sectionTracked.current) return;
     sectionTracked.current = true;
     trackAnalytics("founder_feedback_inbox_viewed", { metadata: { surface: "founder_dashboard" } });
-    trackAnalytics("founder_reported_photo_review_viewed", { metadata: { surface: "founder_dashboard" } });
   }, [overview]);
 
   function exportMetrics() {
@@ -2662,7 +2659,7 @@ function FounderDashboard() {
           <div>
             <StatusPill tone="plum">Founder beta ops</StatusPill>
             <h1 className="mt-4 font-display text-4xl font-bold sm:text-5xl">What is happening across EventFilm?</h1>
-            <p className="mt-3 max-w-2xl text-stone-200">Traction, feedback, reports, modes, and Unlock Alabama-ready signals in one private view.</p>
+            <p className="mt-3 max-w-2xl text-stone-200">Traction, feedback, modes, and Unlock Alabama-ready signals in one private view.</p>
             <p className="mt-2 text-sm font-semibold text-stone-400">Generated {formatDateTime(overview.generatedAt)}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
@@ -2687,7 +2684,7 @@ function FounderDashboard() {
               "Confirm one real event has guest, poster, and Recap links.",
               "Watch guest joins, uploads, contributors, and Recap opens.",
               "Check Event Awards votes if the event uses awards.",
-              "Review beta issues, host feedback, reported photos, and hidden photos after the event.",
+              "Review beta issues, host feedback, and hidden photos after the event.",
             ].map((item, index) => (
               <p className="rounded-[1.15rem] bg-[#fffaf6] p-4" key={item}><strong className="text-[#653e00]">{index + 1}.</strong> {item}</p>
             ))}
@@ -2744,9 +2741,8 @@ function FounderDashboard() {
         <FounderEventList title="Recent events" events={overview.recentEvents} empty="No events have been created yet." onOpen={trackEventOpen} />
       </section>
 
-      <section className="mt-8 grid gap-5 lg:grid-cols-[1fr_1fr]">
+      <section className="mt-8">
         <FounderFeedbackInbox feedback={overview.recentFeedback} />
-        <FounderReportedPhotos reports={overview.reportedPhotos} />
       </section>
 
       <section className="mt-8 grid gap-5 lg:grid-cols-3">
@@ -2786,7 +2782,7 @@ function FounderEventList({ title, events, empty, onOpen }: { title: string; eve
           <div className="rounded-[1.25rem] border border-[#eadfce] bg-[#fffaf6] p-4" key={event.id}>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <StatusPill tone={event.reportCount ? "red" : event.photoCount ? "green" : "stone"}>{event.modeLabel}</StatusPill>
+                <StatusPill tone={event.photoCount ? "green" : "stone"}>{event.modeLabel}</StatusPill>
                 <h3 className="mt-3 font-display text-xl font-bold text-stone-950">{event.name}</h3>
                 <p className="mt-1 text-sm text-stone-600">{event.hostEmail || "Unknown host"}</p>
                 <p className="text-sm text-stone-600">Created {formatDateTime(event.createdAt)}</p>
@@ -2872,47 +2868,6 @@ function FounderFeedbackInbox({ feedback }: { feedback: FounderOverview["recentF
           </div>
         ))}
         {!feedback.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">No host feedback has been submitted yet.</p>}
-      </div>
-    </Card>
-  );
-}
-
-function FounderReportedPhotos({ reports }: { reports: FounderOverview["reportedPhotos"] }) {
-  return (
-    <Card>
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-2xl font-bold">Reported photo review</h2>
-          <p className="mt-1 text-sm text-stone-600">Read-only founder view. Host-owned moderation remains the action path.</p>
-        </div>
-        <StatusPill tone={reports.length ? "red" : "green"}>{reports.length}</StatusPill>
-      </div>
-      <div className="mt-4 grid gap-4">
-        {reports.map((report) => (
-          <div className="rounded-[1.25rem] bg-[#fffaf6] p-4" key={report.id}>
-            <div className="flex gap-4">
-              <div className="h-24 w-20 shrink-0 overflow-hidden rounded-[1rem] bg-stone-200">
-                {report.previewUrl ? <img className="h-full w-full object-cover" src={assetUrl(report.previewUrl)} alt={`${report.eventName} reported photo`} /> : <div className="flex h-full items-center justify-center px-2 text-center text-xs font-bold text-stone-500">No public preview</div>}
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                  <div>
-                    <h3 className="font-display text-xl font-bold text-stone-950">{report.eventName}</h3>
-                    <p className="mt-1 text-sm text-stone-600">{report.hostEmail || "Unknown host"} - {formatDateTime(report.createdAt)}</p>
-                  </div>
-                  <StatusPill tone={report.visibilityStatus === "HIDDEN" ? "stone" : "red"}>{report.visibilityStatus === "HIDDEN" ? "Hidden" : `${report.reportCount} reported`}</StatusPill>
-                </div>
-                <p className="mt-2 text-sm text-stone-700"><strong className="text-stone-950">Reason:</strong> {report.reason}</p>
-                {report.note && <p className="mt-1 text-sm text-stone-700"><strong className="text-stone-950">Note:</strong> {report.note}</p>}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {report.hostEventPath && <Link className="rounded-full bg-stone-950 px-3 py-2 text-xs font-bold text-white hover:bg-stone-800" to={report.hostEventPath}>Open host event</Link>}
-                  {report.recapLink && <a className="rounded-full bg-white px-3 py-2 text-xs font-bold text-stone-700 hover:bg-stone-100" href={report.recapLink} target="_blank" rel="noreferrer">Recap</a>}
-                </div>
-              </div>
-            </div>
-          </div>
-        ))}
-        {!reports.length && <p className="rounded-[1.15rem] bg-stone-50 p-4 text-sm font-semibold text-stone-600">No open reported photos need review.</p>}
       </div>
     </Card>
   );
@@ -3036,7 +2991,7 @@ function CreateEvent() {
   }
 
   return (
-    <AppShell userEmail={auth.user?.email} canViewFounder={Boolean(auth.user?.isFounder)}>
+    <AppShell userEmail={auth.user?.email} canViewFounder={Boolean(auth.user?.isFounder)} onSignOut={auth.logout}>
       <div className="mx-auto max-w-6xl pb-28 lg:pb-0">
         <div className="max-w-2xl">
           <h1 className="font-serif-display text-4xl font-bold leading-tight text-ink sm:text-5xl">Create an event</h1>
@@ -3162,13 +3117,28 @@ function CreateEvent() {
   );
 }
 
-function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss }: { event: EventSummary; shareAssets: HostShareAssets; onCopyGuestLink: () => void; onDismiss: () => void }) {
+function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss }: { event: EventSummary; shareAssets: HostShareAssets; onCopyGuestLink: () => Promise<void>; onDismiss: () => void }) {
   const isMemoryCapsule = event.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE;
+  const [copyFeedback, setCopyFeedback] = useState<{ tone: "success" | "error"; message: string } | null>(null);
+  const [copyBusy, setCopyBusy] = useState(false);
   const steps = [
     ["Share the guest link", "Send this in the group chat. Guests can add photos without an account."],
     ["Review photos", "Keep an eye on uploads and hide anything that should not appear in the album."],
     ["Share the recap", isMemoryCapsule ? "Send it after reveal so everyone has the photos in one place." : "Send it whenever you want everyone to revisit the album."],
   ];
+
+  async function handleCopyGuestLink() {
+    setCopyBusy(true);
+    setCopyFeedback(null);
+    try {
+      await onCopyGuestLink();
+      setCopyFeedback({ tone: "success", message: "Guest link copied" });
+    } catch (err) {
+      setCopyFeedback({ tone: "error", message: (err as Error).message || "Could not copy guest link" });
+    } finally {
+      setCopyBusy(false);
+    }
+  }
 
   return (
     <section className="mb-8 rounded-[2rem] bg-[#fff3e6] p-4 sm:p-6" aria-label="Event creation success">
@@ -3183,10 +3153,26 @@ function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss
           <button type="button" className="self-start rounded-full border border-[#eadfce] bg-[#fffaf6] px-4 py-2 text-sm font-bold text-stone-700 hover:bg-white" onClick={onDismiss}>Dismiss</button>
         </div>
         <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Button type="button" onClick={onCopyGuestLink}>Copy guest link</Button>
+          <Button type="button" onClick={handleCopyGuestLink} disabled={copyBusy}>
+            <CleanIcon name="copy" />
+            {copyBusy ? "Copying..." : "Copy guest link"}
+          </Button>
           <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={shareAssets.poster.posterPath}>Download QR poster</Link>
           <Link className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] border border-[#eadfce] bg-white px-5 py-3 text-sm font-bold text-stone-900 shadow-sm" to={`/e/${event.slug}`}>Preview guest page</Link>
         </div>
+        {copyFeedback ? (
+          <p
+            className={cx(
+              "mt-3 inline-flex min-h-10 items-center gap-2 rounded-lg px-4 py-2 text-sm font-bold",
+              copyFeedback.tone === "success" ? "bg-green-50 text-green-700 ring-1 ring-green-100" : "bg-red-50 text-red-700 ring-1 ring-red-100",
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            <CleanIcon name={copyFeedback.tone === "success" ? "check" : "copy"} className="h-4 w-4" />
+            <span>{copyFeedback.message}</span>
+          </p>
+        ) : null}
         <div className="mt-6 grid gap-3 lg:grid-cols-3">
           {steps.map(([title, copy], index) => (
             <div className="rounded-[1.15rem] bg-[#fffaf6] p-4 ring-1 ring-[#eadfce]" key={title}>
@@ -3265,7 +3251,7 @@ function ManageEvent() {
 
   useEffect(() => {
     if (galleryFilter === "all") return;
-    if (["visible", "hidden", "featured", "liked", "reported"].includes(galleryFilter)) return;
+    if (["visible", "hidden", "featured", "liked"].includes(galleryFilter)) return;
     if (!event?.challenge) {
       setGalleryFilter("all");
       return;
@@ -3282,7 +3268,7 @@ function ManageEvent() {
   }
 
   async function updatePhotoVisibility(photo: Photo, visibilityStatus: PhotoVisibilityStatus) {
-    const hiddenReason = visibilityStatus === "HIDDEN" ? prompt("Why hide this photo? This note stays host-only.", "Hidden by host") || "Hidden by host" : undefined;
+    const hiddenReason = visibilityStatus === "HIDDEN" ? "Hidden by host" : undefined;
     const data = await eventFilmApi.updatePhotoVisibility(eventId || "", photo.id, visibilityStatus, hiddenReason, auth.token);
     trackAnalytics(visibilityStatus === "HIDDEN" ? "photo_hidden" : "photo_restored", { eventId, eventSlug: event?.slug, metadata: { photoId: photo.id, visibilityStatus } });
     await refreshAfterPhotoAction(data.photo);
@@ -3316,7 +3302,7 @@ function ManageEvent() {
     a.click();
     URL.revokeObjectURL(url);
     trackAnalytics("album_downloaded", { eventId, eventSlug: event?.slug, metadata: { scope, photoCount: scope === "visible" ? visiblePhotos.length : event?.photos.length || 0 } });
-    setDownloadStatus(scope === "visible" ? "Visible photo ZIP downloaded. Hidden and reported photos were excluded." : "All non-deleted photo ZIP downloaded for host review.");
+    setDownloadStatus(scope === "visible" ? "Visible photo ZIP downloaded. Hidden photos were excluded." : "All non-deleted photo ZIP downloaded for host review.");
   }
 
   async function saveChallenge() {
@@ -3390,7 +3376,6 @@ function ManageEvent() {
     if (galleryFilter === "hidden") return photo.visibilityStatus === "HIDDEN";
     if (galleryFilter === "featured") return Boolean(photo.isFeatured);
     if (galleryFilter === "liked") return Number(photo.likeCount || 0) > 0;
-    if (galleryFilter === "reported") return Boolean(photo.reportCount);
     if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
     if (galleryFilter.startsWith("participant:")) return photo.challengeParticipantId === galleryFilter.replace("participant:", "");
     if (galleryFilter.startsWith("prompt:")) return photo.challengePromptId === galleryFilter.replace("prompt:", "");
@@ -3403,7 +3388,6 @@ function ManageEvent() {
   const visiblePhotos = event?.photos.filter(isPhotoVisible) || [];
   const hostContributorSummary = buildContributorSummary(visiblePhotos);
   const hiddenCount = event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0;
-  const reportedCount = event?.photos.filter((photo) => Boolean(photo.reportCount)).length || 0;
   const featuredCount = event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0;
   const likedCount = event?.photos.filter((photo) => Number(photo.likeCount || 0) > 0).length || 0;
   const hostAwardResults = event ? eventAnalytics?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visiblePhotos }) : null;
@@ -3485,6 +3469,16 @@ function ManageEvent() {
     }
   }
 
+  async function copyCreatedHandoffGuestLink() {
+    if (!event?.eventLink) throw new Error("Guest link is unavailable");
+    await copyText(event.eventLink);
+    trackAnalytics("guest_link_copied", {
+      eventId: event.id,
+      eventSlug: event.slug,
+      metadata: { surface: "created_handoff", method: "clipboard" },
+    });
+  }
+
   function dismissCreatedHandoff() {
     const nextParams = new URLSearchParams(searchParams);
     nextParams.delete("created");
@@ -3502,7 +3496,7 @@ function ManageEvent() {
   ) : null;
 
   return (
-    <AppShell userEmail={auth.user?.email} canViewFounder={canViewFounderTools}>
+    <AppShell userEmail={auth.user?.email} canViewFounder={canViewFounderTools} onSignOut={auth.logout}>
       {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       {event && (
         <>
@@ -3510,7 +3504,7 @@ function ManageEvent() {
             <EventReadyHandoffPanel
               event={event}
               shareAssets={shareAssets}
-              onCopyGuestLink={() => copyDetailLink("Guest link", event.eventLink)}
+              onCopyGuestLink={copyCreatedHandoffGuestLink}
               onDismiss={dismissCreatedHandoff}
             />
           ) : null}
@@ -3636,7 +3630,7 @@ function ManageEvent() {
               {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
             </Card>
             <div className="mt-4 grid gap-3 rounded-3xl bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
-              <p className="text-sm font-semibold text-stone-600">Visible export excludes hidden and reported photos by default.</p>
+              <p className="text-sm font-semibold text-stone-600">Visible export excludes hidden photos by default.</p>
               <SecondaryButton onClick={() => downloadZip("visible")}>Download visible ZIP</SecondaryButton>
               <SecondaryButton onClick={() => downloadZip("all")}>Download all ZIP</SecondaryButton>
             </div>
@@ -3654,7 +3648,6 @@ function ManageEvent() {
                   ["Recap views", eventAnalytics.recapOpens],
                   ["Visible photos", eventAnalytics.visiblePhotos],
                   ["Hidden photos", eventAnalytics.hiddenPhotos],
-                  ["Reported photos", eventAnalytics.reportedPhotos],
                   ["Host picks", eventAnalytics.featuredPhotos],
                   ["Guest hearts", eventAnalytics.photoLikes || 0],
                 ].map(([label, value], index) => (
@@ -3775,7 +3768,6 @@ function ManageEvent() {
                     ["hidden", `Hidden (${hiddenCount})`],
                     ["featured", `Host picks (${featuredCount})`],
                     ["liked", `Most liked (${likedCount})`],
-                    ["reported", `Reported (${reportedCount})`],
                   ].map(([key, label]) => (
                     <button className={cx("shrink-0 rounded-full px-4 py-2 text-sm font-bold", galleryFilter === key ? "bg-stone-950 text-white" : "bg-stone-100 text-stone-700 hover:bg-stone-200")} onClick={() => setGalleryFilter(key)} key={key}>{label}</button>
                   ))}
@@ -3851,7 +3843,7 @@ function ManageEvent() {
             {!filteredPhotos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet</h3><p className="mt-2 font-semibold text-stone-600">Share the QR code or guest link to start collecting photos.</p></Card>}
           </section>
           ) : null}
-          <PhotoDetailModal photo={selectedPhoto} mode="host" onClose={() => setSelectedPhoto(null)} onHostAction={handleHostPhotoAction} />
+          <FullScreenPhotoViewer photo={selectedPhoto} photos={filteredPhotos} mode="host" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onHostAction={handleHostPhotoAction} />
         </>
       )}
     </AppShell>
@@ -3964,7 +3956,6 @@ function EventRecap() {
   const [data, setData] = useState<EventRecapResponse | null>(null);
   const [error, setError] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
-  const [reportStatus, setReportStatus] = useState("");
   const [recapLinkStatus, setRecapLinkStatus] = useState("");
   const [activeAlbumFilter, setActiveAlbumFilter] = useState("all");
   const trackedStoryRef = useRef("");
@@ -4007,13 +3998,6 @@ function EventRecap() {
     }
   }, [data?.isLocked, event, story]);
 
-  async function reportSelectedPhoto(reason: PhotoReportReason, note: string) {
-    if (!selectedPhoto) return;
-    await eventFilmApi.reportPhoto(selectedPhoto.id, { reason, note, reporterId: getAnalyticsAnonymousId() });
-    setReportStatus("Thanks. The host can review this report.");
-    trackAnalytics("photo_reported", { eventId: event?.id, eventSlug: event?.slug, metadata: { photoId: selectedPhoto.id, reason } });
-  }
-
   async function handleRecapPhotoLike(photo: Photo, liked: boolean) {
     if (!event) return;
     const previousPhoto = photo;
@@ -4035,7 +4019,6 @@ function EventRecap() {
 
   function openPublicPhoto(photo: Photo) {
     setSelectedPhoto(photo);
-    setReportStatus("");
     trackAnalytics("recap_photo_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "recap", photoId: photo.id } });
     trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "recap", photoId: photo.id } });
   }
@@ -4184,7 +4167,7 @@ function EventRecap() {
             ) : null}
 
             {event.challenge && !data.isLocked && story.challengeMoments.some((moment) => moment.photos.length || moment.count) ? <RecapChallengeMoments story={story} awardResults={awardResults} photos={data.photos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} /> : null}
-            <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} onPhotoLike={handleRecapPhotoLike} />
+            <FullScreenPhotoViewer photo={selectedPhoto} photos={data.photos} mode="public" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onPhotoLike={handleRecapPhotoLike} />
           </>
         )}
       </div>
@@ -4225,7 +4208,6 @@ function GuestEvent() {
   const [uploadSuccessPhoto, setUploadSuccessPhoto] = useState<Photo | null>(null);
   const [awardResults, setAwardResults] = useState<AwardResultsSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
-  const [reportStatus, setReportStatus] = useState("");
   const [activeGuestTab, setActiveGuestTab] = useState<"photos" | "people" | "highlights">("photos");
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -4456,13 +4438,6 @@ function GuestEvent() {
     trackAnalytics("upload_success_action_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload", label: action } });
   }
 
-  async function reportSelectedPhoto(reason: PhotoReportReason, note: string) {
-    if (!selectedPhoto) return;
-    await eventFilmApi.reportPhoto(selectedPhoto.id, { reason, note, reporterId: session.clientId });
-    setReportStatus("Thanks. The host can review this report.");
-    trackAnalytics("photo_reported", { eventId: event?.id, eventSlug: event?.slug, metadata: { photoId: selectedPhoto.id, reason } });
-  }
-
   async function handleGuestPhotoLike(photo: Photo, liked: boolean) {
     if (!event) return;
     const previousPhoto = photo;
@@ -4599,7 +4574,6 @@ function GuestEvent() {
                         className="block w-full text-left"
                         onClick={() => {
                           setSelectedPhoto(photo);
-                          setReportStatus("");
                           trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
                         }}
                       >
@@ -4650,7 +4624,6 @@ function GuestEvent() {
               <div className="px-2 pt-4">
                 {guestAwardResults ? <AwardResultsPanel awardResults={guestAwardResults} photos={visibleAlbumPhotos} onPhotoClick={(photo) => {
                   setSelectedPhoto(photo);
-                  setReportStatus("");
                   trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_awards", photoId: photo.id } });
                 }} onPhotoLike={handleGuestPhotoLike} /> : null}
                 {highlightPhotos.length ? (
@@ -4663,7 +4636,6 @@ function GuestEvent() {
                           className="block w-full text-left"
                           onClick={() => {
                             setSelectedPhoto(photo);
-                            setReportStatus("");
                             trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_highlights", photoId: photo.id } });
                           }}
                         >
@@ -4682,7 +4654,7 @@ function GuestEvent() {
             ) : null}
           </section>
 
-          <PhotoDetailModal photo={selectedPhoto} mode="public" onClose={() => setSelectedPhoto(null)} onReport={reportSelectedPhoto} reportStatus={reportStatus} onPhotoLike={handleGuestPhotoLike} />
+          <FullScreenPhotoViewer photo={selectedPhoto} photos={visibleAlbumPhotos} mode="public" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onPhotoLike={handleGuestPhotoLike} />
 
           <div className="fixed inset-x-0 bottom-7 z-30 flex justify-center px-4 pointer-events-none">
             <button type="button" className="pointer-events-auto inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-7 py-3 text-base font-bold text-white shadow-[0_6px_16px_rgba(232,93,63,0.24)] transition hover:bg-[#d84d32]" onClick={openUploadSheet}>

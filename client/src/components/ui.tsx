@@ -114,7 +114,17 @@ export function PageHeader({ title, description, action }: { title: string; desc
   );
 }
 
-export function AppShell({ children, userEmail, canViewFounder = false }: { children: React.ReactNode; userEmail?: string; canViewFounder?: boolean }) {
+export function AppShell({
+  children,
+  userEmail,
+  canViewFounder = false,
+  onSignOut,
+}: {
+  children: React.ReactNode;
+  userEmail?: string;
+  canViewFounder?: boolean;
+  onSignOut?: () => void;
+}) {
   const navItems = [
     { to: "/dashboard", label: "Home", icon: "home" },
     { to: "/dashboard/events/new", label: "Create", icon: "calendar" },
@@ -149,13 +159,33 @@ export function AppShell({ children, userEmail, canViewFounder = false }: { chil
           <div className="rounded-xl border border-line bg-stone-50 p-3">
             <p className="text-xs font-semibold text-muted">Signed in</p>
             <p className="mt-1 truncate text-sm font-semibold text-ink">{userEmail || "Host"}</p>
+            {onSignOut ? (
+              <button
+                type="button"
+                className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink transition hover:border-coral/40 hover:bg-coral-soft"
+                onClick={onSignOut}
+              >
+                Sign out
+              </button>
+            ) : null}
           </div>
         </div>
       </aside>
       <header className="sticky top-0 z-40 border-b border-line bg-white/90 px-4 py-3 backdrop-blur lg:hidden">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <BrandMark />
-          <Link className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink" to="/dashboard/events/new">Create</Link>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink" to="/dashboard/events/new">Create</Link>
+            {onSignOut ? (
+              <button
+                type="button"
+                className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink"
+                onClick={onSignOut}
+              >
+                Sign out
+              </button>
+            ) : null}
+          </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:ml-64 lg:px-8 lg:py-8">{children}</main>

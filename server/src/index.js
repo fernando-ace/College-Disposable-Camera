@@ -111,7 +111,6 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "photo_restored",
   "photo_featured",
   "photo_unfeatured",
-  "photo_reported",
   "photo_like_added",
   "photo_like_removed",
   "album_downloaded",
@@ -150,7 +149,6 @@ const ANALYTICS_EVENT_NAMES = new Set([
   "recap_shared_after_event",
   "founder_dashboard_viewed",
   "founder_feedback_inbox_viewed",
-  "founder_reported_photo_review_viewed",
   "founder_event_opened_from_dashboard",
   "founder_metrics_exported",
 ]);
@@ -158,12 +156,6 @@ const PHOTO_VISIBILITY_VISIBLE = "VISIBLE";
 const PHOTO_VISIBILITY_HIDDEN = "HIDDEN";
 const ANONYMOUS_GUEST_DISPLAY_NAME = "Anonymous guest";
 const MAX_GUEST_DISPLAY_NAME_LENGTH = 40;
-const PHOTO_REPORT_REASON_MAP = new Map([
-  ["inappropriate", "INAPPROPRIATE"],
-  ["privacy", "PRIVACY"],
-  ["spam", "SPAM"],
-  ["other", "OTHER"],
-]);
 const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]);
 const ANALYTICS_SOURCES = new Set(["web", "mobile", "api"]);
 const ANALYTICS_METADATA_KEYS = new Set([
@@ -591,17 +583,7 @@ async function upsertPhotoLikeFromLegacyVote({ eventId, photoId, clientId }) {
   });
 }
 
-function photoReportPayload(report) {
-  return {
-    id: report.id,
-    reason: String(report.reason || "").toLowerCase(),
-    note: report.note,
-    createdAt: report.createdAt,
-  };
-}
-
 function photoPayload(photo, { includeModeration = false } = {}) {
-  const reportCount = photo._count?.reports ?? photo.reportCount ?? (Array.isArray(photo.reports) ? photo.reports.length : 0);
   const likeCount = photoLikeCount(photo);
   return {
     id: photo.id,
@@ -630,8 +612,6 @@ function photoPayload(photo, { includeModeration = false } = {}) {
     featuredAt: photo.featuredAt,
     likeCount,
     likedByMe: photo.likedByMe === undefined ? undefined : Boolean(photo.likedByMe),
-    reportCount: includeModeration ? reportCount : undefined,
-    reports: includeModeration && Array.isArray(photo.reports) ? photo.reports.map(photoReportPayload) : undefined,
   };
 }
 
@@ -879,7 +859,7 @@ function hostEventDetailInclude() {
     photos: {
       where: activePhotoWhere(),
       orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
-      include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true, likes: true } } },
+      include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
     },
     challenges: activeChallengeInclude(),
     _count: { select: { photos: { where: visiblePhotoWhere() } } },
@@ -1079,7 +1059,6 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     photoCount,
     visiblePhotos,
     hiddenPhotos,
-    reportedPhotos,
     featuredPhotos,
     photoLikes,
     guestJoins,
@@ -1090,7 +1069,6 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id }) }),
     prisma.photo.count({ where: visiblePhotoWhere({ eventId: event.id }) }),
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, visibilityStatus: PHOTO_VISIBILITY_HIDDEN }) }),
-    prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, reports: { some: {} } }) }),
     prisma.photo.count({ where: activePhotoWhere({ eventId: event.id, isFeatured: true }) }),
     prisma.photoLike.count({ where: { eventId: event.id } }),
     countAnalytics("guest_joined_event", eventScope),
@@ -1118,7 +1096,6 @@ app.get("/api/host/events/:eventId/analytics/summary", requireAuth, async (req, 
       photoCount,
       visiblePhotos,
       hiddenPhotos,
-      reportedPhotos,
       featuredPhotos,
       photoLikes,
       guestJoins,
@@ -1514,18 +1491,13 @@ app.get("/api/host/events/:eventId/photos", requireAuth, async (req, res) => {
       { challengeParticipantId: req.query.challengeItemId },
     ];
   }
-  if (req.query.reported === "true") {
-    where.reports = { some: {} };
-  }
-
   const photos = await prisma.photo.findMany({
     where,
     orderBy: [{ isFeatured: "desc" }, { createdAt: "desc" }],
     include: {
       guest: true,
       challengeParticipant: true,
-      reports: { orderBy: { createdAt: "desc" } },
-      _count: { select: { reports: true, likes: true } },
+      _count: { select: { likes: true } },
     },
   });
 
@@ -1551,7 +1523,7 @@ app.patch("/api/host/events/:eventId/photos/:photoId/visibility", requireAuth, a
       hiddenAt: nextStatus === PHOTO_VISIBILITY_HIDDEN ? new Date() : null,
       hiddenReason: nextStatus === PHOTO_VISIBILITY_HIDDEN ? String(req.body?.hiddenReason || "").slice(0, 160) || "Hidden by host" : null,
     },
-    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true, likes: true } } },
+    include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
   });
 
   trackApiAnalytics(nextStatus === PHOTO_VISIBILITY_HIDDEN ? "photo_hidden" : "photo_restored", {
@@ -1575,7 +1547,7 @@ app.patch("/api/host/events/:eventId/photos/:photoId/featured", requireAuth, asy
   const updated = await prisma.photo.update({
     where: { id: photo.id },
     data: { isFeatured, featuredAt: isFeatured ? new Date() : null },
-    include: { guest: true, challengeParticipant: true, reports: { orderBy: { createdAt: "desc" } }, _count: { select: { reports: true, likes: true } } },
+    include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
   });
 
   trackApiAnalytics(isFeatured ? "photo_featured" : "photo_unfeatured", {
@@ -1961,36 +1933,6 @@ app.get("/api/events/:slug/photos", async (req, res) => {
   const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
   const photos = await markPhotosLikedByClient(prisma, event.id, event.photos, clientId);
   res.json({ photos: photos.map(photoPayload) });
-});
-
-app.post("/api/photos/:photoId/reports", async (req, res) => {
-  const reason = PHOTO_REPORT_REASON_MAP.get(String(req.body?.reason || "").toLowerCase());
-  if (!reason) return res.status(400).json({ error: "Choose a report reason" });
-
-  const photo = await prisma.photo.findFirst({
-    where: visiblePhotoWhere({ id: req.params.photoId }),
-    include: { event: { select: { id: true, slug: true } } },
-  });
-  if (!photo) return res.status(404).json({ error: "Photo not found" });
-
-  await prisma.photoReport.create({
-    data: {
-      photoId: photo.id,
-      eventId: photo.eventId,
-      reason,
-      note: typeof req.body?.note === "string" && req.body.note.trim() ? req.body.note.trim().slice(0, 500) : null,
-      reporterHash: hashAnonymousId(req.body?.reporterId),
-    },
-  });
-
-  trackApiAnalytics("photo_reported", {
-    eventId: photo.eventId,
-    eventSlug: photo.event.slug,
-    anonymousId: req.body?.reporterId,
-    metadata: { photoId: photo.id, reason: String(req.body?.reason || "").toLowerCase() },
-  });
-
-  res.status(201).json({ ok: true });
 });
 
 app.get("/api/photos/:photoId/file", async (req, res) => {

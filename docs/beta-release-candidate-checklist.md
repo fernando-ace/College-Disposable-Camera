@@ -54,10 +54,9 @@ Deployed rehearsal:
 15. Hide the photo.
 16. Confirm the hidden photo disappears from public album and Recap.
 17. Restore the photo.
-18. Report the photo from a public surface only if the target event is safe for reported-photo test data.
-19. Confirm host or founder review surfaces show the report when configured.
-20. Confirm founder dashboard metrics if `FOUNDER_EMAILS` is configured.
-21. Delete the test event or clearly mark it as test data after verification.
+18. Open the photo from a public surface and confirm the full image, overlay details, and hearts render cleanly.
+19. Confirm founder dashboard metrics if `FOUNDER_EMAILS` is configured.
+20. Delete the test event or clearly mark it as test data after verification.
 
 ## Launch Evidence
 

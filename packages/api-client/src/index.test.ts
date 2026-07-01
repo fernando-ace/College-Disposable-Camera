@@ -113,7 +113,7 @@ test("founder overview helper uses founder endpoint with auth", async () => {
     fetchImpl: (async (url, init) => {
       calls.push(String(url));
       authHeader = String(new Headers(init?.headers).get("Authorization") || "");
-      return new Response(JSON.stringify({ overview: { overview: {}, funnel: {}, recentEvents: [], activeEvents: [], recentUploads: [], recentFeedback: [], recentBetaIssues: [], reportedPhotos: [], usage: {}, activity: [], metricDefinitions: {}, generatedAt: "now" } }), {
+      return new Response(JSON.stringify({ overview: { overview: {}, funnel: {}, recentEvents: [], activeEvents: [], recentUploads: [], recentFeedback: [], recentBetaIssues: [], usage: {}, activity: [], metricDefinitions: {}, generatedAt: "now" } }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });

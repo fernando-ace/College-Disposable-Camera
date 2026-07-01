@@ -1,54 +1,76 @@
 import * as React from "react";
 import { Link, useLocalSearchParams } from "expo-router";
-import { Alert, View } from "react-native";
 import type { Photo, PublicEvent } from "@eventfilm/shared";
 import { CHALLENGE_TYPES, memoryCapsuleFromChallenge } from "@eventfilm/shared";
-import { Badge, Button, EmptyState, ErrorState, LoadingState, PhotoCard, Screen, SectionHeader, SuccessState, TaskHeader } from "../../src/components/ui";
+import { Badge, Button, EmptyState, ErrorState, LoadingState, PhotoCard, PhotoViewer, Screen, SectionHeader, TaskHeader } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
+import { getGuestClientId } from "../../src/guest-session";
 
 export default function AlbumScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { api } = useAuth();
   const [event, setEvent] = React.useState<PublicEvent | null>(null);
   const [photos, setPhotos] = React.useState<Photo[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = React.useState<Photo | null>(null);
+  const [clientId, setClientId] = React.useState("");
   const [error, setError] = React.useState("");
-  const [reportStatus, setReportStatus] = React.useState("");
   const [loading, setLoading] = React.useState(true);
   const capsuleCopy = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null;
   const isAlbumLocked = event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE && !event.isRevealed;
 
   React.useEffect(() => {
     if (!slug) return;
+    let isMounted = true;
     setLoading(true);
-    api.getPublicEventBySlug(slug)
-      .then(async (data) => {
+    setError("");
+
+    async function loadAlbum() {
+      try {
+        const nextClientId = await getGuestClientId(slug);
+        const data = await api.getPublicEventBySlug(slug);
+        if (!isMounted) return;
+        setClientId(nextClientId);
         setEvent(data.event);
         if (data.event.challenge?.type !== CHALLENGE_TYPES.MEMORY_CAPSULE || data.event.isRevealed) {
-          const photoData = await api.getAlbumPhotos(slug);
+          const photoData = await api.getAlbumPhotos(slug, nextClientId);
+          if (!isMounted) return;
           setPhotos(photoData.photos);
         }
-      })
-      .catch((err) => setError(`${(err as Error).message}. Check the album link or try again when your connection is stable.`))
-      .finally(() => setLoading(false));
+      } catch (err) {
+        if (isMounted) setError(`${(err as Error).message}. Check the album link or try again when your connection is stable.`);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    }
+
+    loadAlbum();
+
+    return () => {
+      isMounted = false;
+    };
   }, [api, slug]);
 
-  function reportPhoto(photo: Photo) {
-    const submit = async (reason: "inappropriate" | "privacy" | "spam" | "other") => {
-      try {
-        await api.reportPhoto(photo.id, { reason });
-        setReportStatus("Thanks. The host can review this report.");
-      } catch (err) {
-        setError(`${(err as Error).message}. Try again when your connection is stable.`);
-      }
-    };
+  function updatePhoto(photo: Photo) {
+    setPhotos((current) => current.map((item) => item.id === photo.id ? photo : item));
+    setSelectedPhoto((current) => current?.id === photo.id ? photo : current);
+  }
 
-    Alert.alert("Report photo", "Choose a reason.", [
-      { text: "Inappropriate", onPress: () => submit("inappropriate") },
-      { text: "Privacy concern", onPress: () => submit("privacy") },
-      { text: "Spam", onPress: () => submit("spam") },
-      { text: "Other", onPress: () => submit("other") },
-      { text: "Cancel", style: "cancel" },
-    ]);
+  async function handlePhotoLike(photo: Photo, liked: boolean) {
+    if (!event || !clientId) return;
+    const previousPhoto = photo;
+    const optimisticPhoto = {
+      ...photo,
+      likedByMe: liked,
+      likeCount: Math.max(0, Number(photo.likeCount || 0) + (liked ? 1 : -1)),
+    };
+    updatePhoto(optimisticPhoto);
+    try {
+      const response = await api.setPhotoLike(event.slug, photo.id, { clientId, liked });
+      updatePhoto({ ...photo, likedByMe: response.liked, likeCount: response.likeCount });
+    } catch (err) {
+      updatePhoto(previousPhoto);
+      setError(`${(err as Error).message}. Try again when your connection is stable.`);
+    }
   }
 
   return (
@@ -62,7 +84,6 @@ export default function AlbumScreen() {
 
       {loading ? <LoadingState label="Loading album..." /> : null}
       {error ? <ErrorState message={error} /> : null}
-      {reportStatus ? <SuccessState message={reportStatus} /> : null}
 
       {event && isAlbumLocked ? (
         <EmptyState
@@ -80,13 +101,11 @@ export default function AlbumScreen() {
         <>
           <SectionHeader title="Shared photos" subtitle={`${photos.length} ${photos.length === 1 ? "photo" : "photos"}.`} />
           {photos.length ? photos.map((photo) => (
-            <View key={photo.id} style={{ gap: 10 }}>
-              <PhotoCard photo={photo} />
-              <Button tone="secondary" onPress={() => reportPhoto(photo)}>Report photo</Button>
-            </View>
+            <PhotoCard key={photo.id} photo={photo} onPress={() => setSelectedPhoto(photo)} />
           )) : (
             <EmptyState title="No photos have been shared yet" body="Use the upload button to add the first memory from this device." />
           )}
+          <PhotoViewer photo={selectedPhoto} photos={photos} mode="public" onClose={() => setSelectedPhoto(null)} onSelectPhoto={setSelectedPhoto} onPhotoLike={clientId && event ? handlePhotoLike : undefined} />
         </>
       ) : null}
     </Screen>
