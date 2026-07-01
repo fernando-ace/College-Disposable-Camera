@@ -5374,7 +5374,7 @@ function GuestEvent() {
             <div className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-center overflow-hidden overscroll-contain bg-black/25 px-0 sm:px-4" style={{ top: uploadSheetTop }} role="dialog" aria-modal="true" aria-label="Add photos">
               <button type="button" className="absolute inset-0 cursor-default" aria-label="Close upload sheet" onClick={() => setUploadSheetOpen(false)} />
               <div className="relative max-h-full w-full max-w-[430px] overflow-y-auto overscroll-contain rounded-t-xl bg-white p-4 shadow-sm" data-testid="upload-sheet-panel">
-                <div className="sticky top-0 z-10 -mx-4 -mt-4 flex items-center justify-between border-b border-stone-100 bg-white px-4 py-3">
+                <div className="-mx-4 -mt-4 flex items-center justify-between border-b border-stone-100 bg-white px-4 py-3" data-testid="upload-sheet-header">
                   <div>
                     <h2 className="text-xl font-bold text-stone-950">Add photos</h2>
                     <p className="mt-1 text-xs font-semibold text-stone-500">No account needed.</p>

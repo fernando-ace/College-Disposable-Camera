@@ -479,6 +479,7 @@ test.describe("EventFilm browser smoke", () => {
     expect(sheetLayout.sheet.top).toBeGreaterThanOrEqual(sheetLayout.header.bottom - 1);
     const uploadSheetHeading = sheetPanel.getByRole("heading", { name: "Add photos" });
     await expect(uploadSheetHeading).toBeVisible();
+    const uploadSheetHeadingTopBeforeScroll = await uploadSheetHeading.evaluate((element) => element.getBoundingClientRect().top);
 
     const lockedPageState = await page.evaluate(() => ({
       bodyOverflow: document.body.style.overflow,
@@ -508,6 +509,7 @@ test.describe("EventFilm browser smoke", () => {
       await page.locator("#my-uploads").scrollIntoViewIfNeeded();
       const sheetScrollAfter = await sheetPanel.evaluate((element) => (element as HTMLElement).scrollTop);
       expect(sheetScrollAfter).toBeGreaterThan(sheetScrollBefore);
+      const sheetScrollDelta = sheetScrollAfter - sheetScrollBefore;
       const scrolledSheetLayout = await page.evaluate(() => {
         const sheet = document.querySelector("[data-testid='upload-sheet-panel']");
         const heading = sheet?.querySelector("h2");
@@ -525,9 +527,8 @@ test.describe("EventFilm browser smoke", () => {
         };
       });
       if (!scrolledSheetLayout) throw new Error("Guest upload sheet layout was missing after sheet scroll.");
-      expect(scrolledSheetLayout.headingTop).toBeGreaterThanOrEqual(scrolledSheetLayout.sheetTop - 1);
-      expect(scrolledSheetLayout.headingBottom).toBeLessThanOrEqual(scrolledSheetLayout.sheetBottom);
-      expect(scrolledSheetLayout.uploadsTop).toBeGreaterThanOrEqual(scrolledSheetLayout.headingBottom - 1);
+      expect(scrolledSheetLayout.headingTop).toBeLessThan(uploadSheetHeadingTopBeforeScroll);
+      expect(Math.abs(uploadSheetHeadingTopBeforeScroll - scrolledSheetLayout.headingTop - sheetScrollDelta)).toBeLessThanOrEqual(2);
       await expect(page.locator("#my-uploads")).toBeVisible();
     } else {
       await expect(page.locator("#my-uploads")).toBeVisible();
@@ -657,6 +658,92 @@ test.describe("EventFilm browser smoke", () => {
 
     const storedUploads = await page.evaluate((eventSlug) => window.localStorage.getItem(`eventfilm_guest_uploads_${eventSlug}`), slug);
     expect(JSON.parse(storedUploads || "[]")).toEqual([]);
+  });
+
+  test("guest upload sheet header scrolls with panel content", async ({ page }) => {
+    const slug = "upload-sheet-scroll-smoke";
+    const origin = parsedUrl(baseUrl).origin;
+    const corsHeaders = {
+      "access-control-allow-origin": origin,
+      "access-control-allow-credentials": "true",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "content-type, authorization",
+    };
+    const event = {
+      id: "upload-sheet-scroll-event",
+      name: "Upload Sheet Scroll Party",
+      description: null,
+      slug,
+      eventDate: "2026-06-14T20:00:00.000Z",
+      revealAt: "2026-06-14T20:00:00.000Z",
+      photoLimitPerGuest: 0,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      isRevealed: true,
+      photoCount: 18,
+      challenge: null,
+    };
+    const json = (body: unknown) => ({
+      status: 200,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    await page.route(`**/api/events/${slug}`, (route) => route.fulfill(json({ event })));
+    await page.route(`**/api/events/${slug}/guest-status**`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, nickname: null })));
+    await page.route(`**/api/events/${slug}/my-uploads**`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
+    await page.route(`**/api/events/${slug}/photos**`, (route) => route.fulfill(json({ photos: [] })));
+    await page.route("**/api/analytics**", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ ok: true }));
+    });
+
+    await page.setViewportSize({ width: 390, height: 600 });
+    await page.goto(`/e/${slug}`);
+    await expect(page.getByRole("heading", { name: "Upload Sheet Scroll Party" })).toBeVisible();
+    await page.getByRole("button", { name: "Add photos" }).first().click();
+
+    const sheetPanel = page.getByTestId("upload-sheet-panel");
+    const sheetHeader = page.getByTestId("upload-sheet-header");
+    await expect(sheetPanel).toContainText("No uploads from this device yet.");
+    await expect(sheetHeader).toBeVisible();
+
+    const beforeScroll = await page.evaluate(() => {
+      const sheet = document.querySelector("[data-testid='upload-sheet-panel']");
+      const header = document.querySelector("[data-testid='upload-sheet-header']");
+      if (!sheet || !header) return null;
+      const sheetElement = sheet as HTMLElement;
+      const headerRect = header.getBoundingClientRect();
+      return {
+        headerTop: headerRect.top,
+        maxScroll: sheetElement.scrollHeight - sheetElement.clientHeight,
+        scrollTop: sheetElement.scrollTop,
+      };
+    });
+    if (!beforeScroll) throw new Error("Guest upload sheet was missing before scroll.");
+    expect(beforeScroll.maxScroll).toBeGreaterThan(0);
+
+    await sheetPanel.evaluate((element) => {
+      const panel = element as HTMLElement;
+      panel.scrollTop = Math.min(80, panel.scrollHeight - panel.clientHeight);
+    });
+
+    const afterScroll = await page.evaluate(() => {
+      const sheet = document.querySelector("[data-testid='upload-sheet-panel']");
+      const header = document.querySelector("[data-testid='upload-sheet-header']");
+      if (!sheet || !header) return null;
+      const sheetElement = sheet as HTMLElement;
+      const headerRect = header.getBoundingClientRect();
+      return {
+        headerTop: headerRect.top,
+        scrollTop: sheetElement.scrollTop,
+      };
+    });
+    if (!afterScroll) throw new Error("Guest upload sheet was missing after scroll.");
+    const scrollDelta = afterScroll.scrollTop - beforeScroll.scrollTop;
+    expect(scrollDelta).toBeGreaterThan(0);
+    expect(afterScroll.headerTop).toBeLessThan(beforeScroll.headerTop);
+    expect(Math.abs(beforeScroll.headerTop - afterScroll.headerTop - scrollDelta)).toBeLessThanOrEqual(2);
   });
 
   test("guest can select multiple album photos and open save options", async ({ page }) => {
