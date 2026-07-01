@@ -46,7 +46,7 @@ function compactEvent(event, { requesterUserId, clientUrl }) {
     guestCount,
     eventLink: publicEventUrl(clientUrl, event.slug),
     recapLink: recapUrl(clientUrl, event.slug),
-    hostEventPath: event.hostId === requesterUserId ? `/dashboard/events/${event.id}` : null,
+    hostEventPath: event.hostId === requesterUserId ? `/e/${event.slug}` : null,
   };
 }
 
@@ -73,7 +73,7 @@ function compactFeedback(feedback, { requesterUserId }) {
     eventSlug: feedback.event?.slug || "",
     hostEmail: feedback.host?.email || null,
     isOwnEvent: feedback.hostId === requesterUserId,
-    hostEventPath: feedback.hostId === requesterUserId ? `/dashboard/events/${feedback.eventId}` : null,
+    hostEventPath: feedback.hostId === requesterUserId && feedback.event?.slug ? `/e/${feedback.event.slug}` : null,
     kind: feedback.kind || "post_event",
     issueArea: feedback.issueArea || null,
     outcome: feedback.outcome,

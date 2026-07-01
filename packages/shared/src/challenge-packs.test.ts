@@ -296,7 +296,7 @@ test("unknown templates and old events use safe fallbacks", () => {
   );
   assert.equal(metadata.templateName, undefined);
   assert.equal(metadata.recapTitle, "Favorite moments");
-  assert.equal(metadata.recapSubtitle, "Guest favorites, host picks, and the moments that rose to the top.");
+  assert.equal(metadata.recapSubtitle, "Guest favorites, featured photos, and the moments that rose to the top.");
 });
 
 test("event lifecycle status is derived from photo state and Memory Capsule reveal state", () => {
@@ -878,7 +878,7 @@ test("recap metadata leads with featured photos", () => {
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["featured", "recent"]);
 });
 
-test("recap story prioritizes host picks, liked winners, guest favorites, challenge, and recent photos without duplicate highlight sections", () => {
+test("recap story prioritizes featured photos, liked winners, guest favorites, challenge, and recent photos without duplicate highlight sections", () => {
   const event = {
     id: "event",
     name: "Awards Night",
@@ -909,7 +909,7 @@ test("recap story prioritizes host picks, liked winners, guest favorites, challe
   );
 
   assert.deepEqual(story.highlightReel.map((section) => section.key), ["host-picks", "award-winners", "guest-favorites", "challenge-moments", "recent"]);
-  assert.deepEqual(story.highlightReel.map((section) => section.title), ["Host picks", "Award winners", "Guest favorites", "Prompts", "Photos"]);
+  assert.deepEqual(story.highlightReel.map((section) => section.title), ["Featured", "Award winners", "Guest favorites", "Prompts", "Photos"]);
   assert.deepEqual(story.highlightReel.map((section) => section.photos.map((item) => item.id)), [["featured"], ["winner"], ["liked"], ["challenge"], ["recent"]]);
   assert.equal(new Set(story.highlightReel.flatMap((section) => section.photos.map((item) => item.id))).size, 5);
   assert.equal(story.challengeMoments[0]?.likeCount, 7);

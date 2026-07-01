@@ -708,6 +708,8 @@ export type PublicEvent = {
   promptPackSlug?: PromptPackSlug | string | null;
   isRevealed: boolean;
   photoCount: number | null;
+  eventLink?: string;
+  recapLink?: string;
   challenge?: EventChallenge | null;
 };
 
@@ -2292,7 +2294,7 @@ function buildRecapHighlightReel(photos: Photo[], awardResults?: AwardResultsSum
     sections.push({ key, title, description, kind, photos: selected });
   };
 
-  addSection("host-picks", "Host picks", "Photos the host marked to show first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
+  addSection("host-picks", "Featured", "Photos marked to show first.", "featured", sortedPhotos.filter((photo) => Boolean(photo.isFeatured)));
 
   const winnerIds = awardResults?.categories.length
     ? awardResults.categories.flatMap((category) => category.leaderPhotoIds)
@@ -2396,7 +2398,7 @@ function buildRecapAlbumFilters(challenge: EventChallenge | null | undefined, ph
     { key: "all", label: "Photos from the event", count: sortedPhotos.length, photoIds: photoIds(sortedPhotos) },
   ];
   const featured = sortedPhotos.filter((photo) => Boolean(photo.isFeatured));
-  if (featured.length) filters.push({ key: "featured", label: "Host picks", count: featured.length, photoIds: photoIds(featured) });
+  if (featured.length) filters.push({ key: "featured", label: "Featured", count: featured.length, photoIds: photoIds(featured) });
   const liked = sortedPhotos.filter((photo) => photoLikeCount(photo) > 0);
   if (liked.length) filters.push({ key: "liked", label: "Guest favorites", count: liked.length, photoIds: photoIds(liked) });
   const recent = sortedPhotos.slice(0, Math.min(12, sortedPhotos.length));
@@ -2511,7 +2513,7 @@ export function buildEventRecapStory(
     modeLabel,
     templateName: template?.name,
     recapTitle: "Favorite moments",
-    recapSubtitle: "Guest favorites, host picks, and the moments that rose to the top.",
+    recapSubtitle: "Guest favorites, featured photos, and the moments that rose to the top.",
     totalPhotos: sortedPhotos.length,
     contributorCount: contributors.contributorCount,
     highlightPhotos: highlightPhotos.length ? highlightPhotos : sortedPhotos.slice(0, 8),

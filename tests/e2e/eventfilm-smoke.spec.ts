@@ -1075,7 +1075,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("dialog", { name: "Create story post" })).toHaveCount(0);
   });
 
-  test("host photo viewer heart toggles without closing viewer", async ({ page }) => {
+  test("unified event page exposes host controls only to the event host", async ({ page }) => {
     const eventId = "host-heart-event";
     const slug = "host-heart-party";
     const token = "host-heart-token";
@@ -1092,7 +1092,7 @@ test.describe("EventFilm browser smoke", () => {
       eventLink: `${baseUrl}/e/${slug}`,
       recapLink: `${baseUrl}/recap/${slug}`,
       lastActivityAt: "2026-07-01T20:00:00.000Z",
-      photoCount: 1,
+      photoCount: 2,
       isRevealed: true,
       challenge: null,
       qrCodeDataUrl: null,
@@ -1110,8 +1110,22 @@ test.describe("EventFilm browser smoke", () => {
           likeCount: 0,
           likedByMe: false,
         },
+        {
+          id: "host-delete-photo",
+          url: `${apiUrl}/api/photos/host-delete-photo/file`,
+          previewUrl: `${apiUrl}/api/photos/host-delete-photo/preview`,
+          originalFilename: "host-delete.png",
+          mimeType: "image/png",
+          sizeBytes: 128,
+          createdAt: "2026-07-01T20:02:00.000Z",
+          guestNickname: "Ava",
+          isFeatured: false,
+          likeCount: 0,
+          likedByMe: false,
+        },
       ],
     };
+    let photos = event.photos.map((photo) => ({ ...photo }));
     const imageBody = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
     const json = (body: unknown, status = 200) => ({
       status,
@@ -1120,30 +1134,80 @@ test.describe("EventFilm browser smoke", () => {
     });
     let liked = false;
     let likeCount = 0;
+    let hostDetailRequests = 0;
 
-    await page.addInitScript(({ authToken, authUser }) => {
-      window.localStorage.setItem("eventfilm_token", authToken);
-      window.localStorage.setItem("eventfilm_user", JSON.stringify(authUser));
-    }, { authToken: token, authUser: user });
-    await page.route((url) => url.pathname === `/api/host/events/${eventId}`, (route) => route.fulfill(json({ event: { ...event, photos: event.photos.map((photo) => ({ ...photo, likedByMe: liked, likeCount })) } })));
-    await page.route(`**/api/host/events/${eventId}/analytics/summary`, (route) => route.fulfill(json({ summary: { photoCount: 1, visiblePhotos: 1, featuredPhotos: 0, photoLikes: likeCount, guestJoins: 0, uploads: 0, recapOpens: 0, activeGuests: 0 } })));
+    await page.route((url) => url.pathname === `/api/events/${slug}`, (route) => route.fulfill(json({ event: { ...event, photos: undefined } })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/guest-status`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, nickname: null })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/my-uploads`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/photos`, (route) => route.fulfill(json({ photos: photos.map((photo) => ({ ...photo, likedByMe: photo.id === "host-heart-photo" ? liked : false, likeCount: photo.id === "host-heart-photo" ? likeCount : photo.likeCount })) })));
+    await page.route((url) => url.pathname === `/api/host/events/${eventId}`, (route) => {
+      hostDetailRequests += 1;
+      return route.fulfill(json({ event: { ...event, photoCount: photos.length, photos: photos.map((photo) => ({ ...photo, likedByMe: photo.id === "host-heart-photo" ? liked : false, likeCount: photo.id === "host-heart-photo" ? likeCount : photo.likeCount })) } }));
+    });
+    await page.route(`**/api/host/events/${eventId}/analytics/summary`, (route) => route.fulfill(json({ summary: { photoCount: photos.length, visiblePhotos: photos.length, featuredPhotos: photos.filter((photo) => photo.isFeatured).length, photoLikes: likeCount, guestJoins: 0, uploads: 0, recapOpens: 0, activeGuests: 0 } })));
+    await page.route((url) => url.pathname.startsWith(`/api/host/events/${eventId}/photos/`) && url.pathname.endsWith("/featured"), async (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      const photoId = pathname.split("/").at(-2) || "";
+      const body = route.request().postDataJSON() as { isFeatured: boolean };
+      photos = photos.map((photo) => photo.id === photoId ? { ...photo, isFeatured: body.isFeatured, featuredAt: body.isFeatured ? "2026-07-01T20:03:00.000Z" : null } : photo);
+      await route.fulfill(json({ photo: photos.find((photo) => photo.id === photoId) }));
+    });
+    await page.route((url) => url.pathname.startsWith(`/api/host/events/${eventId}/photos/`) && !url.pathname.endsWith("/featured"), async (route) => {
+      const pathname = new URL(route.request().url()).pathname;
+      const photoId = pathname.split("/").at(-1) || "";
+      photos = photos.filter((photo) => photo.id !== photoId);
+      await route.fulfill(json({ ok: true }));
+    });
     await page.route(`**/api/events/${slug}/photos/host-heart-photo/likes`, async (route) => {
       const body = route.request().postDataJSON() as { liked: boolean };
       liked = body.liked;
       likeCount = liked ? 1 : 0;
       await route.fulfill(json({ ok: true, photoId: "host-heart-photo", liked, likeCount }, liked ? 201 : 200));
     });
-    await page.route("**/api/photos/host-heart-photo/file", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
-    await page.route("**/api/photos/host-heart-photo/preview", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/photos/*/file", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/photos/*/preview", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
     await page.route("**/api/analytics**", (route) => route.fulfill(json({ ok: true })));
+    page.on("dialog", (dialog) => dialog.accept());
 
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto(`/dashboard/events/${eventId}?tab=uploads`);
-    await expect(page.getByRole("heading", { name: "Review photos", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "More" }).click();
+    await page.goto(`/e/${slug}`);
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await expect(page.getByRole("button", { name: "Select photos" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Invite" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
+
+    await page.goto("about:blank");
+    await page.addInitScript(({ authToken, authUser }) => {
+      window.localStorage.setItem("eventfilm_token", authToken);
+      window.localStorage.setItem("eventfilm_user", JSON.stringify(authUser));
+    }, { authToken: token, authUser: user });
+    const hostLoaded = page.waitForResponse((response) => response.url().includes(`/api/host/events/${eventId}`) && response.ok());
+    await page.goto(`/dashboard/events/${eventId}`);
+    await hostLoaded;
+    await expect(page).toHaveURL(new RegExp(`/e/${slug}$`));
+    await expect.poll(() => hostDetailRequests).toBeGreaterThanOrEqual(2);
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await expect(page.getByRole("button", { name: "Invite" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
+    await page.getByRole("button", { name: "Invite" }).click();
+    await expect(page.getByRole("dialog", { name: "Invite guests" })).toBeVisible();
+    await page.getByRole("button", { name: "Close invite" }).click();
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByRole("dialog", { name: "Event settings" })).toBeVisible();
+    await page.getByRole("button", { name: "Close settings" }).click();
+
+    await page.getByRole("img", { name: "host-heart.png" }).click();
     const viewer = page.getByRole("dialog", { name: "Photo viewer" });
     await expect(viewer).toBeVisible();
     await expect(viewer.getByRole("button", { name: /^Like photo, 0 hearts?$/i })).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Feature" })).toBeVisible();
+    const featureSaved = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("/featured") && response.ok());
+    await viewer.getByRole("button", { name: "Feature" }).click();
+    await featureSaved;
+    await expect(viewer.getByRole("button", { name: "Unfeature" })).toBeVisible();
 
     const likeSaved = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/likes") && response.ok());
     await viewer.getByRole("button", { name: /^Like photo, 0 hearts?$/i }).click();
@@ -1151,8 +1215,7 @@ test.describe("EventFilm browser smoke", () => {
     expect((await likeResponse.json()).liked).toBe(true);
     await expect(viewer).toBeVisible();
     await expect(viewer.getByRole("button", { name: /^Unlike photo, 1 heart$/i })).toBeVisible();
-    await expect(viewer.getByRole("button", { name: "Make host pick" })).toBeVisible();
-    await expect(viewer.getByRole("button", { name: "Delete" })).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
 
     const unlikeSaved = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/likes") && response.ok());
     await viewer.getByRole("button", { name: /^Unlike photo, 1 heart$/i }).click();
@@ -1160,6 +1223,24 @@ test.describe("EventFilm browser smoke", () => {
     expect((await unlikeResponse.json()).liked).toBe(false);
     await expect(viewer).toBeVisible();
     await expect(viewer.getByRole("button", { name: /^Like photo, 0 hearts?$/i })).toBeVisible();
+    await viewer.getByRole("button", { name: "Close photo viewer" }).click();
+
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await page.getByRole("button", { name: "Select photos" }).click();
+    await page.getByRole("img", { name: "host-delete.png" }).click();
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Feature", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Delete", exact: true })).toBeVisible();
+    const selectedFeatureSaved = page.waitForResponse((response) => response.request().method() === "PATCH" && response.url().includes("host-delete-photo") && response.url().includes("/featured") && response.ok());
+    await page.getByRole("button", { name: "Feature", exact: true }).click();
+    await selectedFeatureSaved;
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await page.getByRole("button", { name: "Select photos" }).click();
+    await page.getByRole("img", { name: "host-delete.png" }).click();
+    const deleted = page.waitForResponse((response) => response.request().method() === "DELETE" && response.url().includes("host-delete-photo") && response.ok());
+    await page.getByRole("button", { name: "Delete", exact: true }).click();
+    await deleted;
+    await expect(page.getByRole("img", { name: "host-delete.png" })).toHaveCount(0);
   });
 
   test("seeded host event shows event library, share kit, and ordinary host help", async ({ page, request }) => {
@@ -1190,64 +1271,26 @@ test.describe("EventFilm browser smoke", () => {
     await page.context().grantPermissions(["clipboard-write"], { origin: parsedUrl(baseUrl).origin });
 
     await page.goto(`/dashboard/events/${eventId}?created=1`);
-    await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
-    const createdHandoff = page.getByLabel("Event creation success");
-    await expect(page.getByRole("heading", { name: "Your event is ready." })).toBeVisible();
-    await expect(createdHandoff).toContainText("Guests can add photos without an account.");
-    const handoffCopyGuestLink = createdHandoff.getByRole("button", { name: "Copy guest link" });
-    await expect(handoffCopyGuestLink).toBeVisible();
-    await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
-    await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toHaveAttribute("href", new RegExp(`/e/${seededSlug}`));
-    await expect(createdHandoff).toContainText("Review photos");
-    await expect(createdHandoff).toContainText("Share the recap");
+    await expect(page).toHaveURL(new RegExp(`/e/${seededSlug}`));
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
+    await expect(page.getByRole("dialog", { name: "Invite guests" })).toBeVisible();
     await page.setViewportSize({ width: 390, height: 844 });
-    const mobileEventSignOut = page.getByRole("button", { name: "Sign out" });
-    await expect(mobileEventSignOut).toBeVisible();
-    await expectLocatorFitsViewport(page, mobileEventSignOut);
-    await handoffCopyGuestLink.scrollIntoViewIfNeeded();
-    await handoffCopyGuestLink.click();
-    const handoffCopyStatus = createdHandoff.getByRole("status");
-    await expect(handoffCopyStatus).toContainText("Guest link copied");
-    await expectLocatorFitsViewport(page, handoffCopyStatus);
-    await page.getByRole("button", { name: "Dismiss" }).click();
-    await expect(page.getByRole("heading", { name: "Your event is ready." })).toHaveCount(0);
-    await expect(page).not.toHaveURL(/created=1/);
-
-    await page.goto(`/dashboard/events/${eventId}?tab=share`);
-    await expect(page.getByText(/Next step/i).first()).toBeVisible();
-    await expect(page.getByText("Guest link").first()).toBeVisible();
-    const qrPosterCard = page.getByRole("heading", { name: "QR code event poster" }).locator("..");
-    await expect(qrPosterCard).toBeVisible();
-    await expect(qrPosterCard.getByText("Scan, print, or share")).toBeVisible();
-    await expect(qrPosterCard.getByRole("link", { name: "Share" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
-    await expect(page.getByText("Message to paste in group chat").first()).toBeVisible();
-    await expect(page.getByText("Which link should I use?").first()).toBeVisible();
-    await expect(page.getByRole("button", { name: "Copy message" })).toBeVisible();
+    const inviteDialog = page.getByRole("dialog", { name: "Invite guests" });
+    await inviteDialog.getByRole("button", { name: "Copy link" }).click();
+    await expect(inviteDialog.getByRole("status")).toContainText("Invite link copied");
     await expectNoHorizontalOverflow(page);
-    for (const tab of ["Share", "Photos", "Recap", "Settings"]) {
-      await expectLocatorFitsViewport(page, page.getByRole("button", { name: tab, exact: true }));
-    }
-    await expectLocatorFitsViewport(page, page.getByText("Message to paste in group chat").locator("..").getByText(/Add your photos here:/));
-    await expectLocatorFitsViewport(page, page.getByRole("button", { name: "Copy message" }));
+    await inviteDialog.getByRole("button", { name: "Close invite" }).click();
     await page.setViewportSize({ width: 1280, height: 720 });
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await expect(page.getByRole("button", { name: "Invite" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
     await page.getByRole("button", { name: "Settings" }).click();
     try {
       const updatedName = `${originalSettings.name} Smoke`;
       await page.getByLabel("Event name").fill(updatedName);
-      await expect(page.getByText(/Unsaved changes/i)).toBeVisible();
-      await page.getByRole("button", { name: /Save changes/i }).click();
+      await page.getByRole("dialog", { name: "Event settings" }).getByRole("button", { name: "Save" }).click();
       await expect(page.getByText(/Event settings saved/i)).toBeVisible();
-      await expect(page.locator("h1", { hasText: updatedName })).toBeVisible();
-
-      await page.getByRole("button", { name: "Share", exact: true }).click();
-      await expect(page.locator("h1", { hasText: updatedName })).toBeVisible();
-      await expect(page.getByText("Guest link").first()).toBeVisible();
-      const refreshedQrPosterCard = page.getByRole("heading", { name: "QR code event poster" }).locator("..");
-      await expect(refreshedQrPosterCard).toBeVisible();
-      await expect(refreshedQrPosterCard.getByRole("link", { name: "Share" })).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}/poster`));
-      await expect(page.getByText("Message to paste in group chat").first()).toBeVisible();
-      await expect(page.getByRole("button", { name: "Copy message" })).toBeVisible();
-      await expect(page.locator("input[aria-label='Guest link']")).toHaveValue(new RegExp(`/e/${seededSlug}`));
+      await expect(page.getByRole("heading", { name: updatedName })).toBeVisible();
 
       await page.setViewportSize({ width: 1280, height: 720 });
       await page.goto(`/dashboard/events/${eventId}/poster`);
@@ -1272,14 +1315,15 @@ test.describe("EventFilm browser smoke", () => {
       await page.setViewportSize({ width: 1280, height: 720 });
 
       await page.goto(`/dashboard/events/${eventId}?tab=live-wall`);
+      await expect(page).toHaveURL(new RegExp(`/e/${seededSlug}`));
       await expect(page.getByRole("button", { name: "Photo Wall" })).toHaveCount(0);
       await expect(page.getByRole("heading", { name: "Photo Wall" })).toHaveCount(0);
       await expect(page.locator(`a[href$="/wall/${seededSlug}"]`)).toHaveCount(0);
-      await expect(page.getByText("Guest link").first()).toBeVisible();
 
       await page.goto(`/dashboard/events/${eventId}?tab=uploads`);
-      await expect(page.getByRole("heading", { name: "Review photos", exact: true })).toBeVisible();
-      await expect(page.getByRole("button", { name: /All photos/i })).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/e/${seededSlug}`));
+      await page.getByRole("button", { name: "Open event options" }).click();
+      await expect(page.getByRole("button", { name: "Select photos" })).toBeVisible();
 
       await page.goto(`/e/${seededSlug}`);
       await page.getByRole("button", { name: "Add photos" }).first().click();
@@ -1305,7 +1349,7 @@ test.describe("EventFilm browser smoke", () => {
       await expectNoHorizontalOverflow(page);
       const mobileEventCard = page.getByRole("link", { name: new RegExp(`Open event: ${escapeRegExp(updatedName)}`) }).first();
       await expect(mobileEventCard).toBeVisible();
-      await expect(mobileEventCard).toHaveAttribute("href", new RegExp(`/dashboard/events/${eventId}$`));
+      await expect(mobileEventCard).toHaveAttribute("href", new RegExp(`/e/${seededSlug}$`));
       await expectLocatorFitsViewport(page, mobileEventCard);
       await expect(mobileEventCard).not.toContainText("Open this event to manage");
       const mobileEventCardBox = await mobileEventCard.boundingBox();
@@ -1322,12 +1366,9 @@ test.describe("EventFilm browser smoke", () => {
       await page.setViewportSize({ width: 1280, height: 720 });
 
       await page.goto(`/dashboard/events/${eventId}?tab=recap`);
-      await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
-      await expect(page.locator("body")).toContainText(/Send this whenever you want everyone to revisit the album|Send this after reveal/i);
-      await expect(page.getByRole("link", { name: "Preview recap" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Copy recap link" })).toBeVisible();
-      await expect(page.getByRole("button", { name: "Download photos" })).toBeVisible();
-      await expect(page.locator("body")).toContainText("Before you share it");
+      await expect(page).toHaveURL(new RegExp(`/e/${seededSlug}`));
+      await page.getByRole("button", { name: "Highlights" }).click();
+      await expect(page.getByRole("button", { name: "Highlights" })).toBeVisible();
     } finally {
       await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
         headers: { Authorization: `Bearer ${auth.token}` },
@@ -1335,10 +1376,7 @@ test.describe("EventFilm browser smoke", () => {
       });
     }
 
-    await page.goto(`/dashboard/events/${eventId}?tab=settings`);
-    await page.getByText("Help and repeat event").click();
-    await expect(page.getByRole("button", { name: "Create similar event" })).toBeVisible();
-    await expect(page.locator("body")).toContainText("Turn this event into the next one.");
+    await page.goto("/dashboard");
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);

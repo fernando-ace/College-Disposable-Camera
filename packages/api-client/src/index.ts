@@ -320,8 +320,9 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
         body: JSON.stringify(input),
       });
     },
-    getHostEvent(eventId: string, token?: string | null) {
-      return request<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${encodeURIComponent(eventId)}`, {
+    getHostEvent(eventId: string, token?: string | null, options: { clientId?: string } = {}) {
+      const query = options.clientId ? `?clientId=${encodeURIComponent(options.clientId)}` : "";
+      return request<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${encodeURIComponent(eventId)}${query}`, {
         auth: !token,
         token,
       });

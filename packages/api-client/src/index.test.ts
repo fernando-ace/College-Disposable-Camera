@@ -105,6 +105,24 @@ test("event analytics summary uses the host event endpoint", async () => {
   assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201/analytics/summary");
 });
 
+test("host event helper can include photo like client id", async () => {
+  const calls: string[] = [];
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url) => {
+      calls.push(String(url));
+      return new Response(JSON.stringify({ event: { id: "event 1", photos: [] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.getHostEvent("event 1", "token", { clientId: "host client" });
+
+  assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201?clientId=host%20client");
+});
+
 test("founder overview helper uses founder endpoint with auth", async () => {
   const calls: string[] = [];
   let authHeader = "";
