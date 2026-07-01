@@ -176,14 +176,14 @@ export function AppShell({
         <div className="flex items-center justify-between gap-3">
           <BrandMark />
           <div className="flex shrink-0 items-center gap-2">
-            <Link className="rounded-lg border border-line px-3 py-2 text-sm font-semibold text-ink" to="/dashboard/events/new">Create</Link>
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to="/dashboard/events/new">Create</Link>
             {onSignOut ? (
               <button
                 type="button"
-                className="rounded-lg border border-line bg-white px-3 py-2 text-sm font-semibold text-ink"
+                className="inline-flex min-h-9 items-center justify-center rounded-lg border border-line bg-white px-2.5 py-1.5 text-xs font-semibold text-ink transition hover:border-coral/40 hover:bg-coral-soft"
                 onClick={onSignOut}
               >
-                Sign out
+                <span className="text-xs font-semibold">Sign out</span>
               </button>
             ) : null}
           </div>

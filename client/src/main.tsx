@@ -407,14 +407,6 @@ function drawRoundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, wi
   ctx.closePath();
 }
 
-function fillRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number, fillStyle: string) {
-  ctx.save();
-  drawRoundedPath(ctx, x, y, width, height, radius);
-  ctx.fillStyle = fillStyle;
-  ctx.fill();
-  ctx.restore();
-}
-
 function drawCoverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number, radius: number) {
   const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
   const sourceWidth = width / scale;
@@ -429,47 +421,14 @@ function drawCoverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, 
   ctx.restore();
 }
 
-function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines: number) {
-  const words = text.split(/\s+/).filter(Boolean);
-  let line = "";
-  let currentY = y;
-  let lines = 0;
-
-  for (const word of words) {
-    const nextLine = line ? `${line} ${word}` : word;
-    if (ctx.measureText(nextLine).width <= maxWidth || !line) {
-      line = nextLine;
-      continue;
-    }
-
-    lines += 1;
-    if (lines >= maxLines) {
-      ctx.fillText(`${line.replace(/\s+\S*$/, "")}...`, x, currentY);
-      return;
-    }
-    ctx.fillText(line, x, currentY);
-    line = word;
-    currentY += lineHeight;
-  }
-
-  if (line && lines < maxLines) ctx.fillText(line, x, currentY);
-}
-
-function setFittedCanvasFont(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, startPx: number, minPx: number, weight = "700") {
-  let size = startPx;
-  while (size > minPx) {
-    ctx.font = `${weight} ${size}px Georgia, serif`;
-    if (ctx.measureText(text).width <= maxWidth) break;
-    size -= 2;
-  }
-}
-
 function storyImageSlots(count: number) {
-  const x = 84;
-  const y = 372;
-  const width = 912;
-  const height = 990;
-  const gap = 22;
+  const inset = 48;
+  const gap = 18;
+  const x = inset;
+  const y = inset;
+  const width = PERSONAL_STORY_WIDTH - inset * 2;
+  const height = PERSONAL_STORY_HEIGHT - inset * 2;
+  const halfWidth = (width - gap) / 2;
   if (count <= 1) return [{ x, y, width, height }];
   if (count === 2) {
     const itemHeight = (height - gap) / 2;
@@ -479,18 +438,27 @@ function storyImageSlots(count: number) {
     ];
   }
   if (count === 3) {
-    const topHeight = 560;
+    const topHeight = Math.round((height - gap) * 0.58);
     const bottomHeight = height - topHeight - gap;
-    const bottomWidth = (width - gap) / 2;
     return [
       { x, y, width, height: topHeight },
-      { x, y: y + topHeight + gap, width: bottomWidth, height: bottomHeight },
-      { x: x + bottomWidth + gap, y: y + topHeight + gap, width: bottomWidth, height: bottomHeight },
+      { x, y: y + topHeight + gap, width: halfWidth, height: bottomHeight },
+      { x: x + halfWidth + gap, y: y + topHeight + gap, width: halfWidth, height: bottomHeight },
+    ];
+  }
+  if (count === 5) {
+    const rowHeight = (height - gap * 2) / 3;
+    return [
+      { x, y, width, height: rowHeight },
+      { x, y: y + rowHeight + gap, width: halfWidth, height: rowHeight },
+      { x: x + halfWidth + gap, y: y + rowHeight + gap, width: halfWidth, height: rowHeight },
+      { x, y: y + (rowHeight + gap) * 2, width: halfWidth, height: rowHeight },
+      { x: x + halfWidth + gap, y: y + (rowHeight + gap) * 2, width: halfWidth, height: rowHeight },
     ];
   }
 
-  const rows = Math.ceil(count / 2);
-  const itemWidth = (width - gap) / 2;
+  const rows = count === 4 ? 2 : 3;
+  const itemWidth = halfWidth;
   const itemHeight = (height - gap * (rows - 1)) / rows;
   return Array.from({ length: count }, (_, index) => ({
     x: x + (index % 2) * (itemWidth + gap),
@@ -553,62 +521,14 @@ async function renderPersonalStoryImage(card: PersonalStoryCard, eventName: stri
 
   ctx.fillStyle = "#fff8ed";
   ctx.fillRect(0, 0, PERSONAL_STORY_WIDTH, PERSONAL_STORY_HEIGHT);
-  fillRoundedRect(ctx, 46, 46, PERSONAL_STORY_WIDTH - 92, PERSONAL_STORY_HEIGHT - 92, 56, "#ffffff");
-
-  ctx.fillStyle = "#e85d3f";
-  ctx.font = "700 34px Arial, sans-serif";
-  ctx.fillText("EventFilm", 84, 132);
-  ctx.fillStyle = "#653e00";
-  ctx.font = "600 28px Arial, sans-serif";
-  ctx.fillText(card.source === "guest_pov" ? "Your POV" : "Event highlights", 84, 182);
-
-  ctx.fillStyle = "#1c1712";
-  setFittedCanvasFont(ctx, card.title, 912, 70, 42, "700");
-  wrapCanvasText(ctx, card.title, 84, 272, 912, 78, 2);
 
   if (images.length) {
     const slots = storyImageSlots(Math.min(images.length, card.photos.length));
     images.slice(0, slots.length).forEach((asset, index) => {
       const slot = slots[index];
-      fillRoundedRect(ctx, slot.x - 8, slot.y - 8, slot.width + 16, slot.height + 16, 40, "#f4eadf");
-      drawCoverImage(ctx, asset.image, slot.x, slot.y, slot.width, slot.height, 34);
+      drawCoverImage(ctx, asset.image, slot.x, slot.y, slot.width, slot.height, 32);
     });
-  } else {
-    fillRoundedRect(ctx, 84, 372, 912, 990, 40, "#f4eadf");
-    ctx.fillStyle = "#653e00";
-    ctx.font = "700 44px Arial, sans-serif";
-    ctx.textAlign = "center";
-    ctx.fillText("Photos from the event", PERSONAL_STORY_WIDTH / 2, 864);
-    ctx.textAlign = "left";
   }
-
-  const statsY = 1466;
-  const stats = [
-    [`${card.stats.totalPhotos}`, "photos"],
-    [`${card.stats.contributors}`, "people"],
-    [`${card.stats.heartedPhotos}`, "hearts"],
-  ];
-  stats.forEach(([value, label], index) => {
-    const x = 84 + index * 304;
-    fillRoundedRect(ctx, x, statsY, 270, 142, 28, "#fff8ed");
-    ctx.fillStyle = "#1c1712";
-    ctx.font = "700 48px Arial, sans-serif";
-    ctx.fillText(value, x + 28, statsY + 58);
-    ctx.fillStyle = "#6f6257";
-    ctx.font = "600 24px Arial, sans-serif";
-    ctx.fillText(label, x + 28, statsY + 98);
-  });
-
-  const captionUrl = card.caption.match(/https?:\/\/\S+$/i)?.[0] || "";
-  const captionWithoutUrl = captionUrl ? card.caption.replace(/\s+https?:\/\/\S+$/i, "") : card.caption;
-  const recapLabel = captionUrl ? captionUrl.replace(/^https?:\/\//i, "") : `Open the full recap: ${eventName}`;
-
-  ctx.fillStyle = "#1c1712";
-  ctx.font = "700 34px Arial, sans-serif";
-  wrapCanvasText(ctx, captionWithoutUrl, 84, 1718, 912, 46, 2);
-  ctx.fillStyle = "#6f6257";
-  ctx.font = "600 24px Arial, sans-serif";
-  wrapCanvasText(ctx, recapLabel, 84, 1840, 912, 32, 1);
 
   const blob = await canvasToPngBlob(canvas);
   return {
@@ -4698,12 +4618,14 @@ function PersonalStoryPostModal({
   async function shareStoryImage() {
     if (!renderResult) return;
     if (!canSharePhotoFiles([renderResult.file])) {
-      setStatus("Sharing files is not available here. Download the PNG or copy the caption.");
+      downloadPhotoFile(renderResult.file);
+      trackAnalytics("personal_story_downloaded", { eventId: event.id, eventSlug: event.slug, metadata: { source: card.source, method: "share_fallback" } });
+      setStatus("Story PNG downloaded.");
       return;
     }
     try {
       trackAnalytics("native_share_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "personal_story", source: card.source } });
-      await navigator.share({ files: [renderResult.file], title: card.title, text: card.caption });
+      await navigator.share({ files: [renderResult.file] });
       trackAnalytics("personal_story_shared", { eventId: event.id, eventSlug: event.slug, metadata: { source: card.source, method: "native_share" } });
       setStatus("Story image shared.");
     } catch (err) {
@@ -4715,89 +4637,27 @@ function PersonalStoryPostModal({
     }
   }
 
-  function downloadStoryImage() {
-    if (!renderResult) return;
-    downloadPhotoFile(renderResult.file);
-    trackAnalytics("personal_story_downloaded", { eventId: event.id, eventSlug: event.slug, metadata: { source: card.source } });
-    setStatus("Story PNG downloaded.");
-  }
-
-  async function copyStoryCaption() {
-    try {
-      await copyText(card.caption);
-      trackAnalytics("personal_story_caption_copied", { eventId: event.id, eventSlug: event.slug, metadata: { source: card.source } });
-      setStatus("Caption copied.");
-    } catch (err) {
-      setStatus((err as Error).message);
-    }
-  }
-
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-stone-950/55 px-4 py-6" role="dialog" aria-modal="true" aria-label="Create story post">
-      <div className="max-h-full w-full max-w-5xl overflow-y-auto rounded-xl bg-white shadow-sm">
-        <div className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
-          <div className="bg-[#fff8ed] p-4 sm:p-6">
-            <div className="mx-auto max-w-sm overflow-hidden rounded-xl border border-line bg-white">
-              {renderResult ? (
-                <img className="block aspect-[9/16] w-full object-cover" src={renderResult.dataUrl} alt={`${event.name} story post preview`} />
-              ) : (
-                <div className="grid aspect-[9/16] place-items-center bg-stone-100 p-8 text-center">
-                  <div>
-                    <CleanIcon name="image" className="mx-auto h-10 w-10 text-coral" />
-                    <p className="mt-3 text-sm font-bold text-ink">{busy || loadingUploads ? "Preparing preview" : "Preview unavailable"}</p>
-                    <p className="mt-1 text-xs font-semibold text-muted">{card.photos.length ? "Using recap photos from this event." : "No photos are ready for a story post."}</p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-          <div className="flex flex-col p-5 sm:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-sm font-bold text-coral">{card.source === "guest_pov" ? "Your POV" : "Event highlights"}</p>
-                <h2 className="mt-2 font-serif-display text-3xl font-bold leading-tight text-ink">Create story post</h2>
-                <p className="mt-2 text-sm leading-6 text-muted">{card.title}</p>
+    <div className="fixed inset-0 z-50 grid place-items-center bg-stone-950/60 px-4 py-6" role="dialog" aria-modal="true" aria-label="Create story post">
+      <div className="relative max-h-full w-full max-w-[min(430px,calc(100vw-2rem))]">
+        <button className="absolute right-3 top-3 z-10 grid h-10 w-10 place-items-center rounded-full bg-white/90 text-stone-700 shadow-sm backdrop-blur transition hover:bg-white" type="button" aria-label="Close story post" onClick={onClose}>
+          <CleanIcon name="x" className="h-5 w-5" />
+        </button>
+        <div className="overflow-hidden rounded-xl bg-[#fff8ed] p-2 shadow-sm">
+          <div className="overflow-hidden rounded-lg bg-[#fff8ed]">
+            {renderResult ? (
+              <img className="block aspect-[9/16] w-full object-cover" src={renderResult.dataUrl} alt={`${event.name} story post preview`} />
+            ) : (
+              <div className="grid aspect-[9/16] place-items-center bg-[#fff8ed]">
+                <CleanIcon name="image" className="h-10 w-10 text-[#d9c8b2]" />
               </div>
-              <button className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line bg-white text-muted hover:bg-stone-50" type="button" aria-label="Close story post" onClick={onClose}>
-                <CleanIcon name="x" />
-              </button>
-            </div>
-
-            <div className="mt-6 grid grid-cols-3 gap-2">
-              {[
-                ["Photos", card.stats.totalPhotos],
-                ["Mine", card.stats.myUploads],
-                ["Hearted", card.stats.heartedPhotos],
-              ].map(([label, value]) => (
-                <div className="rounded-lg bg-stone-50 p-3" key={label}>
-                  <p className="text-lg font-bold text-ink">{value}</p>
-                  <p className="text-xs font-semibold text-muted">{label}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-5 rounded-lg border border-line bg-stone-50 p-4">
-              <p className="text-xs font-semibold text-muted">Caption</p>
-              <p className="mt-2 text-sm font-semibold leading-6 text-ink">{card.caption}</p>
-            </div>
-
-            <div className="mt-6 grid gap-3 sm:grid-cols-3">
-              <Button type="button" disabled={!renderResult || busy} onClick={() => void shareStoryImage()}>
-                <CleanIcon name="paperPlane" />
-                Share image
-              </Button>
-              <SecondaryButton type="button" disabled={!renderResult || busy} onClick={downloadStoryImage}>
-                <CleanIcon name="download" />
-                Download PNG
-              </SecondaryButton>
-              <SecondaryButton type="button" onClick={() => void copyStoryCaption()}>
-                <CleanIcon name="copy" />
-                Copy caption
-              </SecondaryButton>
-            </div>
-            {status ? <p className="mt-4 rounded-lg bg-[#fff8ed] p-3 text-sm font-bold text-[#653e00]" role="status">{status}</p> : null}
+            )}
           </div>
         </div>
+        <Button className="absolute bottom-4 left-1/2 h-14 min-h-0 w-14 -translate-x-1/2 rounded-full px-0 py-0 shadow-sm" type="button" disabled={!renderResult || busy} aria-label="Share story post" onClick={() => void shareStoryImage()}>
+          <CleanIcon name="paperPlane" className="h-5 w-5" />
+        </Button>
+        {status ? <p className="sr-only" role="status">{status}</p> : null}
       </div>
     </div>
   );

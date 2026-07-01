@@ -966,13 +966,14 @@ test.describe("EventFilm browser smoke", () => {
       });
       Object.defineProperty(navigator, "share", {
         configurable: true,
-        value: async (data: { files?: File[]; text?: string }) => {
-          const shareWindow = window as Window & { __eventfilmStoryShare?: { count: number; names: string[]; types: string[]; text?: string } };
+        value: async (data: { files?: File[]; text?: string; title?: string }) => {
+          const shareWindow = window as Window & { __eventfilmStoryShare?: { count: number; names: string[]; types: string[]; text?: string; title?: string } };
           shareWindow.__eventfilmStoryShare = {
             count: data.files?.length || 0,
             names: (data.files || []).map((file) => file.name),
             types: (data.files || []).map((file) => file.type),
             text: data.text,
+            title: data.title,
           };
         },
       });
@@ -994,25 +995,25 @@ test.describe("EventFilm browser smoke", () => {
     await page.goto(`/recap/${slug}?story=1`);
     const dialog = page.getByRole("dialog", { name: "Create story post" });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("Your POV")).toBeVisible();
-    await expect(dialog.getByText("My POV from Personal Story Party", { exact: true })).toBeVisible();
     await expect(dialog.getByRole("img", { name: "Personal Story Party story post preview" })).toBeVisible();
     await expect(dialog.getByRole("status")).toContainText("Story image ready.");
+    await expect(dialog.getByText("Your POV")).toHaveCount(0);
+    await expect(dialog.getByText("My POV from Personal Story Party", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText("Photos", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText("Mine", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText("Hearted", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByText("Caption", { exact: true })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Download PNG" })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Copy caption" })).toHaveCount(0);
+    await expect(dialog.getByRole("button")).toHaveCount(2);
 
-    await dialog.getByRole("button", { name: "Share image" }).click();
+    await dialog.getByRole("button", { name: "Share story post" }).click();
     await expect.poll(() => page.evaluate(() => (window as Window & { __eventfilmStoryShare?: { count: number } }).__eventfilmStoryShare?.count || 0)).toBe(1);
-    const sharePayload = await page.evaluate(() => (window as Window & { __eventfilmStoryShare?: { names: string[]; types: string[]; text?: string } }).__eventfilmStoryShare);
+    const sharePayload = await page.evaluate(() => (window as Window & { __eventfilmStoryShare?: { names: string[]; types: string[]; text?: string; title?: string } }).__eventfilmStoryShare);
     expect(sharePayload?.names[0]).toBe("personal-story-party-eventfilm-story.png");
     expect(sharePayload?.types[0]).toBe("image/png");
-    expect(sharePayload?.text).toContain("My POV from Personal Story Party");
-
-    const downloadPromise = page.waitForEvent("download");
-    await dialog.getByRole("button", { name: "Download PNG" }).click();
-    const download = await downloadPromise;
-    expect(download.suggestedFilename()).toBe("personal-story-party-eventfilm-story.png");
-
-    await dialog.getByRole("button", { name: "Copy caption" }).click();
-    await expect(dialog.getByRole("status")).toContainText("Caption copied.");
+    expect(sharePayload?.text).toBeUndefined();
+    expect(sharePayload?.title).toBeUndefined();
   });
 
   test("locked recap does not show personal story post entry points", async ({ page }) => {
