@@ -11,6 +11,7 @@
     "seed:beta-demo": "node scripts/seed-beta-demo.js",
     "reset:dev-host": "node scripts/reset-dev-host.js",
     "storage:smoke": "node scripts/storage-smoke.js",
+    "cleanup:hidden-photos": "node scripts/delete-hidden-photos.js",
     "prisma:deploy": "prisma migrate deploy",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

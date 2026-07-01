@@ -297,7 +297,7 @@ Guest:
 - Configure `FOUNDER_EMAILS` on the API host before using `/dashboard/founder`; leave it empty to disable founder access.
 - Configure the frontend deployment with `VITE_API_URL` pointing at the deployed API.
 - Keep `SUPABASE_SERVICE_ROLE_KEY` only in the backend environment.
-- Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Recap, hide/restore moderation, direct photo view, analytics summary, and zip download.
+- Verify the private beta flow after deployment: API health, host signup/login, event creation, guest upload, host list, launch link verification, Recap, delete moderation, direct photo view, analytics summary, and zip download.
 - Verify the founder beta ops dashboard with an allowlisted host account: overview metrics, recent activity, feedback inbox, template/mode insights, and CSV export for Unlock Alabama reporting.
 - See `docs/real-event-qa.md` before testing with a real host.
 - See `docs/deployment-readiness.md` for the deployment, storage, CORS, migration, EAS, smoke, and rollback checklists.

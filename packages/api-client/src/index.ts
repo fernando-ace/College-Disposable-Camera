@@ -10,7 +10,6 @@ import type {
   AwardResultsSummary,
   AwardVotingSummary,
   Photo,
-  PhotoVisibilityStatus,
   PublicEvent,
   UpdateEventSettingsInput,
   UploadPhotoMetadata,
@@ -67,6 +66,11 @@ export type GuestMyUploadsResponse = {
   photos: Photo[];
 };
 
+export type GuestDisplayNameInput = {
+  clientId: string;
+  nickname: string;
+};
+
 export type AwardVoteRequest = {
   photoId: string;
   clientId: string;
@@ -95,7 +99,6 @@ export type EventAnalyticsSummary = {
   eventSlug: string;
   photoCount: number;
   visiblePhotos: number;
-  hiddenPhotos: number;
   featuredPhotos: number;
   photoLikes?: number;
   guestJoins: number;
@@ -361,23 +364,14 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
         body: JSON.stringify({ challenge }),
       });
     },
-    getHostPhotos(eventId: string, query: { visibility?: PhotoVisibilityStatus | "ALL"; featured?: boolean; challengeItemId?: string } = {}, token?: string | null) {
+    getHostPhotos(eventId: string, query: { featured?: boolean; challengeItemId?: string } = {}, token?: string | null) {
       const params = new URLSearchParams();
-      if (query.visibility && query.visibility !== "ALL") params.set("visibility", query.visibility);
       if (query.featured !== undefined) params.set("featured", String(query.featured));
       if (query.challengeItemId) params.set("challengeItemId", query.challengeItemId);
       const suffix = params.toString() ? `?${params.toString()}` : "";
       return request<{ photos: Photo[] }>(`/api/host/events/${encodeURIComponent(eventId)}/photos${suffix}`, {
         auth: !token,
         token,
-      });
-    },
-    updatePhotoVisibility(eventId: string, photoId: string, visibilityStatus: PhotoVisibilityStatus, hiddenReason?: string, token?: string | null) {
-      return request<{ photo: Photo }>(`/api/host/events/${encodeURIComponent(eventId)}/photos/${encodeURIComponent(photoId)}/visibility`, {
-        method: "PATCH",
-        auth: !token,
-        token,
-        body: JSON.stringify({ visibilityStatus, hiddenReason }),
       });
     },
     updatePhotoFeatured(eventId: string, photoId: string, isFeatured: boolean, token?: string | null) {
@@ -422,6 +416,12 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     },
     getGuestStatus(slug: string, clientId: string) {
       return request<GuestStatus>(`/api/events/${encodeURIComponent(slug)}/guest-status?clientId=${encodeURIComponent(clientId)}`);
+    },
+    updateGuestDisplayName(slug: string, input: GuestDisplayNameInput) {
+      return request<GuestStatus>(`/api/events/${encodeURIComponent(slug)}/guest-status`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      });
     },
     getGuestMyUploads(slug: string, clientId: string) {
       return request<GuestMyUploadsResponse>(`/api/events/${encodeURIComponent(slug)}/my-uploads?clientId=${encodeURIComponent(clientId)}`);

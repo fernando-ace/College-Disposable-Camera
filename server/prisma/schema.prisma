@@ -14,11 +14,6 @@ enum ChallengeType {
   MEMORY_CAPSULE
 }
 
-enum PhotoVisibilityStatus {
-  VISIBLE
-  HIDDEN
-}
-
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -121,9 +116,6 @@ model Photo {
   challengeItemId        String?
   challengeItemLabel     String?
   challengeItemKind      String?
-  visibilityStatus       PhotoVisibilityStatus @default(VISIBLE)
-  hiddenAt               DateTime?
-  hiddenReason           String?
   isFeatured             Boolean               @default(false)
   featuredAt             DateTime?
 
@@ -135,7 +127,6 @@ model Photo {
   likes                PhotoLike[]
 
   @@index([eventId])
-  @@index([eventId, visibilityStatus])
   @@index([eventId, isFeatured])
   @@index([guestId])
   @@index([challengeId])

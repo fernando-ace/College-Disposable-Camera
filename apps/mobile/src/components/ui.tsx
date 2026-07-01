@@ -631,7 +631,7 @@ export function PhotoCard({ photo, compact = false, onPress }: { photo: Photo; c
   );
 }
 
-type PhotoViewerAction = "hide" | "restore" | "feature" | "unfeature" | "delete";
+type PhotoViewerAction = "feature" | "unfeature" | "delete";
 
 function formatPhotoDate(value?: string) {
   if (!value) return "";
@@ -769,10 +769,7 @@ export function PhotoViewer({
 
             {mode === "host" && onHostAction ? (
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                <ViewerButton tone="subtle" onPress={() => runHostAction(photo.visibilityStatus === "HIDDEN" ? "restore" : "hide")} disabled={Boolean(busyAction)}>
-                  {photo.visibilityStatus === "HIDDEN" ? "Restore" : "Hide"}
-                </ViewerButton>
-                <ViewerButton tone="subtle" onPress={() => runHostAction(photo.isFeatured ? "unfeature" : "feature")} disabled={Boolean(busyAction) || photo.visibilityStatus === "HIDDEN"}>
+                <ViewerButton tone="subtle" onPress={() => runHostAction(photo.isFeatured ? "unfeature" : "feature")} disabled={Boolean(busyAction)}>
                   {photo.isFeatured ? "Remove pick" : "Host pick"}
                 </ViewerButton>
                 <ViewerButton tone="danger" onPress={() => runHostAction("delete")} disabled={Boolean(busyAction)}>Delete</ViewerButton>

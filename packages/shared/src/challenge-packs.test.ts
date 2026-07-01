@@ -35,7 +35,6 @@ import {
   sanitizeGuestDisplayName,
   deriveEventLifecycleStatus,
   validateUploadFile,
-  visiblePhotos,
   validateChallengeDraft,
   validateEventSettingsInput,
   validateHostFeedback,
@@ -404,7 +403,7 @@ test("duplicate Memory Capsule input keeps only reveal timing", () => {
   assert.equal(duplicate.challenge?.type, CHALLENGE_TYPES.MEMORY_CAPSULE);
 });
 
-test("post-event host summary combines visible photos, contributors, analytics, challenge progress, and award winners", () => {
+test("post-event host summary combines active photos, contributors, analytics, challenge progress, and award winners", () => {
   const event = {
     id: "event",
     name: "Awards Night",
@@ -413,7 +412,7 @@ test("post-event host summary combines visible photos, contributors, analytics, 
     revealAt: "2026-06-02T00:00:00.000Z",
     photoLimitPerGuest: 10,
     eventLink: "https://example.com/e/awards-night",
-    photoCount: 3,
+    photoCount: 2,
     challenge: {
       id: "challenge",
       type: CHALLENGE_TYPES.EVENT_AWARDS,
@@ -428,7 +427,6 @@ test("post-event host summary combines visible photos, contributors, analytics, 
     [
       photo({ id: "one", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T01:00:00.000Z", isFeatured: true, likeCount: 2 }),
       photo({ id: "two", guestNickname: "Mia", challengeItemId: "funny", createdAt: "2026-06-01T02:00:00.000Z" }),
-      photo({ id: "hidden", guestNickname: "Alex", visibilityStatus: "HIDDEN", createdAt: "2026-06-02T02:00:00.000Z" }),
     ],
     {
       guestJoins: 8,
@@ -440,9 +438,8 @@ test("post-event host summary combines visible photos, contributors, analytics, 
     },
   );
 
-  assert.equal(summary.totalPhotos, 3);
+  assert.equal(summary.totalPhotos, 2);
   assert.equal(summary.visiblePhotos, 2);
-  assert.equal(summary.hiddenPhotos, 1);
   assert.equal(summary.totalContributors, 1);
   assert.equal(summary.guestJoins, 8);
   assert.equal(summary.uploadsOverTime[0].count, 2);
@@ -559,7 +556,6 @@ test("contributor summary stays positive and ignores anonymous labels", () => {
     photo({ id: "two", guestNickname: "Mia" }),
     photo({ id: "three", guestNickname: "Anonymous guest" }),
     photo({ id: "four", guestNickname: "Alex" }),
-    photo({ id: "hidden", guestNickname: "Sam", visibilityStatus: "HIDDEN" }),
   ]);
 
   assert.equal(summary.totalPhotos, 4);
@@ -687,7 +683,7 @@ test("award voting summary marks ties, no-submissions, no-votes, and old config 
   assert.equal(wholesome?.noVotes, true);
 });
 
-test("award voting summary ignores votes for photos not in the visible photo set", () => {
+test("award voting summary ignores votes for photos outside the provided photo set", () => {
   const summary = buildAwardVotingSummary({
     challenge: {
       type: CHALLENGE_TYPES.EVENT_AWARDS,
@@ -698,7 +694,7 @@ test("award voting summary ignores votes for photos not in the visible photo set
     photos: [photo({ id: "visible-photo", challengeItemId: "award-one" })],
     votes: [
       { photoId: "visible-photo", challengeItemId: "award-one" },
-      { photoId: "hidden-photo", challengeItemId: "award-one" },
+      { photoId: "outside-photo", challengeItemId: "award-one" },
       { photoId: "deleted-photo", challengeItemId: "award-one" },
     ],
   });
@@ -861,7 +857,7 @@ test("recap metadata counts contributors and highlights recent photos", () => {
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["new", "same", "old"]);
 });
 
-test("recap metadata excludes hidden photos and leads with featured photos", () => {
+test("recap metadata leads with featured photos", () => {
   const event = {
     id: "event",
     name: "Spring Formal",
@@ -873,12 +869,10 @@ test("recap metadata excludes hidden photos and leads with featured photos", () 
     photoCount: 3,
     challenge: null,
   } satisfies EventSummary;
-  const hidden = photo({ id: "hidden", visibilityStatus: "HIDDEN", guestNickname: "Mia", createdAt: "2026-01-01T03:00:00.000Z" });
   const featured = photo({ id: "featured", isFeatured: true, guestNickname: "Alex", createdAt: "2026-01-01T01:00:00.000Z" });
   const recent = photo({ id: "recent", guestNickname: "Sam", createdAt: "2026-01-01T02:00:00.000Z" });
-  const metadata = buildEventRecapMetadata(event, [hidden, featured, recent]);
+  const metadata = buildEventRecapMetadata(event, [featured, recent]);
 
-  assert.deepEqual(visiblePhotos([hidden, featured, recent]).map((item) => item.id), ["featured", "recent"]);
   assert.equal(metadata.totalPhotos, 2);
   assert.deepEqual(metadata.highlightPhotos.map((item) => item.id), ["featured", "recent"]);
 });
@@ -922,7 +916,7 @@ test("recap story prioritizes host picks, liked winners, guest favorites, challe
   assert.equal(story.challengeHeadline, "Award winners");
 });
 
-test("recap story excludes hidden photos and builds mode-specific moments and filters", () => {
+test("recap story builds mode-specific moments and filters", () => {
   const event = {
     id: "event",
     name: "Color Night",
@@ -943,16 +937,13 @@ test("recap story excludes hidden photos and builds mode-specific moments and fi
       ],
     },
   } satisfies EventSummary;
-  const hidden = photo({ id: "hidden", visibilityStatus: "HIDDEN", challengeParticipantId: "blue-team" });
   const story = buildEventRecapStory(event, [
     photo({ id: "red", challengeParticipantId: "red-team", challengeColorSlug: "red", isFeatured: true }),
-    hidden,
   ]);
 
   assert.equal(story.totalPhotos, 1);
   assert.equal(story.challengeHeadline, "Color Hunt progress");
   assert.deepEqual(story.challengeMoments.map((moment) => [moment.title, moment.count]), [["Red Team", 1], ["Blue Team", 0]]);
-  assert.equal(story.albumFilters.some((filter) => filter.photoIds.includes("hidden")), false);
   assert.equal(story.albumFilters.some((filter) => filter.key === "challenge-red-team"), true);
 });
 

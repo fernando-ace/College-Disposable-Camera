@@ -183,7 +183,7 @@ Before giving a preview build to a beta host, verify:
 - Upload a photo.
 - Keep the QR poster visible on a laptop or printout.
 - Open Recap.
-- Hide, restore, feature, unfeature, and open one test photo in the full-screen viewer.
+- Delete, feature, unfeature, and open one test photo in the full-screen viewer.
 - Verify the analytics summary changes.
 
 ## App Store Metadata Placeholders
@@ -232,8 +232,8 @@ Use this on a real phone or small simulator after mobile UI changes:
 - Open the QR poster on a display-sized browser and confirm it is easy to scan.
 - Open the Recap link after reveal and confirm highlights, stats, challenge recap, empty states, and full album feel polished.
 - View the mobile album after reveal and confirm photo spacing, full-screen photo viewing, hearts, and empty states look intentional.
-- Hide and restore one photo from the host event detail screen.
-- Feature and unfeature one visible photo.
+- Delete one test photo from the host event detail screen.
+- Feature and unfeature one album photo.
 - Sign out if available.
 - Repeat the pass on a small phone screen and check for clipped text, tab overlap, keyboard overlap, and cramped two-button rows.
 

@@ -4,8 +4,8 @@ import * as Clipboard from "expo-clipboard";
 import { Link, router, useLocalSearchParams } from "expo-router";
 import { Alert, Linking, Pressable, Share, Text, View } from "react-native";
 import type { EventAnalyticsSummary, LaunchLinkVerification } from "@eventfilm/api-client";
-import type { AnalyticsEventName, EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, PhotoVisibilityStatus, UpdateEventSettingsInput } from "@eventfilm/shared";
-import { CHALLENGE_TYPES, buildAwardResultsSummary, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, isPhotoVisible, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
+import type { AnalyticsEventName, EventSettingsFieldErrors, EventSummary, HostFeedbackInput, Photo, UpdateEventSettingsInput } from "@eventfilm/shared";
+import { CHALLENGE_TYPES, buildAwardResultsSummary, buildDuplicateEventInput, buildEventRecapStory, buildHostLaunchKit, buildHostShareAssets, buildPostEventHostSummary, challengeLabel, deriveEventLifecycleStatus, getEventTemplate, validateEventSettingsInput, validateHostFeedback } from "@eventfilm/shared";
 import { ActionButton, Badge, Body, Button, Card, EmptyState, ErrorState, Field, FieldGroup, LinkBlock, LoadingState, PhotoCard, PhotoViewer, Screen, SectionHeader, StatTile, TaskHeader, colors } from "../../src/components/ui";
 import { useAuth } from "../../src/auth";
 
@@ -151,16 +151,6 @@ export default function EventDetailScreen() {
     setSelectedPhoto((current) => current?.id === photo.id ? photo : current);
   }
 
-  async function updateVisibility(photo: Photo, visibilityStatus: PhotoVisibilityStatus) {
-    if (!eventId) return;
-    try {
-      const data = await api.updatePhotoVisibility(eventId, photo.id, visibilityStatus, visibilityStatus === "HIDDEN" ? "Hidden by host" : undefined);
-      replaceEventPhoto(data.photo);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  }
-
   async function updateFeatured(photo: Photo, isFeatured: boolean) {
     if (!eventId) return;
     try {
@@ -186,9 +176,7 @@ export default function EventDetailScreen() {
     }
   }
 
-  function handleViewerAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) {
-    if (action === "hide") return updateVisibility(photo, "HIDDEN");
-    if (action === "restore") return updateVisibility(photo, "VISIBLE");
+  function handleViewerAction(action: "feature" | "unfeature" | "delete", photo: Photo) {
     if (action === "feature") return updateFeatured(photo, true);
     if (action === "unfeature") return updateFeatured(photo, false);
     return new Promise<void>((resolve) => {
@@ -498,21 +486,13 @@ export default function EventDetailScreen() {
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                         {photo.isFeatured ? <Badge>Host pick</Badge> : null}
                         {Number(photo.likeCount || 0) > 0 ? <Badge tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</Badge> : null}
-                        {photo.visibilityStatus === "HIDDEN" ? <Badge tone="red">Hidden</Badge> : null}
                       </View>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
                         <View style={{ flex: 1, minWidth: 132 }}>
-                          {photo.visibilityStatus === "HIDDEN" ? (
-                            <Button tone="secondary" onPress={() => updateVisibility(photo, "VISIBLE")}>Restore</Button>
-                          ) : (
-                            <Button tone="secondary" onPress={() => updateVisibility(photo, "HIDDEN")}>Hide</Button>
-                          )}
-                        </View>
-                        <View style={{ flex: 1, minWidth: 132 }}>
-                          <Button tone="secondary" disabled={photo.visibilityStatus === "HIDDEN"} onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Remove pick" : "Host pick"}</Button>
+                          <Button tone="secondary" onPress={() => updateFeatured(photo, !photo.isFeatured)}>{photo.isFeatured ? "Remove pick" : "Host pick"}</Button>
                         </View>
                       </View>
-                      <Body tone="muted">Hide removes a photo from public views and keeps it restorable.</Body>
+                      <Body tone="muted">Delete removes a photo from storage and public event views.</Body>
                     </Card>
                   </View>
                 ))}
@@ -582,7 +562,7 @@ function FirstEventHandoffPanel({ event }: { event: EventSummary }) {
       <View style={{ gap: 10 }}>
         <Body tone="muted">Before: confirm the mode and share the QR poster or guest link.</Body>
         <Body tone="muted">During: keep the QR poster visible and review incoming photos.</Body>
-        <Body tone="muted">After: feature favorites, hide off-tone photos, then share Recap.</Body>
+        <Body tone="muted">After: feature favorites, delete off-tone photos, then share Recap.</Body>
       </View>
       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10 }}>
         <View style={{ flex: 1, minWidth: 132 }}>
@@ -787,7 +767,6 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
         <StatTile label="Contributors" value={postSummary.totalContributors} />
         <StatTile label="Guest joins" value={postSummary.guestJoins} />
         <StatTile label="Recap views" value={postSummary.recapOpens} />
-        <StatTile label="Hidden" value={postSummary.hiddenPhotos} />
       </View>
       {postSummary.topContributors.length ? (
         <View style={{ gap: 8 }}>
@@ -815,7 +794,7 @@ function PostEventSummaryPanel({ event, summary }: { event: EventSummary & { pho
 function RecapStatusPanel({ event, summary }: { event: EventSummary & { photos: Photo[] }; summary: EventAnalyticsSummary | null }) {
   const { api } = useAuth();
   const [status, setStatus] = React.useState("");
-  const awardResults = summary?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: event.photos.filter(isPhotoVisible) });
+  const awardResults = summary?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: event.photos });
   const story = buildEventRecapStory(event, event.photos, { awardResults, awardVoting: summary?.eventAwardsVoting });
   const lifecycle = deriveEventLifecycleStatus(event, summary || undefined);
   const featuredCount = event.photos.filter((photo) => photo.isFeatured).length;
@@ -966,7 +945,6 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
     ["Uploads", summary.uploads],
     ["Hearts", summary.photoLikes || 0],
     ["Recaps", summary.recapOpens],
-    ["Hidden", summary.hiddenPhotos],
   ];
 
   return (
@@ -982,7 +960,7 @@ function EventMetricsPanel({ summary }: { summary: EventAnalyticsSummary | null 
 }
 
 function EventAwardsLeadersPanel({ summary, event, recapLink }: { summary: EventAnalyticsSummary | null; event: EventSummary & { photos: Photo[] }; recapLink?: string | null }) {
-  const visiblePhotos = event.photos.filter(isPhotoVisible);
+  const visiblePhotos = event.photos;
   const awardResults = summary?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visiblePhotos });
   if (!awardResults.categories.length) return null;
   const photosById = new Map(visiblePhotos.map((photo) => [photo.id, photo]));
@@ -1038,7 +1016,7 @@ function LinkHealthPanel({ linkChecks }: { linkChecks: LaunchLinkVerification[] 
 function RunOfShow() {
   const rows = [
     ["Before", "Create the event, verify the guest link, and place the QR code where guests will see it."],
-    ["During", "Review incoming uploads and hide any off-tone photos instead of deleting them."],
+    ["During", "Review incoming uploads and delete any off-tone photos."],
     ["After", "Refresh the album, feature favorites, then share the Recap link when the album is ready."],
   ];
 

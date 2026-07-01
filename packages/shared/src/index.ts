@@ -12,7 +12,6 @@ export type ChallengeMode = "NONE" | ChallengeType;
 export type ChallengeItemKind = "color" | "prompt" | "award" | "capsule";
 export type UploadMetadataRequirement = "none" | "participant" | "prompt" | "award";
 export type SetupComplexity = "None" | "Easy" | "Medium";
-export type PhotoVisibilityStatus = "VISIBLE" | "HIDDEN";
 export type PromptPackKind = "prompt" | "award" | "custom";
 export type PromptPackSlug =
   | "birthday"
@@ -156,9 +155,6 @@ export type Photo = {
   challengeParticipantName?: string | null;
   challengeColorHex?: string | null;
   challengeColorSlug?: string | null;
-  visibilityStatus?: PhotoVisibilityStatus;
-  hiddenAt?: ISODateString | null;
-  hiddenReason?: string | null;
   isFeatured?: boolean;
   featuredAt?: ISODateString | null;
   likeCount?: number;
@@ -296,7 +292,6 @@ export type AwardWinnerSummary = {
 export type PostEventHostSummary = {
   totalPhotos: number;
   visiblePhotos: number;
-  hiddenPhotos: number;
   featuredPhotos: number;
   totalContributors: number;
   topContributors: ContributorSummaryItem[];
@@ -412,8 +407,6 @@ export const ANALYTICS_EVENT_NAMES = [
   "photo_upload_retry_clicked",
   "challenge_item_selected",
   "host_launch_kit_opened",
-  "photo_hidden",
-  "photo_restored",
   "photo_featured",
   "photo_unfeatured",
   "photo_like_added",
@@ -554,7 +547,6 @@ export type FounderOverviewMetrics = {
   totalContributors: number;
   totalRecapOpens: number;
   totalFeedbackSubmissions: number;
-  hiddenPhotoCount: number;
 };
 
 export type FounderFunnelMetrics = {
@@ -594,7 +586,6 @@ export type FounderUploadSummary = {
   eventSlug: string;
   guestNickname?: string | null;
   createdAt: ISODateString;
-  visibilityStatus?: PhotoVisibilityStatus;
   challengeItemLabel?: string | null;
   previewUrl?: string | null;
   eventLink?: string | null;
@@ -1347,14 +1338,6 @@ export function isAnonymousGuestDisplayName(input: unknown) {
   return sanitizeGuestDisplayName(input).toLowerCase() === ANONYMOUS_GUEST_DISPLAY_NAME.toLowerCase();
 }
 
-export function isPhotoVisible(photo: Pick<Photo, "visibilityStatus">) {
-  return (photo.visibilityStatus || "VISIBLE") === "VISIBLE";
-}
-
-export function visiblePhotos(photos: Photo[]) {
-  return photos.filter(isPhotoVisible);
-}
-
 export function sortPhotosForRecap(photos: Photo[]) {
   return [...photos].sort((a, b) => {
     const featuredDelta = Number(Boolean(b.isFeatured)) - Number(Boolean(a.isFeatured));
@@ -1932,7 +1915,7 @@ function uploadBucketLabel(date: Date) {
 
 function buildUploadTrend(photos: Photo[], limit = 5): UploadTrendBucket[] {
   const buckets = new Map<string, UploadTrendBucket>();
-  for (const item of visiblePhotos(photos)) {
+  for (const item of photos) {
     const date = new Date(item.createdAt);
     const key = date.toISOString().slice(0, 10);
     const bucket = buckets.get(key) || { label: uploadBucketLabel(date), count: 0 };
@@ -1957,10 +1940,9 @@ export function buildPostEventHostSummary(
   } = {},
 ): PostEventHostSummary {
   const contributorSummary = buildContributorSummary(photos, 5);
-  const visible = visiblePhotos(photos);
-  const hiddenPhotos = photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length;
+  const albumPhotos = photos;
   const featuredPhotos = analytics.featuredPhotos ?? photos.filter((photo) => Boolean(photo.isFeatured)).length;
-  const awardResults = analytics.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visible });
+  const awardResults = analytics.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: albumPhotos });
   const winners = (awardResults.categories || []).map((category) => {
     const leaderPhotoId = category.leaderPhotoIds[0];
     const leaderLikes = leaderPhotoId ? category.likeTotals.find((like) => like.photoId === leaderPhotoId)?.likeCount || 0 : 0;
@@ -1976,15 +1958,14 @@ export function buildPostEventHostSummary(
 
   return {
     totalPhotos: photos.length,
-    visiblePhotos: visible.length,
-    hiddenPhotos,
+    visiblePhotos: albumPhotos.length,
     featuredPhotos,
     totalContributors: contributorSummary.contributorCount,
     topContributors: contributorSummary.topContributors,
     guestJoins: analytics.guestJoins ?? 0,
     recapOpens: analytics.recapOpens ?? 0,
     uploadsOverTime: buildUploadTrend(photos),
-    challengeCompletion: buildChallengeProgressSummary(event.challenge, visible),
+    challengeCompletion: buildChallengeProgressSummary(event.challenge, albumPhotos),
     awardWinners: winners,
   };
 }
@@ -2065,7 +2046,7 @@ function contributorDisplayName(photo: Pick<Photo, "guestNickname" | "challengeP
 
 export function buildContributorSummary(photos: Photo[], limit = 3): ContributorSummary {
   const counts = new Map<string, ContributorSummaryItem>();
-  const sortedPhotos = visiblePhotos(photos);
+  const sortedPhotos = photos;
   for (const photo of sortedPhotos) {
     const displayName = contributorDisplayName(photo);
     if (isAnonymousGuestDisplayName(displayName)) continue;
@@ -2411,7 +2392,7 @@ export function buildEventRecapStory(
   photos: Photo[],
   options: { awardResults?: AwardResultsSummary | null; awardVoting?: AwardVotingSummary | null } = {},
 ): EventRecapStory {
-  const sortedPhotos = sortPhotosForRecap(visiblePhotos(photos));
+  const sortedPhotos = sortPhotosForRecap(photos);
   const template = getEventTemplate(event.eventTemplateSlug);
   const modeLabel = challengeLabel(event.challenge);
   const contributors = buildContributorSummary(sortedPhotos, 5);

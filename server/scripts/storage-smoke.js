@@ -86,7 +86,7 @@ function assertPhotoInList(photos, photoId, label) {
 
 function assertPhotoNotInList(photos, photoId, label) {
   if (photos.some((photo) => photo.id === photoId)) {
-    throw new Error(`Hidden photo still appeared in ${label}.`);
+    throw new Error(`Deleted photo still appeared in ${label}.`);
   }
 }
 
@@ -225,30 +225,6 @@ async function main() {
     });
     assertPhotoInList(hostPhotos.data.photos, state.photoId, "host photo review");
 
-    setStep("Host hide moderation");
-    const hidden = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/photos/${encodeURIComponent(state.photoId)}/visibility`, {
-      method: "PATCH",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ visibilityStatus: "HIDDEN", hiddenReason: "Storage smoke cleanup check" }),
-    });
-    if (hidden.data.photo.visibilityStatus !== "HIDDEN") throw new Error("Host hide request did not mark photo as hidden.");
-
-    setStep("Hidden photo public visibility");
-    const hiddenAlbum = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/photos`);
-    assertPhotoNotInList(hiddenAlbum.data.photos, state.photoId, "guest album response");
-    const hiddenRecap = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/recap`);
-    assertPhotoNotInList(hiddenRecap.data.photos, state.photoId, "Recap response");
-    await expectStatus(apiUrl, `/api/photos/${encodeURIComponent(state.photoId)}/file`, 404);
-    await expectStatus(apiUrl, `/api/photos/${encodeURIComponent(state.photoId)}/preview`, 404);
-
-    setStep("Host restore moderation");
-    const restored = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/photos/${encodeURIComponent(state.photoId)}/visibility`, {
-      method: "PATCH",
-      headers: { ...authHeaders, "Content-Type": "application/json" },
-      body: JSON.stringify({ visibilityStatus: "VISIBLE" }),
-    });
-    if (restored.data.photo.visibilityStatus !== "VISIBLE") throw new Error("Host restore request did not mark photo as visible.");
-
     setStep("Event analytics summary");
     const analytics = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/analytics/summary`, {
       headers: authHeaders,
@@ -269,16 +245,26 @@ async function main() {
         console.warn(`Cleanup warning: ${error.message}`);
         return null;
       });
-      state.cleanupSucceeded = Boolean(cleanup);
-      console.log(`Cleanup requested for test photo ${state.photoId}`);
-      if (!state.cleanupSucceeded) {
+      if (!cleanup) {
         throw new Error("Cleanup did not complete for the uploaded storage smoke photo.");
       }
+      console.log(`Cleanup requested for test photo ${state.photoId}`);
+
+      setStep("Cleanup deletion verification");
+      const hostPhotosAfterDelete = await request(apiUrl, `/api/host/events/${encodeURIComponent(event.id)}/photos`, {
+        headers: authHeaders,
+      });
+      assertPhotoNotInList(hostPhotosAfterDelete.data.photos, state.photoId, "host photo review after delete");
+      const guestUploadsAfterDelete = await request(apiUrl, `/api/events/${encodeURIComponent(slug)}/my-uploads?clientId=${encodeURIComponent(clientId)}`);
+      assertPhotoNotInList(guestUploadsAfterDelete.data.photos, state.photoId, "guest my-uploads after delete");
+      await expectStatus(apiUrl, `/api/photos/${encodeURIComponent(state.photoId)}/file`, 404);
+      await expectStatus(apiUrl, `/api/photos/${encodeURIComponent(state.photoId)}/preview`, 404);
+      state.cleanupSucceeded = true;
     }
   }
 
   if (state.smokeAssertionsPassed && state.cleanupSucceeded) {
-    console.log("\nStorage smoke passed: upload, record, album, Recap, heart, feature/unfeature, hide/restore, host review, public visibility, analytics, and cleanup.");
+    console.log("\nStorage smoke passed: upload, record, album, Recap, heart, feature/unfeature, host review, analytics, delete verification, and cleanup.");
   }
 }
 

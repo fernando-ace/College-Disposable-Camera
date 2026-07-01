@@ -160,6 +160,30 @@ test("guest my uploads helper sends clientId query", async () => {
   assert.equal(calls[0], "https://api.eventfilm.test/api/events/spring%20formal/my-uploads?clientId=client%201");
 });
 
+test("guest display name helper patches the guest status endpoint", async () => {
+  const calls: string[] = [];
+  let method = "";
+  let body = "";
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      method = init?.method || "";
+      body = String(init?.body || "");
+      return new Response(JSON.stringify({ uploadedCount: 2, remainingUploads: null, nickname: "Mia Chen" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  const data = await client.updateGuestDisplayName("spring formal", { clientId: "client 1", nickname: " Mia  Chen " });
+  assert.deepEqual(data, { uploadedCount: 2, remainingUploads: null, nickname: "Mia Chen" });
+  assert.equal(calls[0], "https://api.eventfilm.test/api/events/spring%20formal/guest-status");
+  assert.equal(method, "PATCH");
+  assert.equal(body, JSON.stringify({ clientId: "client 1", nickname: " Mia  Chen " }));
+});
+
 test("award vote endpoint helper sends requested payload", async () => {
   const calls: string[] = [];
   let seenBody = "";

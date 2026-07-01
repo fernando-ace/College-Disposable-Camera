@@ -9,15 +9,15 @@ function latestDate(values) {
   return latest ? new Date(latest) : null;
 }
 
-function isVisibleUpload(photo) {
-  return photo && !photo.deletedAt && (!photo.visibilityStatus || photo.visibilityStatus === "VISIBLE");
+function isActiveUpload(photo) {
+  return photo && !photo.deletedAt;
 }
 
 function getEventLastActivityAt(event) {
-  const visibleUploads = Array.isArray(event.photos)
-    ? event.photos.filter(isVisibleUpload).map((photo) => photo.createdAt)
+  const activeUploads = Array.isArray(event.photos)
+    ? event.photos.filter(isActiveUpload).map((photo) => photo.createdAt)
     : [];
-  return latestDate([event.updatedAt, event.createdAt, ...visibleUploads]) || new Date(0);
+  return latestDate([event.updatedAt, event.createdAt, ...activeUploads]) || new Date(0);
 }
 
 function compareEventsByRecentActivity(first, second) {

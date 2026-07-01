@@ -39,7 +39,7 @@ async function setPhotoLike(prisma, {
   liked,
   eventInclude = {},
   isEventLocked = () => false,
-  visiblePhotoWhere = (extra) => ({ deletedAt: null, visibilityStatus: "VISIBLE", ...extra }),
+  activePhotoWhere = (extra) => ({ deletedAt: null, ...extra }),
 }) {
   const normalizedPhotoId = String(photoId || "").trim();
   const normalizedClientId = normalizeGuestClientId(clientId);
@@ -58,7 +58,7 @@ async function setPhotoLike(prisma, {
   }
 
   const photo = await prisma.photo.findFirst({
-    where: visiblePhotoWhere({ id: normalizedPhotoId, eventId: event.id }),
+    where: activePhotoWhere({ id: normalizedPhotoId, eventId: event.id }),
     select: { id: true, eventId: true },
   });
   if (!photo) throw new PhotoLikeError("Photo is not available for liking", 404);

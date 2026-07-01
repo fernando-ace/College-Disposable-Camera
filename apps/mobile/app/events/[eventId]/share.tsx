@@ -143,7 +143,7 @@ export default function ShareEventScreen() {
                     <Button tone="secondary" onPress={() => copyLink("Guest upload link", event.eventLink, "guest_link_copied")}>Copy guest link</Button>
                   </View>
                 </View>
-                <Body tone="muted">Use the event hub to review uploads, hide off-tone photos, and keep the album clean before the recap goes out.</Body>
+                <Body tone="muted">Use the event hub to review uploads, delete off-tone photos, and keep the album clean before the recap goes out.</Body>
               </Card>
 
               <Card>

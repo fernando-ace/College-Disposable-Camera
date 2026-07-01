@@ -10,8 +10,8 @@ function createPrismaMock({ locked = false } = {}) {
     locked,
   };
   const photos = [
-    { id: "visible-photo", eventId: event.id, visibilityStatus: "VISIBLE", deletedAt: null },
-    { id: "hidden-photo", eventId: event.id, visibilityStatus: "HIDDEN", deletedAt: null },
+    { id: "active-photo", eventId: event.id, deletedAt: null },
+    { id: "deleted-photo", eventId: event.id, deletedAt: "2026-06-02T00:00:00.000Z" },
   ];
   const likes = [];
   return {
@@ -25,7 +25,6 @@ function createPrismaMock({ locked = false } = {}) {
         findFirst: async ({ where }) => photos.find((photo) => {
           if (photo.id !== where.id || photo.eventId !== where.eventId) return false;
           if (where.deletedAt !== undefined && photo.deletedAt !== where.deletedAt) return false;
-          if (where.visibilityStatus && photo.visibilityStatus !== where.visibilityStatus) return false;
           return true;
         }) || null,
       },
@@ -52,24 +51,24 @@ function createPrismaMock({ locked = false } = {}) {
   };
 }
 
-const visiblePhotoWhere = (extra = {}) => ({ deletedAt: null, visibilityStatus: "VISIBLE", ...extra });
+const activePhotoWhere = (extra = {}) => ({ deletedAt: null, ...extra });
 
 test("setPhotoLike creates one like per browser and returns the count", async () => {
   const { prisma, likes } = createPrismaMock();
 
   const first = await setPhotoLike(prisma, {
     eventSlug: "spring-formal",
-    photoId: "visible-photo",
+    photoId: "active-photo",
     clientId: " client-1 ",
     liked: true,
-    visiblePhotoWhere,
+    activePhotoWhere,
   });
   const duplicate = await setPhotoLike(prisma, {
     eventSlug: "spring-formal",
-    photoId: "visible-photo",
+    photoId: "active-photo",
     clientId: "client-1",
     liked: true,
-    visiblePhotoWhere,
+    activePhotoWhere,
   });
 
   assert.equal(first.likeCount, 1);
@@ -80,22 +79,22 @@ test("setPhotoLike creates one like per browser and returns the count", async ()
 
 test("setPhotoLike unlikes idempotently", async () => {
   const { prisma, likes } = createPrismaMock();
-  await setPhotoLike(prisma, { eventSlug: "spring-formal", photoId: "visible-photo", clientId: "client-1", liked: true, visiblePhotoWhere });
-  await setPhotoLike(prisma, { eventSlug: "spring-formal", photoId: "visible-photo", clientId: "client-2", liked: true, visiblePhotoWhere });
+  await setPhotoLike(prisma, { eventSlug: "spring-formal", photoId: "active-photo", clientId: "client-1", liked: true, activePhotoWhere });
+  await setPhotoLike(prisma, { eventSlug: "spring-formal", photoId: "active-photo", clientId: "client-2", liked: true, activePhotoWhere });
 
   const result = await setPhotoLike(prisma, {
     eventSlug: "spring-formal",
-    photoId: "visible-photo",
+    photoId: "active-photo",
     clientId: "client-1",
     liked: false,
-    visiblePhotoWhere,
+    activePhotoWhere,
   });
   const secondUnlike = await setPhotoLike(prisma, {
     eventSlug: "spring-formal",
-    photoId: "visible-photo",
+    photoId: "active-photo",
     clientId: "client-1",
     liked: false,
-    visiblePhotoWhere,
+    activePhotoWhere,
   });
 
   assert.equal(result.likeCount, 1);
@@ -104,11 +103,11 @@ test("setPhotoLike unlikes idempotently", async () => {
   assert.equal(likes[0].guestClientId, "client-2");
 });
 
-test("setPhotoLike rejects hidden photos", async () => {
+test("setPhotoLike rejects deleted photos", async () => {
   const { prisma } = createPrismaMock();
 
   await assert.rejects(
-    () => setPhotoLike(prisma, { eventSlug: "spring-formal", photoId: "hidden-photo", clientId: "client-1", liked: true, visiblePhotoWhere }),
+    () => setPhotoLike(prisma, { eventSlug: "spring-formal", photoId: "deleted-photo", clientId: "client-1", liked: true, activePhotoWhere }),
     (error) => error instanceof PhotoLikeError && error.status === 404 && /not available/i.test(error.message),
   );
 });
@@ -119,10 +118,10 @@ test("setPhotoLike rejects locked events", async () => {
   await assert.rejects(
     () => setPhotoLike(prisma, {
       eventSlug: "spring-formal",
-      photoId: "visible-photo",
+      photoId: "active-photo",
       clientId: "client-1",
       liked: true,
-      visiblePhotoWhere,
+      activePhotoWhere,
       isEventLocked: (event) => event.locked,
     }),
     (error) => error instanceof PhotoLikeError && error.status === 403 && error.revealAt instanceof Date,

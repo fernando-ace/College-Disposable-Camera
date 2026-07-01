@@ -97,7 +97,7 @@ npm run demo:cleanup
 
 The script uploads a tiny PNG through the actual guest upload API, verifies the
 photo record, public file/preview routes, guest album, Recap,
-feature/unfeature, guest hearts, host moderation state, hide/restore behavior,
+feature/unfeature, guest hearts, host moderation state, delete behavior,
 event analytics summary, and cleanup. It prints whether required environment
 variables are present, but it does not require or print Supabase secrets. If the
 previous failure was `Could not upload photo: fetch failed`, confirm the API is
@@ -111,7 +111,7 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Upload one real photo from a guest phone.
 - Keep the QR poster visible on a laptop, display device, or printout.
 - Share the Recap link and confirm reveal behavior.
-- Hide and restore one photo.
+- Delete one test photo and confirm it is removed from public views.
 - Feature one photo.
 - Open one photo as a guest and confirm hearts work.
 - Confirm host metrics update after guest, upload, Recap, moderation, feature, and heart activity.
@@ -128,7 +128,7 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Wi-Fi versus cellular: try at least one upload on each when practical.
 - Large photo upload: try one high-resolution phone photo and confirm friendly behavior if it is too large or slow.
 - Slow network behavior: confirm upload errors/retry copy are understandable and do not trap the guest.
-- Hidden photo behavior: hide one photo and confirm it disappears from guest album, Recap, and public image routes.
+- Deleted photo behavior: delete one test photo and confirm it disappears from guest album, Recap, and public image routes.
 - Beta issue path: submit one non-sensitive test issue from the host event page and confirm founder ops can see it.
 
 ## Host Flow
@@ -150,18 +150,17 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Confirm invalid files and oversized files show friendly errors.
 - Confirm no guest account is required.
 - Confirm the album lock message appears before reveal.
-- After reveal, confirm album/Recap photos load and hidden photos stay out of public views.
+- After reveal, confirm album/Recap photos load and deleted photos stay out of public views.
 
 ## Moderation Flow
 
 - Upload at least two test photos.
-- Hide one photo as host.
-- Confirm hidden photo is absent from guest album, Recap, and public image routes.
-- Restore the photo.
-- Feature one visible photo.
+- Delete one test photo as host.
+- Confirm the deleted photo is absent from guest album, Recap, and public image routes.
+- Feature one album photo.
 - Confirm featured photos sort ahead of non-featured photos.
 - Open a public photo and confirm the full image, details overlay, and hearts render cleanly.
-- Prefer hide/restore during beta. Permanent deletion should be reserved for clear cleanup.
+- Delete photos that should not appear in the album.
 
 ## Analytics Smoke
 
@@ -169,7 +168,7 @@ reachable and the Supabase project is active/unpaused before changing app code.
 - Upload one photo successfully.
 - Trigger one upload validation failure if practical.
 - Confirm host analytics summary changes after events are recorded.
-- Open the host event detail page and confirm event-level beta metrics show guest joins, uploads, Recap opens, hidden photos, hearts, and featured photos.
+- Open the host event detail page and confirm event-level beta metrics show guest joins, uploads, Recap opens, hearts, and featured photos.
 - If checking directly in the database, filter `AnalyticsEvent` by the test event id or slug and confirm event names such as `guest_joined_event`, `photo_upload_succeeded`, and `recap_opened`.
 
 Metric definitions:

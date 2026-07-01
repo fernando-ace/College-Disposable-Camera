@@ -477,6 +477,8 @@ test.describe("EventFilm browser smoke", () => {
     expect(sheetLayout.header.height).toBeGreaterThan(0);
     expect(sheetLayout.dialog.top).toBeGreaterThanOrEqual(sheetLayout.header.bottom - 1);
     expect(sheetLayout.sheet.top).toBeGreaterThanOrEqual(sheetLayout.header.bottom - 1);
+    const uploadSheetHeading = sheetPanel.getByRole("heading", { name: "Add photos" });
+    await expect(uploadSheetHeading).toBeVisible();
 
     const lockedPageState = await page.evaluate(() => ({
       bodyOverflow: document.body.style.overflow,
@@ -506,6 +508,27 @@ test.describe("EventFilm browser smoke", () => {
       await page.locator("#my-uploads").scrollIntoViewIfNeeded();
       const sheetScrollAfter = await sheetPanel.evaluate((element) => (element as HTMLElement).scrollTop);
       expect(sheetScrollAfter).toBeGreaterThan(sheetScrollBefore);
+      const scrolledSheetLayout = await page.evaluate(() => {
+        const sheet = document.querySelector("[data-testid='upload-sheet-panel']");
+        const heading = sheet?.querySelector("h2");
+        const uploads = document.querySelector("#my-uploads");
+        if (!sheet || !heading || !uploads) return null;
+        const sheetRect = sheet.getBoundingClientRect();
+        const headingRect = heading.getBoundingClientRect();
+        const uploadsRect = uploads.getBoundingClientRect();
+        return {
+          headingTop: headingRect.top,
+          headingBottom: headingRect.bottom,
+          sheetTop: sheetRect.top,
+          sheetBottom: sheetRect.bottom,
+          uploadsTop: uploadsRect.top,
+        };
+      });
+      if (!scrolledSheetLayout) throw new Error("Guest upload sheet layout was missing after sheet scroll.");
+      expect(scrolledSheetLayout.headingTop).toBeGreaterThanOrEqual(scrolledSheetLayout.sheetTop - 1);
+      expect(scrolledSheetLayout.headingBottom).toBeLessThanOrEqual(scrolledSheetLayout.sheetBottom);
+      expect(scrolledSheetLayout.uploadsTop).toBeGreaterThanOrEqual(scrolledSheetLayout.headingBottom - 1);
+      await expect(page.locator("#my-uploads")).toBeVisible();
     } else {
       await expect(page.locator("#my-uploads")).toBeVisible();
     }
@@ -573,6 +596,67 @@ test.describe("EventFilm browser smoke", () => {
         await expect(page.locator("body")).toContainText(/Hearts decide winners|heart favorite photos/i);
       }
     }
+  });
+
+  test("guest stale upload metadata is pruned when host-deleted photos disappear", async ({ page }) => {
+    const slug = "deleted-upload-local-state";
+    const origin = parsedUrl(baseUrl).origin;
+    const corsHeaders = {
+      "access-control-allow-origin": origin,
+      "access-control-allow-credentials": "true",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+      "access-control-allow-headers": "content-type, authorization",
+    };
+    const event = {
+      id: "deleted-upload-event",
+      name: "Deleted Upload Party",
+      description: null,
+      slug,
+      eventDate: "2026-06-14T20:00:00.000Z",
+      revealAt: "2026-06-14T20:00:00.000Z",
+      photoLimitPerGuest: 0,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      isRevealed: true,
+      photoCount: 0,
+      challenge: null,
+    };
+    const json = (body: unknown) => ({
+      status: 200,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    await page.addInitScript((eventSlug: string) => {
+      window.localStorage.setItem(`eventfilm_guest_${eventSlug}`, JSON.stringify({ clientId: "deleted-upload-client", nickname: "" }));
+      window.localStorage.setItem(`eventfilm_guest_uploads_${eventSlug}`, JSON.stringify([
+        {
+          photoId: "host-deleted-photo",
+          uploadedAt: "2026-06-14T20:01:00.000Z",
+          guestDisplayName: "Jordan",
+          challengeLabel: "Best candid",
+        },
+      ]));
+    }, slug);
+    await page.route(`**/api/events/${slug}`, (route) => route.fulfill(json({ event })));
+    await page.route(`**/api/events/${slug}/guest-status**`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, nickname: null })));
+    await page.route(`**/api/events/${slug}/my-uploads**`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
+    await page.route(`**/api/events/${slug}/photos**`, (route) => route.fulfill(json({ photos: [] })));
+    await page.route("**/api/analytics**", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ ok: true }));
+    });
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/e/${slug}`);
+    await expect(page.getByRole("heading", { name: "Deleted Upload Party" })).toBeVisible();
+    await page.getByRole("button", { name: "Add photos" }).first().click();
+    const uploadDialog = page.getByRole("dialog", { name: "Add photos" });
+    await expect(uploadDialog).toContainText("No uploads from this device yet.");
+    await expect(uploadDialog).not.toContainText("Best candid");
+
+    const storedUploads = await page.evaluate((eventSlug) => window.localStorage.getItem(`eventfilm_guest_uploads_${eventSlug}`), slug);
+    expect(JSON.parse(storedUploads || "[]")).toEqual([]);
   });
 
   test("guest can select multiple album photos and open save options", async ({ page }) => {

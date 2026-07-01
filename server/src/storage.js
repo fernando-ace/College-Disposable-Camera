@@ -55,7 +55,10 @@ async function uploadPhotoObject({ objectKey, buffer, mimeType }) {
 async function removePhotoObject(objectKey) {
   const { error } = await bucket().remove([objectKey]);
   if (error) {
-    throw new Error(`Could not remove photo: ${error.message}`);
+    const wrapped = new Error(`Could not remove photo: ${error.message}`);
+    wrapped.statusCode = error.statusCode || error.status;
+    wrapped.code = error.code;
+    throw wrapped;
   }
 }
 

@@ -17,7 +17,6 @@ function photo(input) {
     id: input.id,
     createdAt: input.createdAt,
     deletedAt: input.deletedAt || null,
-    visibilityStatus: input.visibilityStatus || "VISIBLE",
   };
 }
 
@@ -30,7 +29,7 @@ test("newest created event wins when no uploads exist", () => {
   assert.deepEqual(sorted.map((item) => item.id), ["newer", "older"]);
 });
 
-test("older event with newer visible upload sorts above newer created event", () => {
+test("older event with newer active upload sorts above newer created event", () => {
   const sorted = sortEventsByRecentActivity([
     event({
       id: "older-active",
@@ -56,12 +55,11 @@ test("host settings update counts as event activity", () => {
   assert.deepEqual(sorted.map((item) => item.id), ["settings-updated", "newer-inactive"]);
 });
 
-test("hidden and deleted photos do not drive event activity", () => {
+test("deleted photos do not drive event activity", () => {
   const inactive = event({
     id: "inactive",
     createdAt: "2026-01-01T00:00:00.000Z",
     photos: [
-      photo({ id: "hidden", createdAt: "2026-05-01T00:00:00.000Z", visibilityStatus: "HIDDEN" }),
       photo({ id: "deleted", createdAt: "2026-06-01T00:00:00.000Z", deletedAt: "2026-06-02T00:00:00.000Z" }),
     ],
   });

@@ -40,7 +40,7 @@ import {
   hasDuplicateParticipantColors,
   hasDuplicatePrompts,
   deriveEventLifecycleStatus,
-  isPhotoVisible,
+  isAnonymousGuestDisplayName,
   memoryCapsuleFromChallenge,
   photoChallengeLabel,
   promptsFromChallenge,
@@ -50,7 +50,7 @@ import {
   validateEventSettingsInput,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardResultsSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PhotoVisibilityStatus, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardResultsSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
 import {
   AppShell,
   BrandMark,
@@ -94,7 +94,6 @@ const DEMO_PHOTOS = [
     sizeBytes: 195278,
     createdAt: "2026-06-14T20:08:00.000Z",
     guestNickname: "Maya",
-    visibilityStatus: "VISIBLE",
     isFeatured: true,
     likeCount: 18,
     likedByMe: false,
@@ -108,7 +107,6 @@ const DEMO_PHOTOS = [
     sizeBytes: 3243200,
     createdAt: "2026-06-14T20:16:00.000Z",
     guestNickname: "Alex",
-    visibilityStatus: "VISIBLE",
     isFeatured: false,
     likeCount: 12,
     likedByMe: false,
@@ -122,7 +120,6 @@ const DEMO_PHOTOS = [
     sizeBytes: 2455470,
     createdAt: "2026-06-14T20:23:00.000Z",
     guestNickname: "Jordan",
-    visibilityStatus: "VISIBLE",
     isFeatured: true,
     likeCount: 21,
     likedByMe: false,
@@ -136,7 +133,6 @@ const DEMO_PHOTOS = [
     sizeBytes: 1671281,
     createdAt: "2026-06-14T20:31:00.000Z",
     guestNickname: "Taylor",
-    visibilityStatus: "VISIBLE",
     isFeatured: false,
     likeCount: 9,
     likedByMe: false,
@@ -603,7 +599,10 @@ function getGuestSession(slug: string) {
   const key = `eventfilm_guest_${slug}`;
   try {
     const saved = localStorage.getItem(key);
-    if (saved) return { key, session: JSON.parse(saved) as { clientId: string; nickname: string } };
+    if (saved) {
+      const session = JSON.parse(saved) as { clientId: string; nickname: string };
+      return { key, session: { ...session, nickname: isAnonymousGuestDisplayName(session.nickname) ? "" : session.nickname } };
+    }
     const session = { clientId: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`, nickname: "" };
     localStorage.setItem(key, JSON.stringify(session));
     return { key, session };
@@ -870,12 +869,11 @@ function ColorChip({ participant }: { participant: Pick<ChallengeParticipant, "c
   );
 }
 
-function PhotoStatusBadges({ photo, host = false }: { photo: Photo; host?: boolean }) {
+function PhotoStatusBadges({ photo }: { photo: Photo; host?: boolean }) {
   return (
     <div className="flex flex-wrap gap-1.5">
       {photo.isFeatured && <StatusPill tone="amber">Host pick</StatusPill>}
       {Number(photo.likeCount || 0) > 0 && <StatusPill tone="red">{photo.likeCount} {photo.likeCount === 1 ? "heart" : "hearts"}</StatusPill>}
-      {host && photo.visibilityStatus === "HIDDEN" && <StatusPill tone="red">Hidden</StatusPill>}
       {photoChallengeLabel(photo) && <StatusPill tone="stone">{photoChallengeLabel(photo)}</StatusPill>}
     </div>
   );
@@ -965,7 +963,7 @@ function FullScreenPhotoViewer({
   photos?: Photo[];
   mode: "public" | "host";
   onClose: () => void;
-  onHostAction?: (action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) => Promise<void>;
+  onHostAction?: (action: "feature" | "unfeature" | "delete", photo: Photo) => Promise<void>;
   onPhotoLike?: PhotoLikeToggleHandler;
 }) {
   const [busy, setBusy] = useState("");
@@ -1058,7 +1056,7 @@ function FullScreenPhotoViewer({
     });
   }
 
-  async function runHostAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete") {
+  async function runHostAction(action: "feature" | "unfeature" | "delete") {
     const photoForAction = currentPhoto;
     if (!onHostAction || !photoForAction) return;
     setBusy(action);
@@ -1143,15 +1141,10 @@ function FullScreenPhotoViewer({
         </div>
         {mode === "host" && onHostAction ? (
           <div className="mx-auto mt-4 flex max-w-5xl flex-wrap gap-2">
-            {currentPhoto.visibilityStatus === "HIDDEN" ? (
-              <button type="button" className="min-h-11 rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("restore")}>Restore photo</button>
-            ) : (
-              <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-800 ring-1 ring-[#eadfce] disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</button>
-            )}
             {currentPhoto.isFeatured ? (
               <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-800 ring-1 ring-[#eadfce] disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove host pick</button>
             ) : (
-              <button type="button" className="min-h-11 rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300 disabled:text-stone-700" disabled={Boolean(busy) || currentPhoto.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</button>
+              <button type="button" className="min-h-11 rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300 disabled:text-stone-700" disabled={Boolean(busy)} onClick={() => runHostAction("feature")}>Make host pick</button>
             )}
             <button type="button" className="min-h-11 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete</button>
           </div>
@@ -1743,7 +1736,7 @@ function AwardResultsPanel({
   onPhotoClick?: (photo: Photo) => void;
   onPhotoLike?: PhotoLikeToggleHandler;
 }) {
-  const photosById = useMemo(() => new Map(photos.filter(isPhotoVisible).map((photo) => [photo.id, photo])), [photos]);
+  const photosById = useMemo(() => new Map(photos.map((photo) => [photo.id, photo])), [photos]);
   if (!awardResults?.categories.length) return null;
 
   return (
@@ -1830,7 +1823,7 @@ function HostAwardResultsSummary({
   onFeatureWinner: (photo: Photo) => Promise<void>;
 }) {
   if (!awardResults?.categories.length) return null;
-  const visiblePhotos = photos.filter(isPhotoVisible);
+  const visiblePhotos = photos;
   const photosById = new Map(visiblePhotos.map((photo) => [photo.id, photo]));
 
   return (
@@ -2983,7 +2976,6 @@ const FOUNDER_METRIC_LABELS: Array<[keyof FounderOverview["overview"], string, "
   ["totalContributors", "Contributors", "green"],
   ["totalRecapOpens", "Recap opens", "plum"],
   ["totalFeedbackSubmissions", "Feedback", "default"],
-  ["hiddenPhotoCount", "Hidden photos", "default"],
 ];
 
 function FounderDashboard() {
@@ -3091,7 +3083,7 @@ function FounderDashboard() {
               "Confirm one real event has guest, poster, and Recap links.",
               "Watch guest joins, uploads, contributors, and Recap opens.",
               "Check Event Awards votes if the event uses awards.",
-              "Review beta issues, host feedback, and hidden photos after the event.",
+              "Review beta issues, host feedback, and recent uploads after the event.",
             ].map((item, index) => (
               <p className="rounded-[1.15rem] bg-[#fffaf6] p-4" key={item}><strong className="text-[#653e00]">{index + 1}.</strong> {item}</p>
             ))}
@@ -3530,7 +3522,7 @@ function EventReadyHandoffPanel({ event, shareAssets, onCopyGuestLink, onDismiss
   const [copyBusy, setCopyBusy] = useState(false);
   const steps = [
     ["Share the guest link", "Send this in the group chat. Guests can add photos without an account."],
-    ["Review photos", "Keep an eye on uploads and hide anything that should not appear in the album."],
+    ["Review photos", "Keep an eye on uploads and delete anything that should not appear in the album."],
     ["Share the recap", isMemoryCapsule ? "Send it after reveal so everyone has the photos in one place." : "Send it whenever you want everyone to revisit the album."],
   ];
 
@@ -3598,7 +3590,7 @@ function HostLinkPurposeHelper() {
   const rows = [
     ["Guest link", "Text this to friends so they can add photos from their phone."],
     ["QR poster", "Print it or show it when scanning is easier than texting a link."],
-    ["Photo review", "Use the Photos tab to check uploads, feature favorites, and hide anything off-tone."],
+    ["Photo review", "Use the Photos tab to check uploads, feature favorites, and delete anything off-tone."],
     ["Shared Recap", "Send this when it is over so everyone has the photos in one place."],
   ];
 
@@ -3658,7 +3650,7 @@ function ManageEvent() {
 
   useEffect(() => {
     if (galleryFilter === "all") return;
-    if (["visible", "hidden", "featured", "liked"].includes(galleryFilter)) return;
+    if (["featured", "liked"].includes(galleryFilter)) return;
     if (!event?.challenge) {
       setGalleryFilter("all");
       return;
@@ -3674,13 +3666,6 @@ function ManageEvent() {
     if (nextPhoto) setSelectedPhoto(nextPhoto);
   }
 
-  async function updatePhotoVisibility(photo: Photo, visibilityStatus: PhotoVisibilityStatus) {
-    const hiddenReason = visibilityStatus === "HIDDEN" ? "Hidden by host" : undefined;
-    const data = await eventFilmApi.updatePhotoVisibility(eventId || "", photo.id, visibilityStatus, hiddenReason, auth.token);
-    trackAnalytics(visibilityStatus === "HIDDEN" ? "photo_hidden" : "photo_restored", { eventId, eventSlug: event?.slug, metadata: { photoId: photo.id, visibilityStatus } });
-    await refreshAfterPhotoAction(data.photo);
-  }
-
   async function updatePhotoFeatured(photo: Photo, isFeatured: boolean) {
     const data = await eventFilmApi.updatePhotoFeatured(eventId || "", photo.id, isFeatured, auth.token);
     trackAnalytics(isFeatured ? "photo_featured" : "photo_unfeatured", { eventId, eventSlug: event?.slug, metadata: { photoId: photo.id } });
@@ -3688,16 +3673,16 @@ function ManageEvent() {
   }
 
   async function deletePhoto(photoId: string) {
-    if (!confirm("Delete this photo permanently? Hidden photos can be restored, but deleted photos are removed from storage.")) return;
+    if (!confirm("Delete this photo? It will be removed from storage and public event views.")) return;
     await api(`/api/host/events/${eventId}/photos/${photoId}`, { method: "DELETE", token: auth.token });
     setSelectedPhoto(null);
     await load();
   }
 
-  async function downloadZip(scope: "visible" | "all" = "visible") {
+  async function downloadZip() {
     if (!eventId) return;
     setDownloadStatus("");
-    const response = await fetch(`${eventFilmApi.getHostEventDownloadUrl(eventId)}?scope=${scope}`, {
+    const response = await fetch(eventFilmApi.getHostEventDownloadUrl(eventId), {
       headers: { Authorization: `Bearer ${auth.token}` },
     });
     if (!response.ok) throw new Error("Download failed");
@@ -3705,11 +3690,11 @@ function ManageEvent() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `${event?.name || "event"}-${scope}-photos.zip`;
+    a.download = `${event?.name || "event"}-photos.zip`;
     a.click();
     URL.revokeObjectURL(url);
-    trackAnalytics("album_downloaded", { eventId, eventSlug: event?.slug, metadata: { scope, photoCount: scope === "visible" ? visiblePhotos.length : event?.photos.length || 0 } });
-    setDownloadStatus(scope === "visible" ? "Visible photo ZIP downloaded. Hidden photos were excluded." : "All non-deleted photo ZIP downloaded for host review.");
+    trackAnalytics("album_downloaded", { eventId, eventSlug: event?.slug, metadata: { scope: "photos", photoCount: visiblePhotos.length } });
+    setDownloadStatus("Photo ZIP downloaded.");
   }
 
   async function saveChallenge() {
@@ -3781,8 +3766,6 @@ function ManageEvent() {
     const eventPhotos = event?.photos || [];
     return eventPhotos.filter((photo) => {
       if (galleryFilter === "all") return true;
-      if (galleryFilter === "visible") return isPhotoVisible(photo);
-      if (galleryFilter === "hidden") return photo.visibilityStatus === "HIDDEN";
       if (galleryFilter === "featured") return Boolean(photo.isFeatured);
       if (galleryFilter === "liked") return Number(photo.likeCount || 0) > 0;
       if (galleryFilter.startsWith("color:")) return photo.challengeColorSlug === galleryFilter.replace("color:", "");
@@ -3795,9 +3778,8 @@ function ManageEvent() {
       return Number(second.likeCount || 0) - Number(first.likeCount || 0) || new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
     });
   }, [event?.photos, galleryFilter]);
-  const visiblePhotos = useMemo(() => event?.photos.filter(isPhotoVisible) || [], [event?.photos]);
+  const visiblePhotos = useMemo(() => event?.photos || [], [event?.photos]);
   const hostContributorSummary = useMemo(() => buildContributorSummary(visiblePhotos), [visiblePhotos]);
-  const hiddenCount = useMemo(() => event?.photos.filter((photo) => photo.visibilityStatus === "HIDDEN").length || 0, [event?.photos]);
   const featuredCount = useMemo(() => event?.photos.filter((photo) => Boolean(photo.isFeatured)).length || 0, [event?.photos]);
   const likedCount = useMemo(() => event?.photos.filter((photo) => Number(photo.likeCount || 0) > 0).length || 0, [event?.photos]);
   const hostAwardResults = useMemo(() => event ? eventAnalytics?.eventAwardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visiblePhotos }) : null, [event, eventAnalytics?.eventAwardResults, visiblePhotos]);
@@ -3832,9 +3814,7 @@ function ManageEvent() {
     });
   }, [event?.id, event?.slug, lifecycle?.status]);
 
-  async function handleHostPhotoAction(action: "hide" | "restore" | "feature" | "unfeature" | "delete", photo: Photo) {
-    if (action === "hide") return updatePhotoVisibility(photo, "HIDDEN");
-    if (action === "restore") return updatePhotoVisibility(photo, "VISIBLE");
+  async function handleHostPhotoAction(action: "feature" | "unfeature" | "delete", photo: Photo) {
     if (action === "feature") return updatePhotoFeatured(photo, true);
     if (action === "unfeature") return updatePhotoFeatured(photo, false);
     return deletePhoto(photo.id);
@@ -4020,7 +4000,7 @@ function ManageEvent() {
                   </p>
                 </div>
                 <div className="grid gap-2 rounded-[1.15rem] bg-[#fffaf6] p-4 text-sm font-bold text-stone-700">
-                  <span>{visiblePhotos.length} visible photos</span>
+                  <span>{visiblePhotos.length} album photos</span>
                   <span>{featuredCount} host picks</span>
                   <span>{likedCount} guest favorites</span>
                   <span>{hostContributorSummary.contributorCount || "Guest"} {hostContributorSummary.contributorCount === 1 ? "contributor" : "contributors"}</span>
@@ -4029,7 +4009,7 @@ function ManageEvent() {
               <div className="mt-5 flex flex-wrap gap-2">
                 {event.recapLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Preview recap</a> : null}
                 {event.recapLink ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</SecondaryButton> : null}
-                <SecondaryButton onClick={() => downloadZip("visible")}>Download photos</SecondaryButton>
+                <SecondaryButton onClick={() => downloadZip()}>Download photos</SecondaryButton>
               </div>
               <div className="mt-6 grid gap-2 rounded-[1.15rem] bg-white p-4 text-sm font-semibold text-stone-700 ring-1 ring-[#eadfce]">
                 <p className="font-bold text-stone-950">Before you share it</p>
@@ -4039,11 +4019,6 @@ function ManageEvent() {
               </div>
               {downloadStatus && <p className="mt-3 rounded-2xl bg-green-50 p-3 text-sm font-bold text-green-700">{downloadStatus}</p>}
             </Card>
-            <div className="mt-4 grid gap-3 rounded-3xl bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto_auto] sm:items-center">
-              <p className="text-sm font-semibold text-stone-600">Visible export excludes hidden photos by default.</p>
-              <SecondaryButton onClick={() => downloadZip("visible")}>Download visible ZIP</SecondaryButton>
-              <SecondaryButton onClick={() => downloadZip("all")}>Download all ZIP</SecondaryButton>
-            </div>
           </section>
           ) : null}
 
@@ -4056,8 +4031,7 @@ function ManageEvent() {
                   ["Guest joins", eventAnalytics.guestJoins],
                   ["Uploads", eventAnalytics.uploads],
                   ["Recap views", eventAnalytics.recapOpens],
-                  ["Visible photos", eventAnalytics.visiblePhotos],
-                  ["Hidden photos", eventAnalytics.hiddenPhotos],
+                  ["Album photos", eventAnalytics.visiblePhotos],
                   ["Host picks", eventAnalytics.featuredPhotos],
                   ["Guest hearts", eventAnalytics.photoLikes || 0],
                 ].map(([label, value], index) => (
@@ -4068,7 +4042,7 @@ function ManageEvent() {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <h3 className="font-display text-2xl font-bold text-stone-950">People who uploaded</h3>
-                    <p className="mt-1 text-sm font-semibold text-stone-600">{hostContributorSummary.totalPhotos} visible photos from {hostContributorSummary.contributorCount || "guest"} {hostContributorSummary.contributorCount === 1 ? "contributor" : "contributors"}.</p>
+                    <p className="mt-1 text-sm font-semibold text-stone-600">{hostContributorSummary.totalPhotos} album photos from {hostContributorSummary.contributorCount || "guest"} {hostContributorSummary.contributorCount === 1 ? "contributor" : "contributors"}.</p>
                   </div>
                   {hostContributorSummary.topContributors.length ? (
                     <div className="flex flex-wrap gap-2">
@@ -4174,8 +4148,6 @@ function ManageEvent() {
                 <div className="flex min-w-max gap-2 sm:min-w-0 sm:flex-wrap">
                   {[
                     ["all", `All photos (${event.photos.length})`],
-                    ["visible", `Visible (${visiblePhotos.length})`],
-                    ["hidden", `Hidden (${hiddenCount})`],
                     ["featured", `Host picks (${featuredCount})`],
                     ["liked", `Most liked (${likedCount})`],
                   ].map(([key, label]) => (
@@ -4213,7 +4185,7 @@ function ManageEvent() {
             </div>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
               {filteredPhotos.map((photo, index) => (
-                <div className={cx("overflow-hidden rounded-[1.45rem] border bg-white p-2 shadow-[0_12px_30px_rgba(101,62,0,0.055)]", photo.visibilityStatus === "HIDDEN" ? "border-red-200 opacity-80" : "border-[#eadfce]")} key={photo.id}>
+                <div className="overflow-hidden rounded-[1.45rem] border border-[#eadfce] bg-white p-2 shadow-[0_12px_30px_rgba(101,62,0,0.055)]" key={photo.id}>
                   <button className="block w-full text-left" onClick={() => {
                     setSelectedPhoto(photo);
                     trackAnalytics("photo_lightbox_opened", { eventId, eventSlug: event.slug, metadata: { surface: "host", photoId: photo.id } });
@@ -4235,15 +4207,10 @@ function ManageEvent() {
                       <p className="mt-2 text-sm font-semibold text-[#653e00]">{photo.challengeItemKind === "award" ? "Award" : "Photo prompt"}: {photo.challengeItemLabel}</p>
                     )}
                     <p className="mt-1 text-stone-600">{formatDateTime(photo.createdAt)}</p>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                      <button className={cx("min-h-10 rounded-[0.95rem] px-4 py-2 text-sm font-bold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-[#fff0d8] text-[#653e00]")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)} disabled={photo.visibilityStatus === "HIDDEN"}>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <button className={cx("min-h-10 rounded-[0.95rem] px-4 py-2 text-sm font-bold", photo.isFeatured ? "bg-stone-950 text-white" : "bg-[#fff0d8] text-[#653e00]")} onClick={() => updatePhotoFeatured(photo, !photo.isFeatured)}>
                         {photo.isFeatured ? "Unpick" : "Host pick"}
                       </button>
-                      {photo.visibilityStatus === "HIDDEN" ? (
-                        <SecondaryButton className="min-h-10 rounded-[0.95rem] px-4 py-2" onClick={() => updatePhotoVisibility(photo, "VISIBLE")}>Restore</SecondaryButton>
-                      ) : (
-                        <SecondaryButton className="min-h-10 rounded-[0.95rem] px-4 py-2" onClick={() => updatePhotoVisibility(photo, "HIDDEN")}>Hide</SecondaryButton>
-                      )}
                       <button className="min-h-10 rounded-[0.95rem] bg-stone-100 px-4 py-2 text-sm font-bold text-stone-700 ring-1 ring-stone-200" onClick={() => setSelectedPhoto(photo)}>More</button>
                     </div>
                   </div>
@@ -4384,7 +4351,7 @@ function EventRecap() {
   }, [slug]);
 
   const event = data?.event;
-  const visibleRecapPhotos = useMemo(() => data?.photos.filter(isPhotoVisible) || [], [data?.photos]);
+  const visibleRecapPhotos = useMemo(() => data?.photos || [], [data?.photos]);
   const awardResults = useMemo(() => event ? buildAwardResultsSummary({ challenge: event.challenge, photos: visibleRecapPhotos }) : null, [event, visibleRecapPhotos]);
   const story = useMemo(() => event && data ? buildEventRecapStory(event, data.photos, { awardResults, awardVoting: data.awardVoting }) : null, [awardResults, data, event]);
   const recapHeroSentence = data?.isLocked
@@ -4608,6 +4575,7 @@ function GuestEvent() {
   const returnedTrackedRef = useRef(false);
   const nameChoiceTrackedRef = useRef(false);
   const progressTrackedRef = useRef(false);
+  const lastSyncedNicknameRef = useRef(session.nickname);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [myUploads, setMyUploads] = useState<Photo[]>([]);
   const [localUploads, setLocalUploads] = useState<GuestUploadLocalMetadata[]>(() => loadGuestUploadMetadata(slug));
@@ -4642,15 +4610,6 @@ function GuestEvent() {
       });
     }
     const rememberedUploads = loadGuestUploadMetadata(slug);
-    setLocalUploads(rememberedUploads);
-    if (rememberedUploads.length && !returnedTrackedRef.current) {
-      returnedTrackedRef.current = true;
-      trackAnalytics("guest_returned_to_event", {
-        eventId: eventData.event.id,
-        eventSlug: eventData.event.slug,
-        metadata: { photoCount: rememberedUploads.length },
-      });
-    }
     if (!joinedTrackedRef.current) {
       joinedTrackedRef.current = true;
       trackAnalytics("guest_joined_event", {
@@ -4659,10 +4618,26 @@ function GuestEvent() {
         metadata: { mode: eventData.event.challenge?.type || "NONE", hasChallenge: Boolean(eventData.event.challenge) },
       });
     }
-    const status = await api<{ nickname: string | null }>(`/api/events/${slug}/guest-status?clientId=${encodeURIComponent(session.clientId)}`);
-    if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && status.nickname && !nickname) setNickname(status.nickname);
+    const status = await eventFilmApi.getGuestStatus(slug, session.clientId);
+    if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT) {
+      const savedNickname = status.nickname && !isAnonymousGuestDisplayName(status.nickname) ? status.nickname : "";
+      lastSyncedNicknameRef.current = savedNickname;
+      if (savedNickname && !nickname) setNickname(savedNickname);
+    }
     const myUploadData = await eventFilmApi.getGuestMyUploads(slug, session.clientId);
     setMyUploads(myUploadData.photos);
+    const visibleUploadIds = new Set(myUploadData.photos.map((photo) => photo.id));
+    const currentUploads = rememberedUploads.filter((item) => visibleUploadIds.has(item.photoId));
+    if (currentUploads.length !== rememberedUploads.length) saveGuestUploadMetadata(slug, currentUploads);
+    setLocalUploads(currentUploads);
+    if (currentUploads.length && !returnedTrackedRef.current) {
+      returnedTrackedRef.current = true;
+      trackAnalytics("guest_returned_to_event", {
+        eventId: eventData.event.id,
+        eventSlug: eventData.event.slug,
+        metadata: { photoCount: currentUploads.length },
+      });
+    }
     trackAnalytics("guest_my_uploads_viewed", { eventId: eventData.event.id, eventSlug: eventData.event.slug, metadata: { surface: "guest_upload", photoCount: myUploadData.photos.length } });
     if (eventData.event.isRevealed) {
       if (eventData.event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
@@ -4719,6 +4694,31 @@ function GuestEvent() {
     if (nextNickname.trim() && !nameChoiceTrackedRef.current) {
       nameChoiceTrackedRef.current = true;
       trackAnalytics("guest_name_entered", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
+    }
+  }
+
+  function applyGuestDisplayNameToCurrentUploads(displayName: string) {
+    const uploadIds = new Set([...myUploads.map((photo) => photo.id), ...localUploads.map((item) => item.photoId)]);
+    if (!uploadIds.size) return;
+    const renamePhoto = (photo: Photo): Photo => uploadIds.has(photo.id) ? { ...photo, guestNickname: displayName } : photo;
+    setPhotos((current) => current.map(renamePhoto));
+    setMyUploads((current) => current.map((photo) => ({ ...photo, guestNickname: displayName })));
+    setSelectedPhoto((current) => current && uploadIds.has(current.id) ? { ...current, guestNickname: displayName } : current);
+    setLocalUploads((current) => current.map((item) => uploadIds.has(item.photoId) ? { ...item, guestDisplayName: displayName } : item));
+  }
+
+  async function commitGuestDisplayName() {
+    if (!event || event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT) return;
+    if (nickname === lastSyncedNicknameRef.current) return;
+
+    try {
+      const status = await eventFilmApi.updateGuestDisplayName(slug, { clientId: session.clientId, nickname });
+      const savedNickname = status.nickname && !isAnonymousGuestDisplayName(status.nickname) ? status.nickname : "";
+      lastSyncedNicknameRef.current = savedNickname || nickname;
+      if (savedNickname && savedNickname !== nickname) saveNickname(savedNickname);
+      if (status.nickname) applyGuestDisplayNameToCurrentUploads(status.nickname);
+    } catch (err) {
+      setError(publicRouteErrorMessage(err, "Name saved on this device, but prior uploads could not be renamed. Try again when connected."));
     }
   }
 
@@ -4822,7 +4822,7 @@ function GuestEvent() {
       eventId: event.id,
       eventSlug: event.slug,
       mode: event.challenge?.type || "NONE",
-      nickname: selectedParticipant?.displayName || sanitizeGuestDisplayName(nickname),
+      nickname: selectedParticipant?.displayName || nickname,
       challengeParticipantId: selectedParticipant?.id,
       challengePromptId: selectedPrompt?.id,
       challengeItemId: selectedAward?.id,
@@ -4962,8 +4962,6 @@ function GuestEvent() {
   const capsuleCopy = useMemo(() => event?.challenge?.type === CHALLENGE_TYPES.MEMORY_CAPSULE ? memoryCapsuleFromChallenge(event.challenge) : null, [event?.challenge]);
   const guestProgress = useMemo(() => event ? buildGuestChallengeProgress(event.challenge, photos, { participantId: selectedParticipantId, promptId: selectedPromptId, itemId: selectedItemId }) : null, [event, photos, selectedItemId, selectedParticipantId, selectedPromptId]);
   const contributorSummary = useMemo(() => buildContributorSummary(photos), [photos]);
-  const visibleMyUploadIds = useMemo(() => new Set(myUploads.map((photo) => photo.id)), [myUploads]);
-  const unavailableUploads = useMemo(() => localUploads.filter((item) => !visibleMyUploadIds.has(item.photoId)), [localUploads, visibleMyUploadIds]);
   const compactPromptItems = useMemo(() => showAllChallengeItems ? guestPrompts : guestPrompts.slice(0, 3), [guestPrompts, showAllChallengeItems]);
   const compactAwardItems = useMemo(() => showAllChallengeItems ? guestAwards : guestAwards.slice(0, 3), [guestAwards, showAllChallengeItems]);
   useEffect(() => {
@@ -5459,7 +5457,9 @@ function GuestEvent() {
                   {event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT ? (
                     <label className="mt-4 grid gap-2 text-sm font-bold text-stone-700">
                       Display name <span className="font-semibold text-stone-500">(optional)</span>
-                      <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} placeholder="Optional" />
+                      <TextInput value={nickname} onChange={(event) => saveNickname(event.target.value)} onBlur={() => {
+                        void commitGuestDisplayName();
+                      }} placeholder="Optional" />
                       <span className="text-xs font-semibold text-stone-500">Leave blank to post as Anonymous guest.</span>
                     </label>
                   ) : null}
@@ -5563,15 +5563,6 @@ function GuestEvent() {
                   ) : (
                     <p className="mt-3 rounded-lg bg-stone-50 p-3 text-sm font-semibold text-stone-600">No uploads from this device yet.</p>
                   )}
-                  {unavailableUploads.length ? (
-                    <div className="mt-3 grid gap-2">
-                      {unavailableUploads.slice(0, 4).map((item) => (
-                        <p className="rounded-lg bg-amber-50 p-3 text-sm font-bold text-amber-900" key={item.photoId}>
-                          {item.challengeLabel || "This photo"} is only visible to the host right now.
-                        </p>
-                      ))}
-                    </div>
-                  ) : null}
                 </section>
               </div>
             </div>

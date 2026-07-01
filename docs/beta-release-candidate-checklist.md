@@ -51,9 +51,9 @@ Deployed rehearsal:
 12. Confirm the public album works.
 13. Confirm My Uploads works on the phone browser.
 14. Feature the photo.
-15. Hide the photo.
-16. Confirm the hidden photo disappears from public album and Recap.
-17. Restore the photo.
+15. Delete the test photo.
+16. Confirm the deleted photo disappears from public album and Recap.
+17. Upload a second test photo if the remaining checks need one.
 18. Open the photo from a public surface and confirm the full image, overlay details, and hearts render cleanly.
 19. Confirm founder dashboard metrics if `FOUNDER_EMAILS` is configured.
 20. Delete the test event or clearly mark it as test data after verification.

@@ -21,7 +21,7 @@ Use this to record a concise product demo after the deployed release candidate i
 - Guest upload on phone browser.
 - QR poster.
 - Recap.
-- Photo moderation: hide/restore, feature/unfeature, full-photo review.
+- Photo moderation: delete, feature/unfeature, full-photo review.
 - Analytics summary.
 
 ## 30 To 60 Second Script

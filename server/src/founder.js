@@ -1,8 +1,6 @@
 const DAY_MS = 24 * 60 * 60 * 1000;
 const LIST_LIMIT = 10;
 const ACTIVITY_LIMIT = 25;
-const PHOTO_VISIBILITY_VISIBLE = "VISIBLE";
-const PHOTO_VISIBILITY_HIDDEN = "HIDDEN";
 
 const FOUNDER_METRIC_DEFINITIONS = {
   totalHosts: "All registered host accounts.",
@@ -16,7 +14,6 @@ const FOUNDER_METRIC_DEFINITIONS = {
   totalContributors: "Guest rows created across all events.",
   totalRecapOpens: "Tracked recap_opened analytics events.",
   totalFeedbackSubmissions: "Saved host feedback rows, including skipped feedback.",
-  hiddenPhotoCount: "Non-deleted photos currently hidden by a host.",
 };
 
 function publicEventUrl(clientUrl, slug) {
@@ -61,9 +58,8 @@ function compactUpload(photo, { clientUrl, serverUrl, getPhotoPreviewUrl }) {
     eventSlug: photo.event?.slug || "",
     guestNickname: photo.guest?.nickname || null,
     createdAt: photo.createdAt,
-    visibilityStatus: photo.visibilityStatus,
     challengeItemLabel: photo.challengeItemLabel,
-    previewUrl: photo.visibilityStatus === PHOTO_VISIBILITY_VISIBLE ? `${serverUrl}${getPhotoPreviewUrl(photo.id)}` : null,
+    previewUrl: `${serverUrl}${getPhotoPreviewUrl(photo.id)}`,
     eventLink: photo.event?.slug ? publicEventUrl(clientUrl, photo.event.slug) : null,
     recapLink: photo.event?.slug ? recapUrl(clientUrl, photo.event.slug) : null,
   };
@@ -194,7 +190,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     totalContributors,
     totalRecapOpens,
     totalFeedbackSubmissions,
-    hiddenPhotoCount,
     recentEvents,
     activeEvents,
     recentUploads,
@@ -215,7 +210,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
     prisma.guest.count(),
     prisma.analyticsEvent.count({ where: { name: "recap_opened" } }),
     prisma.hostEventFeedback.count(),
-    prisma.photo.count({ where: { deletedAt: null, visibilityStatus: PHOTO_VISIBILITY_HIDDEN } }),
     prisma.event.findMany({ orderBy: { createdAt: "desc" }, take: LIST_LIMIT, include: eventInclude }),
     prisma.event.findMany({
       where: {
@@ -299,7 +293,6 @@ async function buildFounderOverview({ prisma, requesterUserId, now = new Date(),
       totalContributors,
       totalRecapOpens,
       totalFeedbackSubmissions,
-      hiddenPhotoCount,
     },
     funnel: {
       hosts: totalHosts,

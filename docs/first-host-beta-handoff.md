@@ -32,15 +32,15 @@ Use this for the first real EventFilm host tests. Keep the first event small, fr
 - Share the QR code and guest link early.
 - Keep the QR poster visible on a laptop, TV, projector, iPad, or printout.
 - Ask guests to upload one photo in the first 15 minutes.
-- Keep the host dashboard available for hide/restore if needed.
+- Keep the host dashboard available for deleting problem photos if needed.
 - If upload fails, try phone browser refresh, then check connection, then have Fernando run API/storage smoke.
 
 ## After The Event
 
 - Open Recap.
-- Hide or delete any test/problem photos.
+- Delete any test/problem photos.
 - Feature a few favorites.
-- Download the visible ZIP.
+- Download the photo ZIP.
 - Share the Recap link with the host.
 - Record what worked, what confused the host, and whether guests uploaded without help.
 
