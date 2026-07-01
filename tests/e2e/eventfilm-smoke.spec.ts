@@ -6,7 +6,6 @@ const apiUrl = (process.env.BROWSER_SMOKE_API_URL || process.env.EVENTFILM_API_U
 const baseUrl = (process.env.BROWSER_SMOKE_BASE_URL || process.env.EVENTFILM_WEB_URL || "http://localhost:5173").replace(/\/+$/, "");
 const seededSlug = process.env.EVENTFILM_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-memory-capsule";
 const revealedSeededSlug = process.env.EVENTFILM_REVEALED_SMOKE_EVENT_SLUG || "eventfilm-beta-demo-storage-smoke";
-const landingDemoSlug = process.env.VITE_LANDING_DEMO_SLUG || revealedSeededSlug;
 const defaultSmokeHostEmail = "fernando+eventfilm-demo@example.com";
 const defaultSmokeHostPassword = "eventfilm-beta-demo";
 
@@ -199,7 +198,7 @@ test.describe("EventFilm browser smoke", () => {
     test.info().annotations.push({ type: "consoleProblems", description: consoleProblems.join("\n") });
   });
 
-  test("public marketing and trust pages load without console errors", async ({ page, request }) => {
+  test("public marketing and trust pages load without console errors", async ({ page }) => {
     const consoleProblems: string[] = [];
     page.on("console", (message) => {
       if (["error", "warning"].includes(message.type())) consoleProblems.push(message.text());
@@ -212,21 +211,11 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("link", { name: /^Dashboard$/i }).first()).toHaveAttribute("href", /\/dashboard$/);
     await expect(page.getByRole("link", { name: /Try a demo/i })).toHaveAttribute("href", /\/demo$/);
 
-    let demoEventAvailable = false;
-    try {
-      const demoEventResponse = await request.get(`${apiUrl}/api/events/${encodeURIComponent(landingDemoSlug)}`);
-      demoEventAvailable = demoEventResponse.ok();
-    } catch {
-      demoEventAvailable = false;
-    }
-
     await page.goto("/demo");
-    if (demoEventAvailable) {
-      await expect(page).toHaveURL(new RegExp(`/e/${escapeRegExp(landingDemoSlug)}$`));
-    } else {
-      await expect(page.getByRole("heading", { name: /See how guests add photos/i })).toBeVisible();
-      await expect(page.getByRole("link", { name: /^Dashboard$/i }).first()).toHaveAttribute("href", /\/dashboard$/);
-    }
+    await expect(page).toHaveURL(/\/demo$/);
+    await expect(page.getByRole("heading", { name: "Demo Event" })).toBeVisible();
+    await expect(page.locator("#demo-event-album img[alt^='Demo Event sample photo']")).toHaveCount(4);
+    await expect(page.getByRole("link", { name: /^Add photos$/i }).first()).toHaveAttribute("href", /\/signup$/);
 
     for (const path of ["/privacy", "/terms", "/support"]) {
       await page.goto(path);
@@ -274,59 +263,24 @@ test.describe("EventFilm browser smoke", () => {
     expect(consoleProblems).toEqual([]);
   });
 
-  test("demo preview fallback renders a mobile-safe MP4 video", async ({ page }) => {
+  test("demo guest view renders sample photos and routes add photos to signup on mobile", async ({ page }) => {
     const consoleProblems: string[] = [];
     page.on("console", (message) => {
       if (["error", "warning"].includes(message.type())) consoleProblems.push(message.text());
     });
     page.on("pageerror", (error) => consoleProblems.push(error.message));
-    await page.route(`**/api/events/${encodeURIComponent(landingDemoSlug)}`, async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: "demo unavailable during smoke",
-      });
-    });
 
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/demo");
-    await expect(page.getByRole("heading", { name: /See how guests add photos/i })).toBeVisible();
-
-    const mediaFrame = page.getByLabel("EventFilm guest upload demo media");
-    await expect(mediaFrame).toBeVisible();
-    await expectLocatorFullyFitsViewport(page, mediaFrame);
-    const demoVideo = page.getByLabel("EventFilm guest upload demo video");
-    await expect(demoVideo).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Demo Event" })).toBeVisible();
+    await expect(page.locator("#demo-event-album img[alt^='Demo Event sample photo']")).toHaveCount(4);
     await expectNoHorizontalOverflow(page);
 
-    const videoState = await demoVideo.evaluate((element) => {
-      const video = element as HTMLVideoElement;
-      const sources = Array.from(video.querySelectorAll("source")).map((source) => ({
-        src: source.getAttribute("src"),
-        type: source.getAttribute("type"),
-      }));
-      return {
-        controls: video.controls,
-        muted: video.muted,
-        networkNoSource: HTMLMediaElement.NETWORK_NO_SOURCE,
-        networkState: video.networkState,
-        playsInline: video.playsInline,
-        poster: video.getAttribute("poster"),
-        preload: video.getAttribute("preload"),
-        sources,
-      };
-    });
-
-    expect(videoState.controls).toBe(true);
-    expect(videoState.muted).toBe(true);
-    expect(videoState.playsInline).toBe(true);
-    expect(videoState.poster).toBe("/demo/guest-upload-poster.webp");
-    expect(videoState.preload).toBe("metadata");
-    expect(videoState.networkState).not.toBe(videoState.networkNoSource);
-    expect(videoState.sources).toEqual([
-      { src: "/demo/guest-upload-demo.mp4", type: 'video/mp4; codecs="avc1.640028"' },
-      { src: "/demo/guest-upload-demo.webm", type: 'video/webm; codecs="vp9"' },
-    ]);
+    const addPhotos = page.getByRole("link", { name: /^Add photos$/i }).first();
+    await expect(addPhotos).toHaveAttribute("href", /\/signup$/);
+    await addPhotos.click();
+    await expect(page).toHaveURL(/\/signup$/);
+    await expect(page.getByRole("heading", { name: /Create host account/i })).toBeVisible();
     expect(consoleProblems).toEqual([]);
   });
 
@@ -481,7 +435,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.locator("body")).toContainText("Add photos");
     await expect(page.locator("#event-album")).toContainText(/album unlocks|Album reveal is locked|No photos yet|recent moments/i);
     await page.getByRole("button", { name: "Add photos" }).first().click();
-    await expect(page.locator("form#guest-upload-card")).toContainText(/Add photos/i);
+    await expect(page.locator("#guest-upload-card")).toContainText(/Take photo|Library/i);
     await expect(page.getByRole("dialog", { name: "Add photos" })).toContainText(/No account needed/i);
 
     const removedLiveWallResponse = await request.get(`${apiUrl}/api/events/${seededSlug}/live-wall`);
@@ -645,7 +599,7 @@ test.describe("EventFilm browser smoke", () => {
 
       await page.goto(`/e/${seededSlug}`);
       await page.getByRole("button", { name: "Add photos" }).first().click();
-      await expect(page.locator("form#guest-upload-card")).toContainText(/Add photos/i);
+      await expect(page.locator("#guest-upload-card")).toContainText(/Take photo|Library/i);
       await expect(page.getByRole("dialog", { name: "Add photos" })).toContainText(/No account needed/i);
 
       await request.patch(`${apiUrl}/api/host/events/${eventId}`, {
@@ -735,18 +689,25 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("dialog", { name: "Add photos" })).toContainText(/No account needed/i);
     await expect(page.locator("#my-uploads")).toContainText("No uploads from this device yet.");
 
-    await page.getByLabel("Choose from phone").setInputFiles({
-      name: "guest-browser-smoke.jpg",
-      mimeType: "image/jpeg",
-      buffer: Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2w==", "base64"),
-    });
-    await page.locator("form#guest-upload-card").getByRole("button", { name: "Add photos" }).click();
-    await expect(page.locator("form#guest-upload-card")).toContainText("Photo added.");
-    await expect(page.getByRole("button", { name: "Add another photo" })).toBeVisible();
+    const smokeUploadFiles = [
+      {
+        name: "guest-browser-smoke-1.jpg",
+        mimeType: "image/jpeg",
+        buffer: Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2w==", "base64"),
+      },
+      {
+        name: "guest-browser-smoke-2.jpg",
+        mimeType: "image/jpeg",
+        buffer: Buffer.from("/9j/4AAQSkZJRgABAQAAAQABAAD/2w==", "base64"),
+      },
+    ];
+
+    await page.getByLabel("Choose from phone").setInputFiles(smokeUploadFiles);
+    await expect(page.locator("#guest-upload-card")).toContainText("2 photos added.");
     await expect(page.getByRole("link", { name: "View my uploads" })).toBeVisible();
     await page.getByRole("link", { name: "View my uploads" }).click();
-    await expect(page.locator("#my-uploads")).toContainText("Your uploads on this device");
-    await expect(page.locator("#my-uploads img")).toHaveCount(1);
+    await expect(page.locator("#my-uploads")).toContainText("Your uploads");
+    await expect(page.locator("#my-uploads img")).toHaveCount(2);
 
     const uploads = await request.get(`${apiUrl}/api/events/${revealedSeededSlug}/my-uploads`, {
       params: { clientId: await page.evaluate(() => JSON.parse(window.localStorage.getItem(`eventfilm_guest_${location.pathname.split("/").pop()}`) || "{}").clientId || "") },
@@ -754,7 +715,7 @@ test.describe("EventFilm browser smoke", () => {
     if (uploads.ok()) {
       const data = await uploads.json();
       for (const photo of data.photos || []) {
-        if (photo.originalFilename === "guest-browser-smoke.jpg") {
+        if (["guest-browser-smoke-1.jpg", "guest-browser-smoke-2.jpg"].includes(photo.originalFilename)) {
           await request.delete(`${apiUrl}/api/host/events/${eventId}/photos/${photo.id}`, {
             headers: { Authorization: `Bearer ${auth.token}` },
           });

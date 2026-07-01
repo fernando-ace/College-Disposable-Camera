@@ -68,12 +68,79 @@ if (!API_URL) {
 
 const API_BASE_URL = API_URL.startsWith("http://") || API_URL.startsWith("https://") ? API_URL : `https://${API_URL}`;
 const API_ORIGIN = new URL(API_BASE_URL).origin;
-const DEFAULT_LANDING_DEMO_SLUG = "eventfilm-beta-demo-storage-smoke";
-const LANDING_DEMO_SLUG = (import.meta.env.VITE_LANDING_DEMO_SLUG || DEFAULT_LANDING_DEMO_SLUG).trim() || DEFAULT_LANDING_DEMO_SLUG;
 const LANDING_DEMO_PATH = "/demo";
-const LANDING_DEMO_VIDEO_POSTER = "/demo/guest-upload-poster.webp";
-const LANDING_DEMO_VIDEO_MP4 = "/demo/guest-upload-demo.mp4";
-const LANDING_DEMO_VIDEO_WEBM = "/demo/guest-upload-demo.webm";
+const DEMO_EVENT = {
+  id: "demo-event",
+  name: "Demo Event",
+  description: "A sample guest album with photos already added.",
+  slug: "demo-event",
+  eventDate: "2026-06-14T20:00:00.000Z",
+  revealAt: "2026-06-14T20:00:00.000Z",
+  photoLimitPerGuest: 0,
+  eventTemplateSlug: null,
+  promptPackSlug: null,
+  isRevealed: true,
+  photoCount: 4,
+  challenge: null,
+} satisfies PublicEvent;
+const DEMO_PHOTOS = [
+  {
+    id: "demo-photo-1",
+    url: "/demo/demo-album-1.jpg",
+    previewUrl: "/demo/demo-album-1.jpg",
+    originalFilename: "Demo Event sample photo 1",
+    mimeType: "image/jpeg",
+    sizeBytes: 195278,
+    createdAt: "2026-06-14T20:08:00.000Z",
+    guestNickname: "Maya",
+    visibilityStatus: "VISIBLE",
+    isFeatured: true,
+    likeCount: 18,
+    likedByMe: false,
+  },
+  {
+    id: "demo-photo-2",
+    url: "/demo/demo-album-2.jpg",
+    previewUrl: "/demo/demo-album-2.jpg",
+    originalFilename: "Demo Event sample photo 2",
+    mimeType: "image/jpeg",
+    sizeBytes: 3243200,
+    createdAt: "2026-06-14T20:16:00.000Z",
+    guestNickname: "Alex",
+    visibilityStatus: "VISIBLE",
+    isFeatured: false,
+    likeCount: 12,
+    likedByMe: false,
+  },
+  {
+    id: "demo-photo-3",
+    url: "/demo/demo-album-3.jpg",
+    previewUrl: "/demo/demo-album-3.jpg",
+    originalFilename: "Demo Event sample photo 3",
+    mimeType: "image/jpeg",
+    sizeBytes: 2455470,
+    createdAt: "2026-06-14T20:23:00.000Z",
+    guestNickname: "Jordan",
+    visibilityStatus: "VISIBLE",
+    isFeatured: true,
+    likeCount: 21,
+    likedByMe: false,
+  },
+  {
+    id: "demo-photo-4",
+    url: "/demo/demo-album-4.jpg",
+    previewUrl: "/demo/demo-album-4.jpg",
+    originalFilename: "Demo Event sample photo 4",
+    mimeType: "image/jpeg",
+    sizeBytes: 1671281,
+    createdAt: "2026-06-14T20:31:00.000Z",
+    guestNickname: "Taylor",
+    visibilityStatus: "VISIBLE",
+    isFeatured: false,
+    likeCount: 9,
+    likedByMe: false,
+  },
+] satisfies Photo[];
 const LANDING_USE_CASES = [
   { label: "Pregames", icon: "cup", image: "/landing/pregames.jpg" },
   { label: "Birthdays", icon: "cake", image: "/landing/birthdays.jpg" },
@@ -477,6 +544,21 @@ function recordGuestUploadMetadata(slug: string, photo: Photo) {
   return [nextItem, ...existing];
 }
 
+type GuestUploadQueueStatus = "queued" | "uploading" | "uploaded" | "failed";
+
+type GuestUploadQueueItem = {
+  id: string;
+  file: File;
+  status: GuestUploadQueueStatus;
+  error?: string;
+  photo?: Photo;
+  retryable?: boolean;
+};
+
+function createGuestUploadQueueId(index: number) {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${index}-${Math.random()}`;
+}
+
 function getChallengeParticipantSession(slug: string) {
   return `eventfilm_challenge_participant_${slug}`;
 }
@@ -681,6 +763,7 @@ function FullScreenPhotoViewer({
 }) {
   const [busy, setBusy] = useState("");
   const [localStatus, setLocalStatus] = useState("");
+  const swipeStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null);
   const galleryPhotos = photos.length ? photos : photo ? [photo] : [];
   const currentIndex = photo ? galleryPhotos.findIndex((item) => item.id === photo.id) : -1;
   const visibleIndex = currentIndex >= 0 ? currentIndex : 0;
@@ -725,76 +808,95 @@ function FullScreenPhotoViewer({
   }
 
   const guestName = photo.challengeParticipantName || photo.guestNickname || "Guest photo";
-  const detailRows = [
-    formatDateTime(photo.createdAt),
-    photoChallengeLabel(photo),
-    mode === "host" && photo.hiddenReason ? `Hidden: ${photo.hiddenReason}` : "",
-  ].filter((row): row is string => Boolean(row));
+  const photoDate = formatEventCardDate(photo.createdAt);
+
+  function handlePhotoPointerDown(event: React.PointerEvent<HTMLDivElement>) {
+    if (!canNavigate || (event.pointerType === "mouse" && event.button !== 0)) return;
+    swipeStartRef.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function resetPhotoSwipe(event?: React.PointerEvent<HTMLDivElement>) {
+    if (event && swipeStartRef.current?.pointerId === event.pointerId && event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    swipeStartRef.current = null;
+  }
+
+  function handlePhotoPointerUp(event: React.PointerEvent<HTMLDivElement>) {
+    const swipeStart = swipeStartRef.current;
+    if (!swipeStart || swipeStart.pointerId !== event.pointerId) return;
+    resetPhotoSwipe(event);
+    const deltaX = event.clientX - swipeStart.x;
+    const deltaY = event.clientY - swipeStart.y;
+    if (Math.abs(deltaX) < 50 || Math.abs(deltaX) <= Math.abs(deltaY) * 1.2) return;
+    navigatePhoto(deltaX < 0 ? 1 : -1);
+  }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden bg-black text-white" role="dialog" aria-modal="true" aria-label="Photo viewer">
-      <div className="absolute inset-0 flex items-center justify-center px-0 py-24 sm:px-8 sm:py-28">
-        <img className="max-h-full max-w-full object-contain" src={assetUrl(photo.url)} alt={photo.originalFilename} />
+    <div className="fixed inset-0 z-50 overflow-hidden bg-app text-ink" role="dialog" aria-modal="true" aria-label="Photo viewer">
+      <div
+        className="absolute inset-0 flex touch-pan-y select-none items-center justify-center px-0 pb-32 pt-24 sm:px-8 sm:pb-36 sm:pt-28"
+        onPointerDown={handlePhotoPointerDown}
+        onPointerUp={handlePhotoPointerUp}
+        onPointerCancel={resetPhotoSwipe}
+      >
+        <img className="max-h-full max-w-full object-contain" src={assetUrl(photo.url)} alt={photo.originalFilename} draggable={false} />
       </div>
 
-      <div className="pointer-events-none absolute inset-x-0 top-0 bg-gradient-to-b from-black/80 via-black/35 to-transparent px-4 pb-10 pt-[max(env(safe-area-inset-top),1rem)] sm:px-6">
-        <div className="pointer-events-auto flex items-center justify-between gap-3">
-          <button type="button" className="grid h-11 w-11 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/20 transition hover:bg-white/20" onClick={onClose} aria-label="Close photo viewer">
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-20 px-4 pt-[max(env(safe-area-inset-top),1rem)] sm:px-6">
+        <div className="pointer-events-auto relative mx-auto flex max-w-5xl items-center justify-between gap-3">
+          <button type="button" className="grid h-11 w-11 place-items-center rounded-full bg-white text-stone-900 shadow-sm ring-1 ring-[#eadfce] transition hover:bg-[#fffaf6]" onClick={onClose} aria-label="Close photo viewer">
             <Icon>close</Icon>
           </button>
-          {galleryPhotos.length > 1 ? <p className="text-base font-bold tabular-nums">{visibleIndex + 1} of {galleryPhotos.length}</p> : <span />}
-          <span className="h-11 w-11" aria-hidden="true" />
+          {galleryPhotos.length > 1 ? <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base font-bold tabular-nums text-stone-950">{visibleIndex + 1} of {galleryPhotos.length}</p> : null}
+          <div className="flex min-h-11 min-w-11 justify-end">
+            {mode === "public" && onPhotoLike ? (
+              <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" />
+            ) : (
+              <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-stone-800 shadow-sm ring-1 ring-[#eadfce]" aria-label={photoHeartLabel(Math.max(0, Number(photo.likeCount || 0)))}>
+                <CleanIcon name="heart" className="h-4 w-4" />
+                <span className="tabular-nums">{Math.max(0, Number(photo.likeCount || 0))}</span>
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       {canNavigate ? (
         <>
-          <button type="button" className="absolute left-3 top-1/2 hidden h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/20 transition hover:bg-white/20 sm:grid" onClick={() => navigatePhoto(-1)} aria-label="Previous photo">
+          <button type="button" className="absolute left-3 top-1/2 z-20 hidden h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-white text-stone-900 shadow-sm ring-1 ring-[#eadfce] transition hover:bg-[#fffaf6] sm:grid" onClick={() => navigatePhoto(-1)} aria-label="Previous photo">
             <CleanIcon name="chevronLeft" />
           </button>
-          <button type="button" className="absolute right-3 top-1/2 hidden h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-white/12 text-white ring-1 ring-white/20 transition hover:bg-white/20 sm:grid" onClick={() => navigatePhoto(1)} aria-label="Next photo">
+          <button type="button" className="absolute right-3 top-1/2 z-20 hidden h-12 w-12 -translate-y-1/2 place-items-center rounded-full bg-white text-stone-900 shadow-sm ring-1 ring-[#eadfce] transition hover:bg-[#fffaf6] sm:grid" onClick={() => navigatePhoto(1)} aria-label="Next photo">
             <span className="rotate-180"><CleanIcon name="chevronLeft" /></span>
           </button>
         </>
       ) : null}
 
-      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/82 to-transparent px-4 pb-[max(env(safe-area-inset-bottom),1.25rem)] pt-16 sm:px-6">
-        <div className="mx-auto flex max-w-5xl flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="absolute inset-x-0 bottom-0 z-20 border-t border-line bg-app/95 px-4 pb-[max(env(safe-area-inset-bottom),1.25rem)] pt-4 backdrop-blur sm:px-6">
+        <div className="mx-auto flex max-w-5xl items-end justify-between gap-4">
           <div className="min-w-0">
-            <PhotoStatusBadges photo={photo} host={mode === "host"} />
-            <h2 className="mt-3 truncate text-2xl font-bold text-white">{guestName}</h2>
-            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm font-semibold text-white/70">
-              {detailRows.map((row) => <span key={row}>{row}</span>)}
-              {photo.sizeBytes ? <span>{formatBytes(photo.sizeBytes)}</span> : null}
-            </div>
+            <h2 className="truncate text-2xl font-bold text-stone-950">{guestName}</h2>
           </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {mode === "public" && onPhotoLike ? (
-              <PhotoHeartButton photo={photo} onToggle={onPhotoLike} variant="solid" />
-            ) : (
-              <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/20">
-                <CleanIcon name="heart" className="h-4 w-4" />
-                {photoHeartLabel(Math.max(0, Number(photo.likeCount || 0)))}
-              </span>
-            )}
-          </div>
+          <p className="shrink-0 pb-1 text-right text-sm font-semibold text-stone-600">{photoDate}</p>
         </div>
         {mode === "host" && onHostAction ? (
           <div className="mx-auto mt-4 flex max-w-5xl flex-wrap gap-2">
             {photo.visibilityStatus === "HIDDEN" ? (
-              <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-950 disabled:bg-white/40" disabled={Boolean(busy)} onClick={() => runHostAction("restore")}>Restore photo</button>
+              <button type="button" className="min-h-11 rounded-full bg-stone-950 px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("restore")}>Restore photo</button>
             ) : (
-              <button type="button" className="min-h-11 rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/20 disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</button>
+              <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-800 ring-1 ring-[#eadfce] disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("hide")}>Hide photo</button>
             )}
             {photo.isFeatured ? (
-              <button type="button" className="min-h-11 rounded-full bg-white/12 px-4 py-2 text-sm font-bold text-white ring-1 ring-white/20 disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove host pick</button>
+              <button type="button" className="min-h-11 rounded-full bg-white px-4 py-2 text-sm font-bold text-stone-800 ring-1 ring-[#eadfce] disabled:opacity-50" disabled={Boolean(busy)} onClick={() => runHostAction("unfeature")}>Remove host pick</button>
             ) : (
-              <button type="button" className="min-h-11 rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white disabled:bg-white/30" disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</button>
+              <button type="button" className="min-h-11 rounded-full bg-[#e85d3f] px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300 disabled:text-stone-700" disabled={Boolean(busy) || photo.visibilityStatus === "HIDDEN"} onClick={() => runHostAction("feature")}>Make host pick</button>
             )}
-            <button type="button" className="min-h-11 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:bg-white/30" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete</button>
+            <button type="button" className="min-h-11 rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white disabled:bg-stone-300" disabled={Boolean(busy)} onClick={() => runHostAction("delete")}>Delete</button>
           </div>
         ) : null}
-        {localStatus ? <p className="mx-auto mt-3 max-w-5xl rounded-lg bg-white/12 px-3 py-2 text-sm font-bold text-white ring-1 ring-white/20">{localStatus}</p> : null}
+        {localStatus ? <p className="mx-auto mt-3 max-w-5xl rounded-lg bg-white px-3 py-2 text-sm font-bold text-stone-800 ring-1 ring-[#eadfce]">{localStatus}</p> : null}
       </div>
     </div>
   );
@@ -2067,89 +2169,135 @@ function LandingRedesign() {
 }
 
 function LandingDemoGate() {
-  const [status, setStatus] = useState<"checking" | "ready" | "fallback">("checking");
-  const [videoLoadFailed, setVideoLoadFailed] = useState(false);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    eventFilmApi
-      .getPublicEventBySlug(LANDING_DEMO_SLUG)
-      .then(() => {
-        if (isMounted) setStatus("ready");
-      })
-      .catch(() => {
-        if (isMounted) setStatus("fallback");
-      });
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+  const [activeDemoTab, setActiveDemoTab] = useState<"photos" | "people" | "highlights">("photos");
+  const [demoPhotos, setDemoPhotos] = useState<Photo[]>(() => DEMO_PHOTOS.map((photo) => ({ ...photo })));
+  const [optionsOpen, setOptionsOpen] = useState(false);
+  const contributorSummary = useMemo(() => buildContributorSummary(demoPhotos, demoPhotos.length), [demoPhotos]);
+  const contributorTiles = useMemo(() => contributorSummary.topContributors.map((contributor) => ({
+    ...contributor,
+    photos: demoPhotos
+      .filter((photo) => sanitizeGuestDisplayName(photo.challengeParticipantName || photo.guestNickname).toLowerCase() === contributor.displayName.toLowerCase())
+      .slice(0, 3),
+  })), [contributorSummary, demoPhotos]);
+  const highlightPhotos = useMemo(() => [...demoPhotos].sort((first, second) => {
+    const featuredDelta = Number(Boolean(second.isFeatured)) - Number(Boolean(first.isFeatured));
+    if (featuredDelta) return featuredDelta;
+    const likeDelta = Number(second.likeCount || 0) - Number(first.likeCount || 0);
+    if (likeDelta) return likeDelta;
+    return new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
+  }), [demoPhotos]);
+  const demoTabs: Array<{ key: "photos" | "people" | "highlights"; label: string }> = [
+    { key: "photos", label: "Photos" },
+    { key: "people", label: "People" },
+    { key: "highlights", label: "Highlights" },
+  ];
 
   function trackDemoCta(label: string) {
     trackAnalytics("cta_clicked", { metadata: { label, surface: "landing_demo" } });
   }
 
-  if (status === "ready") {
-    return <Navigate to={`/e/${encodeURIComponent(LANDING_DEMO_SLUG)}`} replace />;
+  function handleDemoPhotoLike(photo: Photo, liked: boolean) {
+    setDemoPhotos((current) => updatePhotoInList(current, photo.id, (item) => applyPhotoLikeState(item, liked)));
   }
 
   return (
-    <main className="landing-page min-h-screen bg-[#fffdfb] text-[#171717]">
-      <header className="mx-auto flex max-w-[1040px] items-center justify-between gap-4 px-5 py-4 md:px-10">
-        <LandingBrand />
-        <LandingButtonLink variant="secondary" to="/dashboard" onClick={() => trackDemoCta("Dashboard fallback nav")}>
-          Dashboard
-        </LandingButtonLink>
-      </header>
-      <section className="mx-auto grid max-w-[1040px] items-center gap-5 px-5 py-8 md:grid-cols-[0.86fr_1.14fr] md:gap-8 md:px-10 md:py-10">
-        <div>
-          <p className="text-sm font-semibold text-[#e85d3f]">{status === "checking" ? "Finding the demo" : "Demo preview"}</p>
-          <h1 className="mt-3 font-serif-display text-5xl font-bold leading-tight text-[#171717] md:text-[3.5rem]">
-            See how guests add photos.
-          </h1>
-          <p className="mt-5 max-w-[430px] text-base leading-7 text-[#69645f]">
-            {status === "checking"
-              ? "Opening the live guest demo now."
-              : "The live demo event is not available in this environment, but the preview below shows the guest upload flow."}
-          </p>
-          <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-            <LandingButtonLink to="/signup" onClick={() => trackDemoCta("Create your first event fallback")}>
-              Create your first event
-            </LandingButtonLink>
-            <LandingButtonLink variant="secondary" to="/dashboard" onClick={() => trackDemoCta("Dashboard fallback")}>
-              Dashboard
-            </LandingButtonLink>
+    <main className="min-h-screen bg-white text-[#171717]">
+      <div className="mx-auto min-h-screen max-w-[430px] bg-white pb-28">
+        <header className="sticky top-0 z-20 bg-white/96 px-3 pt-3 backdrop-blur">
+          <div className="relative flex min-h-16 items-center justify-between">
+            <Link className="grid h-10 w-10 place-items-center rounded-full text-stone-700 hover:bg-stone-100" to="/" aria-label="Go back">
+              <CleanIcon name="chevronLeft" className="h-5 w-5" />
+            </Link>
+            <div className="absolute left-12 right-12 top-1/2 -translate-y-1/2 text-center">
+              <h1 className="truncate text-xl font-bold leading-6 text-stone-950">{DEMO_EVENT.name}</h1>
+              <p className="mt-1 text-xs font-semibold text-stone-500">{DEMO_EVENT.photoCount} photos</p>
+            </div>
+            <div className="relative">
+              <button type="button" className="grid h-10 w-10 place-items-center rounded-full text-stone-700 hover:bg-stone-100" aria-label="Open event options" onClick={() => setOptionsOpen((open) => !open)}>
+                <CleanIcon name="more" className="h-5 w-5" />
+              </button>
+              {optionsOpen ? (
+                <div className="absolute right-0 top-11 z-30 w-40 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
+                  <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href="#demo-event-album" onClick={() => setOptionsOpen(false)}>Sample album</a>
+                  <Link className="block rounded-md px-3 py-2 hover:bg-stone-50" to="/signup" onClick={() => {
+                    setOptionsOpen(false);
+                    trackDemoCta("Add photos options");
+                  }}>Add photos</Link>
+                </div>
+              ) : null}
+            </div>
           </div>
+          <nav className="mt-1 grid grid-cols-3 border-b border-stone-200 text-sm font-semibold">
+            {demoTabs.map((tab) => (
+              <button
+                type="button"
+                className={cx("border-b-2 px-2 py-3 transition", activeDemoTab === tab.key ? "border-[#e85d3f] text-[#e85d3f]" : "border-transparent text-stone-500 hover:text-stone-950")}
+                onClick={() => setActiveDemoTab(tab.key)}
+                key={tab.key}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+        </header>
+
+        <section id="demo-event-album" className="scroll-mt-24 px-2 pt-2" aria-label="Demo Event sample photos">
+          {activeDemoTab === "photos" ? (
+            <div className="columns-2 gap-1.5">
+              {demoPhotos.map((photo) => (
+                <div className="relative mb-1.5 break-inside-avoid overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                  <PhotoHeartButton photo={photo} onToggle={handleDemoPhotoLike} variant="solid" className="absolute right-1.5 top-1.5 z-10" />
+                  <img className="w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {activeDemoTab === "people" ? (
+            <div className="px-2 pt-4">
+              <div className="grid gap-3">
+                {contributorTiles.map((contributor) => (
+                  <div className="flex items-center gap-3 rounded-lg border border-stone-200 bg-white p-3" key={contributor.displayName}>
+                    <div className="flex h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-stone-100">
+                      {contributor.photos.map((photo) => (
+                        <img className="h-full min-w-0 flex-1 object-cover" src={photo.previewUrl || photo.url} alt="" key={photo.id} />
+                      ))}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-bold text-stone-950">{contributor.displayName}</p>
+                      <p className="mt-1 text-xs font-semibold text-stone-500">{contributor.photoCount} {contributor.photoCount === 1 ? "photo" : "photos"}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {activeDemoTab === "highlights" ? (
+            <div className="px-2 pt-4">
+              <div className="rounded-lg border border-stone-200 bg-white p-4">
+                <h2 className="text-lg font-bold text-stone-950">Highlights</h2>
+                <p className="mt-1 text-sm font-semibold leading-6 text-stone-500">Host picks and most-loved photos rise here as the album grows.</p>
+              </div>
+              <div className="mt-3 columns-2 gap-1.5">
+                {highlightPhotos.map((photo) => (
+                  <div className="relative mb-1.5 break-inside-avoid overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                    <PhotoHeartButton photo={photo} onToggle={handleDemoPhotoLike} variant="solid" className="absolute right-1.5 top-1.5 z-10" />
+                    <img className="w-full object-cover" src={photo.previewUrl || photo.url} alt={photo.originalFilename} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <div className="fixed inset-x-0 bottom-7 z-30 flex justify-center px-4 pointer-events-none">
+          <Link className="pointer-events-auto inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-7 py-3 text-base font-bold text-white shadow-[0_6px_16px_rgba(232,93,63,0.24)] transition hover:bg-[#d84d32]" to="/signup" onClick={() => trackDemoCta("Add photos")}>
+            <CleanIcon name="upload" className="h-5 w-5" />
+            Add photos
+          </Link>
         </div>
-        <div
-          className="mx-auto h-[30dvh] w-full max-w-[180px] overflow-hidden rounded-lg border border-[#eadfce] bg-white shadow-sm sm:h-[48dvh] sm:max-w-[220px] md:h-[min(620px,calc(100dvh-10rem))] md:max-w-[300px]"
-          aria-label="EventFilm guest upload demo media"
-        >
-          {videoLoadFailed ? (
-            <img
-              className="h-full w-full object-contain"
-              src={LANDING_DEMO_VIDEO_POSTER}
-              alt="EventFilm guest upload demo preview"
-            />
-          ) : (
-            <video
-              className="h-full w-full object-contain"
-              controls
-              muted
-              playsInline
-              poster={LANDING_DEMO_VIDEO_POSTER}
-              preload="metadata"
-              aria-label="EventFilm guest upload demo video"
-              onError={() => setVideoLoadFailed(true)}
-            >
-              <source src={LANDING_DEMO_VIDEO_MP4} type='video/mp4; codecs="avc1.640028"' />
-              <source src={LANDING_DEMO_VIDEO_WEBM} type='video/webm; codecs="vp9"' />
-            </video>
-          )}
-        </div>
-      </section>
+      </div>
     </main>
   );
 }
@@ -4186,7 +4334,7 @@ function GuestEvent() {
   const [selectedPromptId, setSelectedPromptId] = useState(() => localStorage.getItem(getChallengePromptSession(slug)) || "");
   const [selectedItemId, setSelectedItemId] = useState(() => localStorage.getItem(getChallengeItemSession(slug)) || "");
   const participantSelectRef = useRef<HTMLSelectElement | null>(null);
-  const uploadCardRef = useRef<HTMLFormElement | null>(null);
+  const uploadCardRef = useRef<HTMLElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const albumRef = useRef<HTMLElement | null>(null);
   const myUploadsRef = useRef<HTMLElement | null>(null);
@@ -4198,14 +4346,12 @@ function GuestEvent() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [myUploads, setMyUploads] = useState<Photo[]>([]);
   const [localUploads, setLocalUploads] = useState<GuestUploadLocalMetadata[]>(() => loadGuestUploadMetadata(slug));
-  const [file, setFile] = useState<File | null>(null);
-  const [photoPreviewUrl, setPhotoPreviewUrl] = useState("");
+  const [uploadQueue, setUploadQueue] = useState<GuestUploadQueueItem[]>([]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showAllChallengeItems, setShowAllChallengeItems] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<GuestUploadSuccessSummary | null>(null);
-  const [uploadSuccessPhoto, setUploadSuccessPhoto] = useState<Photo | null>(null);
   const [awardResults, setAwardResults] = useState<AwardResultsSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [activeGuestTab, setActiveGuestTab] = useState<"photos" | "people" | "highlights">("photos");
@@ -4294,18 +4440,6 @@ function GuestEvent() {
     }
   }, [event, selectedItemId, slug]);
 
-  useEffect(() => {
-    if (!file) {
-      setPhotoPreviewUrl("");
-      return;
-    }
-
-    const nextPreviewUrl = URL.createObjectURL(file);
-    setPhotoPreviewUrl(nextPreviewUrl);
-
-    return () => URL.revokeObjectURL(nextPreviewUrl);
-  }, [file]);
-
   function saveNickname(nextNickname: string) {
     setNickname(nextNickname);
     const nextSession = { ...session, nickname: nextNickname };
@@ -4320,7 +4454,6 @@ function GuestEvent() {
   function saveSelectedParticipant(participantId: string) {
     setSelectedParticipantId(participantId);
     setUploadSuccess(null);
-    setUploadSuccessPhoto(null);
     if (participantId) localStorage.setItem(getChallengeParticipantSession(slug), participantId);
     else localStorage.removeItem(getChallengeParticipantSession(slug));
     if (participantId) trackAnalytics("challenge_item_selected", { eventId: event?.id, eventSlug: event?.slug, metadata: { itemKind: "color" } });
@@ -4334,7 +4467,6 @@ function GuestEvent() {
   function saveSelectedPrompt(promptId: string) {
     setSelectedPromptId(promptId);
     setUploadSuccess(null);
-    setUploadSuccessPhoto(null);
     setMessage("");
     if (promptId) localStorage.setItem(getChallengePromptSession(slug), promptId);
     else localStorage.removeItem(getChallengePromptSession(slug));
@@ -4344,7 +4476,6 @@ function GuestEvent() {
   function saveSelectedItem(itemId: string) {
     setSelectedItemId(itemId);
     setUploadSuccess(null);
-    setUploadSuccessPhoto(null);
     setMessage("");
     if (itemId) localStorage.setItem(getChallengeItemSession(slug), itemId);
     else localStorage.removeItem(getChallengeItemSession(slug));
@@ -4356,54 +4487,178 @@ function GuestEvent() {
     trackAnalytics("guest_prompt_hint_expanded", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", label } });
   }
 
-  async function uploadPhoto(uploadEvent: React.FormEvent) {
-    uploadEvent.preventDefault();
-    setMessage("");
-    setError("");
-    setUploadSuccess(null);
-    setUploadSuccessPhoto(null);
+  function uploadContextError() {
+    if (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return "Select your Color Hunt name first";
+    if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return "Choose a Photo Prompts idea first";
+    if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return "Choose an Awards category first";
+    return "";
+  }
 
-    if (loading) return;
-    const validation = validateUploadFile(file);
-    if (!validation.ok) {
-      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: validation.reason } });
-      return setError(validation.message);
+  function handlePhotoPickerClick(clickEvent: React.MouseEvent<HTMLInputElement>) {
+    if (loading) {
+      clickEvent.preventDefault();
+      return;
     }
-    if (!file) return setError("Choose a photo first");
-    if (event?.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && !selectedParticipant) return setError("Select your Color Hunt name first");
-    if (event?.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && !selectedPrompt) return setError("Choose a Photo Prompts idea first");
-    if (event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && !selectedAward) return setError("Choose an Awards category first");
-    if (event?.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim() && !nameChoiceTrackedRef.current) {
+    const contextError = uploadContextError();
+    if (!contextError) return;
+    clickEvent.preventDefault();
+    setMessage("");
+    setUploadSuccess(null);
+    setError(contextError);
+  }
+
+  async function handlePhotoFilesSelected(inputEvent: React.ChangeEvent<HTMLInputElement>, source: "camera" | "library") {
+    const selectedFiles = Array.from(inputEvent.currentTarget.files || []);
+    inputEvent.currentTarget.value = "";
+    if (!selectedFiles.length) return;
+    await uploadPhotoBatch(selectedFiles, source);
+  }
+
+  async function uploadPhotoBatch(files: File[], source: "camera" | "library" | "retry") {
+    if (!event || loading || !files.length) return;
+
+    const contextError = uploadContextError();
+    if (contextError) {
+      setMessage("");
+      setUploadSuccess(null);
+      setError(contextError);
+      return;
+    }
+
+    const uploadContext = {
+      eventId: event.id,
+      eventSlug: event.slug,
+      mode: event.challenge?.type || "NONE",
+      nickname: selectedParticipant?.displayName || sanitizeGuestDisplayName(nickname),
+      challengeParticipantId: selectedParticipant?.id,
+      challengePromptId: selectedPrompt?.id,
+      challengeItemId: selectedAward?.id,
+    };
+
+    if (event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT && !nickname.trim() && !nameChoiceTrackedRef.current) {
       nameChoiceTrackedRef.current = true;
       trackAnalytics("guest_continued_anonymous", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
     }
 
-    const formData = new FormData();
-    formData.append("photo", file);
-    formData.append("nickname", selectedParticipant?.displayName || sanitizeGuestDisplayName(nickname));
-    formData.append("clientId", session.clientId);
-    if (selectedParticipant?.id) formData.append("challengeParticipantId", selectedParticipant.id);
-    if (selectedPrompt?.id) formData.append("challengePromptId", selectedPrompt.id);
-    if (selectedAward?.id) formData.append("challengeItemId", selectedAward.id);
+    setMessage("");
+    setError("");
+    setUploadSuccess(null);
+
+    const nextQueue = files.map((selectedFile, index): GuestUploadQueueItem => {
+      const validation = validateUploadFile(selectedFile);
+      if (!validation.ok) {
+        return {
+          id: createGuestUploadQueueId(index),
+          file: selectedFile,
+          status: "failed",
+          error: validation.message,
+          retryable: false,
+        };
+      }
+      return {
+        id: createGuestUploadQueueId(index),
+        file: selectedFile,
+        status: "queued",
+        retryable: true,
+      };
+    });
+
+    setUploadQueue(nextQueue);
+
+    nextQueue
+      .filter((item) => item.status === "failed")
+      .forEach((item, index) => {
+        trackAnalytics("photo_upload_failed", {
+          eventId: uploadContext.eventId,
+          eventSlug: uploadContext.eventSlug,
+          metadata: { mode: uploadContext.mode, outcome: "validation", source, batchSize: files.length, batchIndex: index + 1, selectedCount: files.length, fileName: item.file.name },
+        });
+      });
+
+    const uploadableItems = nextQueue.filter((item) => item.status === "queued");
+    if (!uploadableItems.length) {
+      const failedCount = nextQueue.length;
+      setError(`${failedCount} ${failedCount === 1 ? "photo" : "photos"} could not upload. ${nextQueue[0]?.error || "Choose different photos."}`);
+      return;
+    }
+
+    let uploadedCount = 0;
+    let failedCount = nextQueue.length - uploadableItems.length;
+    let firstFailureMessage = nextQueue.find((item) => item.status === "failed")?.error || "";
+    let refreshError = "";
 
     setLoading(true);
-    trackAnalytics("photo_upload_started", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
     try {
-      const data = await api<{ photo: Photo }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
-      trackAnalytics("photo_upload_succeeded", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE" } });
-      setFile(null);
-      const nextLocalUploads = recordGuestUploadMetadata(slug, data.photo);
-      setLocalUploads(nextLocalUploads);
-      setUploadSuccess(buildGuestUploadSuccessSummary({ event: event as PublicEvent, photo: data.photo }));
-      setUploadSuccessPhoto(data.photo);
-      setMessage("Photo added.");
-      await load();
-    } catch (err) {
-      trackAnalytics("photo_upload_failed", { eventId: event?.id, eventSlug: event?.slug, metadata: { mode: event?.challenge?.type || "NONE", outcome: "error" } });
-      setError(publicRouteErrorMessage(err, "Upload failed. Check your connection and try again."));
+      for (const item of uploadableItems) {
+        const batchIndex = nextQueue.findIndex((queueItem) => queueItem.id === item.id) + 1;
+        setUploadQueue((current) => current.map((queueItem) => queueItem.id === item.id ? { ...queueItem, status: "uploading", error: undefined } : queueItem));
+
+        const formData = new FormData();
+        formData.append("photo", item.file);
+        formData.append("nickname", uploadContext.nickname);
+        formData.append("clientId", session.clientId);
+        if (uploadContext.challengeParticipantId) formData.append("challengeParticipantId", uploadContext.challengeParticipantId);
+        if (uploadContext.challengePromptId) formData.append("challengePromptId", uploadContext.challengePromptId);
+        if (uploadContext.challengeItemId) formData.append("challengeItemId", uploadContext.challengeItemId);
+
+        trackAnalytics("photo_upload_started", {
+          eventId: uploadContext.eventId,
+          eventSlug: uploadContext.eventSlug,
+          metadata: { mode: uploadContext.mode, source, batchSize: files.length, batchIndex, selectedCount: files.length, fileName: item.file.name },
+        });
+
+        try {
+          const data = await api<{ photo: Photo }>(`/api/events/${slug}/photos`, { method: "POST", body: formData });
+          uploadedCount += 1;
+          trackAnalytics("photo_upload_succeeded", {
+            eventId: uploadContext.eventId,
+            eventSlug: uploadContext.eventSlug,
+            metadata: { mode: uploadContext.mode, source, batchSize: files.length, batchIndex, selectedCount: files.length, fileName: item.file.name },
+          });
+          const nextLocalUploads = recordGuestUploadMetadata(slug, data.photo);
+          setLocalUploads(nextLocalUploads);
+          setUploadSuccess(buildGuestUploadSuccessSummary({ event, photo: data.photo }));
+          setUploadQueue((current) => current.map((queueItem) => queueItem.id === item.id ? { ...queueItem, status: "uploaded", photo: data.photo, error: undefined } : queueItem));
+        } catch (err) {
+          failedCount += 1;
+          const failureMessage = publicRouteErrorMessage(err, "Upload failed. Check your connection and try again.");
+          if (!firstFailureMessage) firstFailureMessage = failureMessage;
+          trackAnalytics("photo_upload_failed", {
+            eventId: uploadContext.eventId,
+            eventSlug: uploadContext.eventSlug,
+            metadata: { mode: uploadContext.mode, outcome: "error", source, batchSize: files.length, batchIndex, selectedCount: files.length, fileName: item.file.name },
+          });
+          setUploadQueue((current) => current.map((queueItem) => queueItem.id === item.id ? { ...queueItem, status: "failed", error: failureMessage, retryable: true } : queueItem));
+        }
+      }
+
+      if (uploadedCount) {
+        try {
+          await load();
+        } catch (err) {
+          refreshError = publicRouteErrorMessage(err, "Photos uploaded, but the album could not refresh. Reload to see them.");
+        }
+      }
     } finally {
       setLoading(false);
+      if (uploadedCount) {
+        setMessage(`${uploadedCount} ${uploadedCount === 1 ? "photo" : "photos"} added${failedCount ? `. ${failedCount} ${failedCount === 1 ? "photo" : "photos"} could not upload.` : "."}`);
+      }
+      if (failedCount) {
+        setError(`${failedCount} ${failedCount === 1 ? "photo" : "photos"} could not upload.${firstFailureMessage ? ` ${firstFailureMessage}` : ""}`);
+      } else if (refreshError) {
+        setError(refreshError);
+      } else {
+        setError("");
+      }
     }
+  }
+
+  async function retryFailedUploads() {
+    const retryFiles = uploadQueue.filter((item) => item.status === "failed" && item.retryable !== false).map((item) => item.file);
+    if (!retryFiles.length) return;
+    trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload", photoCount: retryFiles.length } });
+    await uploadPhotoBatch(retryFiles, "retry");
   }
 
   const selectedParticipant = event?.challenge?.participants.find((participant) => participant.id === selectedParticipantId);
@@ -4424,16 +4679,6 @@ function GuestEvent() {
     trackAnalytics("challenge_progress_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { mode: guestProgress.mode, surface: "guest_upload" } });
   }, [event?.id, guestProgress?.mode]);
 
-  function resetForAnotherUpload() {
-    trackUploadSuccessAction("add_another_photo");
-    setUploadSheetOpen(true);
-    setUploadSuccess(null);
-    setUploadSuccessPhoto(null);
-    setMessage("");
-    setError("");
-    setTimeout(() => uploadCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-  }
-
   function trackUploadSuccessAction(action: string) {
     trackAnalytics("upload_success_action_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload", label: action } });
   }
@@ -4444,7 +4689,6 @@ function GuestEvent() {
     const optimisticPhoto = applyPhotoLikeState(photo, liked);
     setPhotos((current) => updatePhotoInList(current, photo.id, () => optimisticPhoto));
     setMyUploads((current) => updatePhotoInList(current, photo.id, () => optimisticPhoto));
-    setUploadSuccessPhoto((current) => current?.id === photo.id ? optimisticPhoto : current);
     setSelectedPhoto((current) => current?.id === photo.id ? optimisticPhoto : current);
     setMessage("");
     setError("");
@@ -4453,13 +4697,11 @@ function GuestEvent() {
       const applyResponse = (item: Photo) => applyPhotoLikeState(item, response.liked, response.likeCount);
       setPhotos((current) => updatePhotoInList(current, photo.id, applyResponse));
       setMyUploads((current) => updatePhotoInList(current, photo.id, applyResponse));
-      setUploadSuccessPhoto((current) => current?.id === photo.id ? applyResponse(current) : current);
       setSelectedPhoto((current) => current?.id === photo.id ? applyResponse(current) : current);
       trackAnalytics(response.liked ? "photo_like_added" : "photo_like_removed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album", photoId: photo.id } });
     } catch (err) {
       setPhotos((current) => updatePhotoInList(current, photo.id, () => previousPhoto));
       setMyUploads((current) => updatePhotoInList(current, photo.id, () => previousPhoto));
-      setUploadSuccessPhoto((current) => current?.id === photo.id ? previousPhoto : current);
       setSelectedPhoto((current) => current?.id === photo.id ? previousPhoto : current);
       setError(publicRouteErrorMessage(err, "Could not update that heart. Try again."));
     }
@@ -4498,6 +4740,15 @@ function GuestEvent() {
     { key: "people", label: "People" },
     { key: "highlights", label: "Highlights" },
   ];
+  const uploadQueueTotal = uploadQueue.length;
+  const uploadedQueueCount = uploadQueue.filter((item) => item.status === "uploaded").length;
+  const failedQueueCount = uploadQueue.filter((item) => item.status === "failed").length;
+  const retryableFailedUploadCount = uploadQueue.filter((item) => item.status === "failed" && item.retryable !== false).length;
+  const uploadingQueueIndex = uploadQueue.findIndex((item) => item.status === "uploading");
+  const currentUploadNumber = uploadingQueueIndex >= 0 ? uploadingQueueIndex + 1 : Math.min(uploadedQueueCount, uploadQueueTotal);
+  const uploadQueueStatusText = loading && uploadQueueTotal
+    ? `Adding ${Math.max(1, currentUploadNumber)} of ${uploadQueueTotal}...`
+    : message || (uploadQueueTotal && failedQueueCount ? `${uploadedQueueCount} ${uploadedQueueCount === 1 ? "photo" : "photos"} added. ${failedQueueCount} ${failedQueueCount === 1 ? "photo" : "photos"} could not upload.` : "");
 
   return (
     <main className="min-h-screen bg-white text-[#171717]">
@@ -4743,7 +4994,7 @@ function GuestEvent() {
                   </section>
                 ) : null}
 
-                <form id="guest-upload-card" ref={uploadCardRef} className="mt-4" onSubmit={uploadPhoto}>
+                <section id="guest-upload-card" ref={uploadCardRef} className="mt-4">
                   {event.challenge?.type === CHALLENGE_TYPES.COLOR_HUNT && selectedParticipant ? <p className="rounded-lg bg-stone-50 p-3 text-sm font-bold text-stone-800">Posting as {selectedParticipant.displayName}</p> : null}
                   {event.challenge?.type === CHALLENGE_TYPES.PHOTO_SCAVENGER_HUNT && selectedPrompt ? <p className="rounded-lg bg-stone-50 p-3 text-sm font-bold text-stone-800">Uploading for: {selectedPrompt.text}</p> : null}
                   {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS && selectedAward ? <p className="rounded-lg bg-stone-50 p-3 text-sm font-bold text-stone-800">Submitting for: {selectedAward.label}</p> : null}
@@ -4755,42 +5006,49 @@ function GuestEvent() {
                     </label>
                   ) : null}
                   <div className="mt-4 grid gap-3 grid-cols-2">
-                    <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#d84d32]">
+                    <label className={cx("flex min-h-12 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-4 py-3 text-sm font-bold text-white transition hover:bg-[#d84d32]", loading ? "cursor-not-allowed opacity-70" : "cursor-pointer")} aria-disabled={loading}>
                       <Icon>photo_camera</Icon>
                       Take photo
-                      <input ref={fileInputRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="Take a photo" onChange={(event) => {
-                        setFile(event.target.files?.[0] || null);
-                        setUploadSuccess(null);
-                        setUploadSuccessPhoto(null);
+                      <input ref={fileInputRef} className="sr-only" type="file" accept="image/*" capture="environment" aria-label="Take a photo" disabled={loading} onClick={handlePhotoPickerClick} onChange={(event) => {
+                        void handlePhotoFilesSelected(event, "camera");
                       }} />
                     </label>
-                    <label className="flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-[#e85d3f] hover:bg-[#fff0ed]">
+                    <label className={cx("flex min-h-12 items-center justify-center gap-2 rounded-lg border border-stone-300 bg-white px-4 py-3 text-sm font-bold text-stone-900 transition hover:border-[#e85d3f] hover:bg-[#fff0ed]", loading ? "cursor-not-allowed opacity-70" : "cursor-pointer")} aria-disabled={loading}>
                       <Icon>photo_library</Icon>
                       Library
-                      <input className="sr-only" type="file" accept="image/*" aria-label="Choose from phone" onChange={(event) => {
-                        setFile(event.target.files?.[0] || null);
-                        setUploadSuccess(null);
-                        setUploadSuccessPhoto(null);
+                      <input className="sr-only" type="file" accept="image/*" multiple aria-label="Choose from phone" disabled={loading} onClick={handlePhotoPickerClick} onChange={(event) => {
+                        void handlePhotoFilesSelected(event, "library");
                       }} />
                     </label>
                   </div>
-                  {file && photoPreviewUrl ? (
-                    <div className="mt-4 flex items-center gap-3 rounded-lg border border-stone-200 bg-stone-50 p-3">
-                      <img className="h-20 w-20 rounded-lg object-cover" src={photoPreviewUrl} alt="Selected photo preview" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-bold text-stone-900">{file.name || "Selected photo"}</p>
-                        <p className="mt-1 text-sm text-stone-600">Ready to upload - {formatBytes(file.size)} {file.type || "image"}</p>
+
+                  {uploadQueueTotal ? (
+                    <section className="mt-4 rounded-lg border border-stone-200 bg-stone-50 p-3" role="status" aria-live="polite">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="text-sm font-bold text-stone-950">{uploadQueueStatusText}</h3>
+                          <p className="mt-1 text-xs font-semibold text-stone-500">{loading ? "Keep this sheet open while the photos upload." : "You can choose more photos whenever you are ready."}</p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-stone-700">{uploadedQueueCount}/{uploadQueueTotal}</span>
                       </div>
-                    </div>
-                  ) : null}
-                  {uploadSuccess ? (
-                    <section className="mt-4 rounded-lg border border-green-100 bg-green-50 p-4 text-green-950" role="status" aria-live="polite">
-                      {uploadSuccessPhoto ? <img className="aspect-square w-full rounded-lg object-cover" src={photoImageSrc(uploadSuccessPhoto)} alt={`Uploaded photo by ${uploadSuccess.guestDisplayName}`} /> : null}
-                      <h3 className="mt-3 text-xl font-bold">Thanks, {uploadSuccess.guestDisplayName}.</h3>
-                      <p className="mt-2 text-sm font-bold text-green-900">{uploadSuccess.detail}</p>
-                      {uploadSuccess.revealNote ? <p className="mt-2 text-sm font-semibold text-green-900">{uploadSuccess.revealNote}</p> : null}
-                      <div className="mt-4 grid gap-2">
-                        <SecondaryButton type="button" onClick={resetForAnotherUpload}>Add another photo</SecondaryButton>
+                      <div className="mt-3 max-h-56 overflow-y-auto rounded-lg border border-stone-200 bg-white">
+                        {uploadQueue.map((item) => (
+                          <div className="flex items-center justify-between gap-3 border-b border-stone-100 px-3 py-2 last:border-b-0" key={item.id}>
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-bold text-stone-900">{item.file.name || "Selected photo"}</p>
+                              <p className="mt-0.5 text-xs font-semibold text-stone-500">{formatBytes(item.file.size)} {item.file.type || "image"}</p>
+                              {item.error ? <p className="mt-1 text-xs font-semibold text-red-700">{item.error}</p> : null}
+                            </div>
+                            <span className={cx("shrink-0 rounded-full px-3 py-1 text-xs font-bold", item.status === "uploaded" ? "bg-green-50 text-green-800" : item.status === "failed" ? "bg-red-50 text-red-700" : item.status === "uploading" ? "bg-[#fff0ed] text-[#e85d3f]" : "bg-stone-100 text-stone-600")}>
+                              {item.status === "uploaded" ? "Added" : item.status === "failed" ? "Could not upload" : item.status === "uploading" ? "Adding" : "Waiting"}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                      {uploadSuccess?.revealNote ? <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{uploadSuccess.revealNote}</p> : null}
+                      {uploadedQueueCount ? (
+                        <div className="mt-3 grid gap-2">
+                          {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}`}>Heart award favorites</Link> : null}
                         <a className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" href="#my-uploads" onClick={() => {
                           trackUploadSuccessAction("view_my_uploads");
                           setTimeout(() => myUploadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
@@ -4801,17 +5059,14 @@ function GuestEvent() {
                           setTimeout(() => albumRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
                         }}>Back to album</button>
                       </div>
+                      ) : null}
                     </section>
                   ) : null}
-                  {message && !uploadSuccess ? <p className="mt-4 rounded-lg bg-green-50 p-3 text-sm text-green-700">{message}</p> : null}
-                  {message && !uploadSuccess && event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}`}>Heart award favorites</Link> : null}
-                  {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error} {file ? "Try again or choose a smaller image." : ""}</p> : null}
-                  {error && file ? <SecondaryButton type="button" className="mt-3 w-full" onClick={() => {
-                    trackAnalytics("photo_upload_retry_clicked", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "guest_upload" } });
-                    setError("");
-                  }}>Try again</SecondaryButton> : null}
-                  <Button className="mt-5 w-full rounded-lg" disabled={loading}>{loading ? "Adding..." : "Add photos"}</Button>
-                </form>
+                  {error ? <p className="mt-4 rounded-lg bg-red-50 p-3 text-sm font-semibold text-red-700">{error}</p> : null}
+                  {retryableFailedUploadCount ? <SecondaryButton type="button" className="mt-3 w-full" onClick={() => {
+                    void retryFailedUploads();
+                  }}>Try failed photos again</SecondaryButton> : null}
+                </section>
 
                 {guestProgress ? (
                   <section className="mt-5 rounded-lg border border-stone-200 p-4">
