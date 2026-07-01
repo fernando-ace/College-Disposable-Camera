@@ -421,7 +421,7 @@ test.describe("EventFilm browser smoke", () => {
     }
   });
 
-  test("seeded guest and Shared Recap routes render while Photo Wall is removed", async ({ page, request }) => {
+  test("seeded guest Recap tab and Shared Recap routes render while Photo Wall is removed", async ({ page, request }) => {
     const health = await request.get(`${apiUrl}/api/health`);
     test.skip(!health.ok(), `API health check failed at ${apiUrl}`);
 
@@ -457,7 +457,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(headerSnapshot.locator("p")).toHaveText(guestSubtitle);
     await expect(headerSnapshot.locator("nav")).toContainText("Photos");
     await expect(headerSnapshot.locator("nav")).toContainText("People");
-    await expect(headerSnapshot.locator("nav")).toContainText("Highlights");
+    await expect(headerSnapshot.locator("nav")).toContainText("Recap");
     const sheetPanel = page.getByTestId("upload-sheet-panel");
     const sheetLayout = await page.evaluate(() => {
       function rectFor(selector: string) {
@@ -541,6 +541,18 @@ test.describe("EventFilm browser smoke", () => {
     await page.waitForFunction((expectedScroll) => Math.abs(window.scrollY - expectedScroll) <= 1, pageScrollBeforeSheet);
     const restoredScrollDelta = await page.evaluate((expectedScroll) => Math.abs(window.scrollY - expectedScroll), pageScrollBeforeSheet);
     expect(restoredScrollDelta).toBeLessThanOrEqual(1);
+    const guestPageUrl = page.url();
+    const guestHeader = page.getByTestId("guest-album-header");
+    await guestHeader.getByRole("button", { name: "Open event options" }).click();
+    await expect(guestHeader).not.toContainText("Shared Recap");
+    await expect(guestHeader.getByRole("button", { name: "Select Photos" })).toBeVisible();
+    await expect(guestHeader.getByRole("button", { name: "Add photos" })).toBeVisible();
+    await guestHeader.getByRole("button", { name: "Open event options" }).click();
+    await guestHeader.getByRole("button", { name: "Recap" }).click();
+    await expect(page).toHaveURL(guestPageUrl);
+    await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
+    await expect(page.locator("#event-album")).toContainText(/Shared Recap|Photos are saved for the reveal|Photos from the event, all in one place|No photos yet/i);
+    await expect(page.locator("#event-album")).not.toContainText("Highlights will build here");
     await page.setViewportSize({ width: 1280, height: 720 });
 
     const removedLiveWallResponse = await request.get(`${apiUrl}/api/events/${seededSlug}/live-wall`);

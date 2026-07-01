@@ -833,7 +833,7 @@ function recordGuestUploadMetadata(slug: string, photo: Photo) {
 type GuestUploadQueueStatus = "queued" | "uploading" | "uploaded" | "failed";
 type GuestPhotoPickerSource = "camera" | "library";
 type GuestAlbumSaveStatus = { tone: "info" | "success" | "error"; text: string };
-type GuestAlbumTabKey = "photos" | "people" | "highlights";
+type GuestAlbumTabKey = "photos" | "people" | "recap";
 type GuestAlbumTab = { key: GuestAlbumTabKey; label: string };
 
 const GUEST_LIBRARY_FILE_ACCEPT = [...ALLOWED_IMAGE_MIME_TYPES, ".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"].join(",");
@@ -855,7 +855,6 @@ function GuestAlbumHeader({
   activeTab,
   canSelectPhotos,
   eventName,
-  eventSlug,
   headerRef,
   isSnapshot = false,
   onAddPhotos,
@@ -870,7 +869,6 @@ function GuestAlbumHeader({
   activeTab: GuestAlbumTabKey;
   canSelectPhotos: boolean;
   eventName: string;
-  eventSlug: string;
   headerRef?: React.Ref<HTMLElement>;
   isSnapshot?: boolean;
   onAddPhotos: () => void;
@@ -921,7 +919,6 @@ function GuestAlbumHeader({
             )}
             {!isSnapshot && optionsOpen ? (
               <div className="absolute right-0 top-11 z-30 w-44 rounded-lg border border-stone-200 bg-white p-1 text-sm font-semibold text-stone-800 shadow-sm">
-                <a className="block rounded-md px-3 py-2 hover:bg-stone-50" href={`/recap/${eventSlug}`}>Shared Recap</a>
                 <button type="button" className={cx("block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400 disabled:hover:bg-white", canSelectPhotos ? "" : "text-stone-400")} disabled={!canSelectPhotos} onClick={onSelectPhotos}>Select Photos</button>
                 <button type="button" className="block w-full rounded-md px-3 py-2 text-left hover:bg-stone-50" onClick={onAddPhotos}>Add photos</button>
               </div>
@@ -2608,7 +2605,7 @@ function LandingRedesign() {
 }
 
 function LandingDemoGate() {
-  const [activeDemoTab, setActiveDemoTab] = useState<"photos" | "people" | "highlights">("photos");
+  const [activeDemoTab, setActiveDemoTab] = useState<"photos" | "people" | "recap">("photos");
   const [demoPhotos, setDemoPhotos] = useState<Photo[]>(() => DEMO_PHOTOS.map((photo) => ({ ...photo })));
   const [optionsOpen, setOptionsOpen] = useState(false);
   const contributorSummary = useMemo(() => buildContributorSummary(demoPhotos, demoPhotos.length), [demoPhotos]);
@@ -2625,10 +2622,10 @@ function LandingDemoGate() {
     if (likeDelta) return likeDelta;
     return new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
   }), [demoPhotos]);
-  const demoTabs: Array<{ key: "photos" | "people" | "highlights"; label: string }> = [
+  const demoTabs: Array<{ key: "photos" | "people" | "recap"; label: string }> = [
     { key: "photos", label: "Photos" },
     { key: "people", label: "People" },
-    { key: "highlights", label: "Highlights" },
+    { key: "recap", label: "Recap" },
   ];
 
   function trackDemoCta(label: string) {
@@ -2712,11 +2709,11 @@ function LandingDemoGate() {
             </div>
           ) : null}
 
-          {activeDemoTab === "highlights" ? (
+          {activeDemoTab === "recap" ? (
             <div className="px-2 pt-4">
               <div className="rounded-lg border border-stone-200 bg-white p-4">
-                <h2 className="text-lg font-bold text-stone-950">Highlights</h2>
-                <p className="mt-1 text-sm font-semibold leading-6 text-stone-500">Host picks and most-loved photos rise here as the album grows.</p>
+                <h2 className="text-lg font-bold text-stone-950">Recap</h2>
+                <p className="mt-1 text-sm font-semibold leading-6 text-stone-500">The finished story gathers favorite photos, people, and moments in one place.</p>
               </div>
               <div className="mt-3 columns-2 gap-1.5">
                 {highlightPhotos.map((photo) => (
@@ -4663,10 +4660,27 @@ function PersonalStoryPostModal({
   );
 }
 
-function EventRecap() {
-  const { slug = "" } = useParams();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const [{ session }] = useState(() => getGuestSession(slug));
+type EventRecapExperienceVariant = "page" | "embedded";
+
+function EventRecapExperience({
+  slug,
+  clientId,
+  variant,
+  storyPostRequestId = 0,
+  onAddPhotos,
+  onPhotosChange,
+  onStoryPostOpen,
+  onStoryPostClose,
+}: {
+  slug: string;
+  clientId: string;
+  variant: EventRecapExperienceVariant;
+  storyPostRequestId?: number;
+  onAddPhotos?: () => void;
+  onPhotosChange?: (photos: Photo[]) => void;
+  onStoryPostOpen?: () => void;
+  onStoryPostClose?: () => void;
+}) {
   const [data, setData] = useState<EventRecapResponse | null>(null);
   const [error, setError] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
@@ -4674,23 +4688,36 @@ function EventRecap() {
   const [activeAlbumFilter, setActiveAlbumFilter] = useState("all");
   const [storyPostOpen, setStoryPostOpen] = useState(false);
   const trackedStoryRef = useRef("");
-
-  async function loadRecap() {
-    const nextData = await eventFilmApi.getRecapData(slug, session.clientId);
-    setData(nextData);
-    setError("");
-  }
+  const onPhotosChangeRef = useRef(onPhotosChange);
 
   useEffect(() => {
-    trackAnalytics("recap_opened", { eventSlug: slug, path: `/recap/${slug}` });
-    trackAnalytics("guest_recap_opened", { eventSlug: slug, path: `/recap/${slug}`, metadata: { surface: "recap" } });
-    loadRecap()
-      .catch((err) => setError(publicRouteErrorMessage(err, "Recap is not available right now. Check the event link or try again after reveal.")));
-  }, [slug]);
+    onPhotosChangeRef.current = onPhotosChange;
+  }, [onPhotosChange]);
+
+  useEffect(() => {
+    let canceled = false;
+    const path = variant === "page" ? `/recap/${slug}` : `/e/${slug}`;
+    const surface = variant === "page" ? "recap" : "guest_album_recap";
+    setError("");
+    eventFilmApi.getRecapData(slug, clientId)
+      .then((nextData) => {
+        if (canceled) return;
+        setData(nextData);
+        onPhotosChangeRef.current?.(nextData.photos);
+        trackAnalytics("recap_opened", { eventSlug: slug, path, metadata: { surface } });
+        trackAnalytics("guest_recap_opened", { eventSlug: slug, path, metadata: { surface } });
+      })
+      .catch((err) => {
+        if (!canceled) setError(publicRouteErrorMessage(err, "Recap is not available right now. Check the event link or try again after reveal."));
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [clientId, slug, variant]);
 
   const event = data?.event;
   const visibleRecapPhotos = useMemo(() => data?.photos || [], [data?.photos]);
-  const awardResults = useMemo(() => event ? buildAwardResultsSummary({ challenge: event.challenge, photos: visibleRecapPhotos }) : null, [event, visibleRecapPhotos]);
+  const awardResults = useMemo(() => event ? data?.awardResults || buildAwardResultsSummary({ challenge: event.challenge, photos: visibleRecapPhotos }) : null, [data?.awardResults, event, visibleRecapPhotos]);
   const story = useMemo(() => event && data ? buildEventRecapStory(event, data.photos, { awardResults, awardVoting: data.awardVoting }) : null, [awardResults, data, event]);
   const recapHeroSentence = data?.isLocked
     ? `Photos are saved for the reveal. The recap unlocks after ${event ? formatDateTime(event.revealAt) : "the reveal time"}.`
@@ -4716,104 +4743,128 @@ function EventRecap() {
   }, [data?.isLocked, event, story]);
 
   useEffect(() => {
-    if (searchParams.get("story") !== "1" || !canCreateStoryPost) return;
+    if (!storyPostRequestId || !canCreateStoryPost) return;
     setStoryPostOpen(true);
-  }, [canCreateStoryPost, searchParams]);
+  }, [canCreateStoryPost, storyPostRequestId]);
 
   async function handleRecapPhotoLike(photo: Photo, liked: boolean) {
-    if (!event) return;
+    if (!event || !data) return;
     const previousPhoto = photo;
     const optimisticPhoto = applyPhotoLikeState(photo, liked);
-    setData((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, () => optimisticPhoto) } : current);
+    const optimisticPhotos = updatePhotoInList(data.photos, photo.id, () => optimisticPhoto);
+    setData({ ...data, photos: optimisticPhotos });
     setSelectedPhoto((current) => current?.id === photo.id ? optimisticPhoto : current);
+    onPhotosChangeRef.current?.(optimisticPhotos);
     setRecapLinkStatus("");
     try {
-      const response = await eventFilmApi.setPhotoLike(event.slug, photo.id, { clientId: session.clientId, liked });
-      setData((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, (item) => applyPhotoLikeState(item, response.liked, response.likeCount)) } : current);
-      setSelectedPhoto((current) => current?.id === photo.id ? applyPhotoLikeState(current, response.liked, response.likeCount) : current);
-      trackAnalytics(response.liked ? "photo_like_added" : "photo_like_removed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", photoId: photo.id } });
+      const response = await eventFilmApi.setPhotoLike(event.slug, photo.id, { clientId, liked });
+      const responsePhotos = updatePhotoInList(optimisticPhotos, photo.id, (item) => applyPhotoLikeState(item, response.liked, response.likeCount));
+      const responsePhoto = responsePhotos.find((item) => item.id === photo.id) || optimisticPhoto;
+      setData((current) => current ? { ...current, photos: responsePhotos } : current);
+      setSelectedPhoto((current) => current?.id === photo.id ? responsePhoto : current);
+      onPhotosChangeRef.current?.(responsePhotos);
+      trackAnalytics(response.liked ? "photo_like_added" : "photo_like_removed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: variant === "embedded" ? "guest_album_recap" : "recap", photoId: photo.id } });
     } catch (err) {
-      setData((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, () => previousPhoto) } : current);
+      const restoredPhotos = updatePhotoInList(optimisticPhotos, photo.id, () => previousPhoto);
+      setData((current) => current ? { ...current, photos: restoredPhotos } : current);
       setSelectedPhoto((current) => current?.id === photo.id ? previousPhoto : current);
+      onPhotosChangeRef.current?.(restoredPhotos);
       setRecapLinkStatus(publicRouteErrorMessage(err, "Could not update that heart. Try again."));
     }
   }
 
   function openPublicPhoto(photo: Photo) {
     setSelectedPhoto(photo);
-    trackAnalytics("recap_photo_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "recap", photoId: photo.id } });
-    trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: "recap", photoId: photo.id } });
+    const surface = variant === "embedded" ? "guest_album_recap" : "recap";
+    trackAnalytics("recap_photo_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface, photoId: photo.id } });
+    trackAnalytics("photo_lightbox_opened", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface, photoId: photo.id } });
   }
 
   function chooseAlbumFilter(filter: EventRecapAlbumFilter) {
     setActiveAlbumFilter(filter.key);
-    trackAnalytics("recap_album_filter_used", { eventId: event?.id, eventSlug: event?.slug, metadata: { filter: filter.key, count: filter.count } });
+    trackAnalytics("recap_album_filter_used", { eventId: event?.id, eventSlug: event?.slug, metadata: { surface: variant === "embedded" ? "guest_album_recap" : "recap", filter: filter.key, count: filter.count } });
   }
 
   async function copyHeroRecapLink() {
     if (!data?.recapLink || !event) return;
     try {
       await copyText(data.recapLink);
-      trackAnalytics("recap_link_copied", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_hero" } });
+      trackAnalytics("recap_link_copied", { eventId: event.id, eventSlug: event.slug, metadata: { surface: variant === "embedded" ? "guest_album_recap" : "recap_hero" } });
       setRecapLinkStatus("Recap link copied");
     } catch (err) {
       setRecapLinkStatus((err as Error).message);
     }
   }
 
+  function handleAddPhotosFromRecap() {
+    if (!event) return;
+    trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: variant === "embedded" ? "guest_album_recap_upload_cta" : "recap_upload_cta" } });
+    onAddPhotos?.();
+  }
+
   function openStoryPost() {
     setStoryPostOpen(true);
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.set("story", "1");
-    setSearchParams(nextParams);
+    onStoryPostOpen?.();
   }
 
   function closeStoryPost() {
     setStoryPostOpen(false);
-    const nextParams = new URLSearchParams(searchParams);
-    nextParams.delete("story");
-    setSearchParams(nextParams);
+    onStoryPostClose?.();
   }
 
+  const frameClass = variant === "embedded" ? "px-2 pt-4" : "";
+  const loadingTitle = variant === "embedded" ? "Loading recap" : "Loading recap";
+  const heroClass = variant === "embedded"
+    ? "grid gap-5 py-5"
+    : "grid gap-8 py-10 lg:grid-cols-[1fr_0.62fr] lg:items-center";
+  const heroTitleClass = variant === "embedded"
+    ? "font-serif-display text-4xl font-bold leading-tight text-ink"
+    : "font-serif-display text-6xl font-bold leading-none text-ink lg:text-7xl";
+  const heroCopyClass = variant === "embedded"
+    ? "mt-3 text-sm font-semibold leading-6 text-muted"
+    : "mt-4 max-w-2xl text-lg leading-8 text-muted";
+
   return (
-    <main className="min-h-screen bg-app text-ink">
-      <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
-        <header className="flex items-center justify-between border-b border-line pb-5">
-          <BrandMark />
-          {event ? <Link className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink" to={`/e/${slug}`}>Add photos</Link> : null}
-        </header>
+    <section className={frameClass} aria-label="Event recap">
+      {!event && (
+        <Card className={variant === "embedded" ? "text-center" : "mt-8 text-center"}>
+          <h1 className="font-serif-display text-3xl font-bold">{loadingTitle}</h1>
+          <p className="mt-2 text-muted">{error || "Gathering the event story..."}</p>
+        </Card>
+      )}
 
-        {!event && (
-          <Card className="mt-8 text-center">
-            <h1 className="font-serif-display text-3xl font-bold">Loading recap</h1>
-            <p className="mt-2 text-muted">{error || "Gathering the event story..."}</p>
-          </Card>
-        )}
-
-        {event && story && (
-          <>
-            <section className="grid gap-8 py-10 lg:grid-cols-[1fr_0.62fr] lg:items-center">
-              <div>
-                <h1 className="font-serif-display text-6xl font-bold leading-none text-ink lg:text-7xl">Shared Recap</h1>
-                <p className="mt-4 max-w-2xl text-lg leading-8 text-muted">{data?.isLocked ? recapHeroSentence : `Photos from ${event.name}, all in one place.`}</p>
-                <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                  <Link className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-coral px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-coral-strong" to={`/e/${slug}`} onClick={() => trackAnalytics("guest_album_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap_upload_cta" } })}>
+      {data && event && story && (
+        <>
+          <section className={heroClass}>
+            <div>
+              <h1 className={heroTitleClass}>Shared Recap</h1>
+              <p className={heroCopyClass}>{data.isLocked ? recapHeroSentence : `Photos from ${event.name}, all in one place.`}</p>
+              <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                {variant === "page" ? (
+                  <Link className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-coral px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-coral-strong" to={`/e/${slug}`} onClick={handleAddPhotosFromRecap}>
                     <CleanIcon name="upload" />
                     Add photos
                   </Link>
-                  <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-line bg-white px-6 py-3 text-sm font-semibold text-ink shadow-none hover:bg-stone-50" type="button" onClick={copyHeroRecapLink}>
-                    <CleanIcon name="link" />
-                    Copy recap link
+                ) : (
+                  <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg bg-coral px-6 py-3 text-sm font-bold text-white shadow-sm hover:bg-coral-strong" type="button" onClick={handleAddPhotosFromRecap}>
+                    <CleanIcon name="upload" />
+                    Add photos
                   </button>
-                  {canCreateStoryPost ? (
-                    <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-line bg-white px-6 py-3 text-sm font-semibold text-ink shadow-none hover:bg-stone-50" type="button" onClick={openStoryPost}>
-                      <CleanIcon name="image" />
-                      Create story post
-                    </button>
-                  ) : null}
-                </div>
-                {recapLinkStatus ? <p className="mt-3 text-sm font-bold text-green-700">{recapLinkStatus}</p> : null}
+                )}
+                <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-line bg-white px-6 py-3 text-sm font-semibold text-ink shadow-none hover:bg-stone-50" type="button" onClick={copyHeroRecapLink}>
+                  <CleanIcon name="link" />
+                  Copy recap link
+                </button>
+                {canCreateStoryPost ? (
+                  <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-line bg-white px-6 py-3 text-sm font-semibold text-ink shadow-none hover:bg-stone-50" type="button" onClick={openStoryPost}>
+                    <CleanIcon name="image" />
+                    Create story post
+                  </button>
+                ) : null}
               </div>
+              {recapLinkStatus ? <p className="mt-3 text-sm font-bold text-green-700">{recapLinkStatus}</p> : null}
+            </div>
+            {(story.highlightPhotos.length || data.photos.length) ? (
               <div className="grid grid-cols-2 gap-3">
                 {(story.highlightPhotos.length ? story.highlightPhotos : data.photos).slice(0, 4).map((photo) => (
                   <div className="relative overflow-hidden rounded-xl bg-stone-100" key={photo.id}>
@@ -4824,109 +4875,145 @@ function EventRecap() {
                   </div>
                 ))}
               </div>
-            </section>
+            ) : null}
+          </section>
 
-            {data.isLocked ? (
-              <Card className="text-center">
-                <CleanIcon name="lock" className="mx-auto h-12 w-12 text-coral" />
-                <h2 className="mt-4 font-serif-display text-4xl font-bold text-ink">Photos are saved for the reveal.</h2>
-                <p className="mx-auto mt-3 max-w-2xl text-muted">The recap unlocks after {formatDateTime(event.revealAt)}.</p>
-              </Card>
-            ) : (
-              <div className="grid gap-5 lg:grid-cols-3">
-                <Card>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-bold text-ink">Guest favorites</h2>
-                      <p className="mt-1 text-sm text-muted">Highlights from everyone</p>
-                    </div>
-                    <CleanIcon name="heart" className="text-coral" />
+          {data.isLocked ? (
+            <Card className="text-center">
+              <CleanIcon name="lock" className="mx-auto h-12 w-12 text-coral" />
+              <h2 className="mt-4 font-serif-display text-4xl font-bold text-ink">Photos are saved for the reveal.</h2>
+              <p className="mx-auto mt-3 max-w-2xl text-muted">The recap unlocks after {formatDateTime(event.revealAt)}.</p>
+            </Card>
+          ) : (
+            <div className={variant === "embedded" ? "grid gap-4" : "grid gap-5 lg:grid-cols-3"}>
+              <Card>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-ink">Guest favorites</h2>
+                    <p className="mt-1 text-sm text-muted">Favorite moments from everyone</p>
                   </div>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    {story.highlightPhotos.slice(0, 4).map((photo) => (
-                      <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
-                        <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
-                        <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
-                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  {!story.highlightPhotos.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No favorites yet. Be the first to mark a moment.</p> : null}
-                </Card>
-
-                <Card>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-bold text-ink">Photos</h2>
-                      <p className="mt-1 text-sm text-muted">All photos in one place</p>
-                    </div>
-                    <CleanIcon name="image" className="text-muted" />
-                  </div>
-                  <div className="mt-5 grid grid-cols-3 gap-2">
-                    {albumPhotos.slice(0, 9).map((photo) => (
-                      <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
-                        <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
-                        <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
-                          <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                  {!albumPhotos.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No photos yet. Share the guest link so people can add theirs.</p> : null}
-                </Card>
-
-                <Card>
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h2 className="text-lg font-bold text-ink">People who added photos</h2>
-                      <p className="mt-1 text-sm text-muted">Thanks to the group</p>
-                    </div>
-                    <CleanIcon name="users" className="text-muted" />
-                  </div>
-                  <div className="mt-6 grid gap-3">
-                    {story.contributorSummary.topContributors.slice(0, 5).map((contributor) => (
-                      <div className="flex items-center justify-between rounded-lg bg-stone-50 px-4 py-3" key={contributor.displayName}>
-                        <span className="font-semibold text-ink">{contributor.displayName}</span>
-                        <span className="text-sm text-muted">{contributor.photoCount}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {!story.contributorSummary.topContributors.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No one here yet. Share the link or invite friends to add photos.</p> : null}
-                </Card>
-              </div>
-            )}
-
-            {!data.isLocked && albumPhotos.length ? (
-              <section className="mt-8" id="recap-photos">
-                <div className="mb-4">
-                  <h2 className="font-serif-display text-4xl font-bold text-ink">Photos</h2>
-                  <p className="text-muted">Photos from the event, all in one place.</p>
+                  <CleanIcon name="heart" className="text-coral" />
                 </div>
-                <RecapAlbumFilterTabs filters={story.albumFilters} activeFilter={selectedFilter?.key || "all"} onChange={chooseAlbumFilter} />
-                <PhotoMosaic photos={albumPhotos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} />
-              </section>
-            ) : null}
+                <div className="mt-5 grid grid-cols-2 gap-2">
+                  {story.highlightPhotos.slice(0, 4).map((photo) => (
+                    <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                      <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
+                      <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
+                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {!story.highlightPhotos.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No favorites yet. Be the first to mark a moment.</p> : null}
+              </Card>
 
-            {event.challenge && !data.isLocked && story.challengeMoments.some((moment) => moment.photos.length || moment.count) ? <RecapChallengeMoments story={story} awardResults={awardResults} photos={data.photos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} /> : null}
-            {storyPostOpen && data.recapLink && canCreateStoryPost ? (
-              <PersonalStoryPostModal
-                slug={slug}
-                event={event}
-                photos={data.photos}
-                recapLink={data.recapLink}
-                clientId={session.clientId}
-                onClose={closeStoryPost}
-              />
-            ) : null}
-            <FullScreenPhotoViewer photo={selectedPhoto} photos={data.photos} mode="public" onClose={() => setSelectedPhoto(null)} onPhotoLike={handleRecapPhotoLike} />
-          </>
-        )}
+              <Card>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-ink">Photos</h2>
+                    <p className="mt-1 text-sm text-muted">All photos in one place</p>
+                  </div>
+                  <CleanIcon name="image" className="text-muted" />
+                </div>
+                <div className="mt-5 grid grid-cols-3 gap-2">
+                  {albumPhotos.slice(0, 9).map((photo) => (
+                    <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
+                      <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
+                      <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
+                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                {!albumPhotos.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No photos yet. Share the guest link so people can add theirs.</p> : null}
+              </Card>
+
+              <Card>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-bold text-ink">People who added photos</h2>
+                    <p className="mt-1 text-sm text-muted">Thanks to the group</p>
+                  </div>
+                  <CleanIcon name="users" className="text-muted" />
+                </div>
+                <div className="mt-6 grid gap-3">
+                  {story.contributorSummary.topContributors.slice(0, 5).map((contributor) => (
+                    <div className="flex items-center justify-between rounded-lg bg-stone-50 px-4 py-3" key={contributor.displayName}>
+                      <span className="font-semibold text-ink">{contributor.displayName}</span>
+                      <span className="text-sm text-muted">{contributor.photoCount}</span>
+                    </div>
+                  ))}
+                </div>
+                {!story.contributorSummary.topContributors.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No one here yet. Share the link or invite friends to add photos.</p> : null}
+              </Card>
+            </div>
+          )}
+
+          {!data.isLocked && albumPhotos.length ? (
+            <section className="mt-8" id="recap-photos">
+              <div className="mb-4">
+                <h2 className={variant === "embedded" ? "font-serif-display text-3xl font-bold text-ink" : "font-serif-display text-4xl font-bold text-ink"}>Photos</h2>
+                <p className="text-muted">Photos from the event, all in one place.</p>
+              </div>
+              <RecapAlbumFilterTabs filters={story.albumFilters} activeFilter={selectedFilter?.key || "all"} onChange={chooseAlbumFilter} />
+              <PhotoMosaic photos={albumPhotos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} />
+            </section>
+          ) : null}
+
+          {event.challenge && !data.isLocked && story.challengeMoments.some((moment) => moment.photos.length || moment.count) ? <RecapChallengeMoments story={story} awardResults={awardResults} photos={data.photos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} /> : null}
+          {storyPostOpen && data.recapLink && canCreateStoryPost ? (
+            <PersonalStoryPostModal
+              slug={slug}
+              event={event}
+              photos={data.photos}
+              recapLink={data.recapLink}
+              clientId={clientId}
+              onClose={closeStoryPost}
+            />
+          ) : null}
+          <FullScreenPhotoViewer photo={selectedPhoto} photos={data.photos} mode="public" onClose={() => setSelectedPhoto(null)} onPhotoLike={handleRecapPhotoLike} />
+        </>
+      )}
+    </section>
+  );
+}
+
+function EventRecap() {
+  const { slug = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [{ session }] = useState(() => getGuestSession(slug));
+  const storyPostRequestId = searchParams.get("story") === "1" ? 1 : 0;
+
+  function markStoryPostOpen() {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("story", "1");
+    setSearchParams(nextParams);
+  }
+
+  function markStoryPostClosed() {
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("story");
+    setSearchParams(nextParams);
+  }
+
+  return (
+    <main className="min-h-screen bg-app text-ink">
+      <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+        <header className="flex items-center justify-between border-b border-line pb-5">
+          <BrandMark />
+          <Link className="rounded-lg border border-line bg-white px-4 py-2 text-sm font-semibold text-ink" to={`/e/${slug}`}>Add photos</Link>
+        </header>
+        <EventRecapExperience
+          slug={slug}
+          clientId={session.clientId}
+          variant="page"
+          storyPostRequestId={storyPostRequestId}
+          onStoryPostOpen={markStoryPostOpen}
+          onStoryPostClose={markStoryPostClosed}
+        />
       </div>
     </main>
   );
-
-
 }
 
 function GuestEvent() {
@@ -4959,13 +5046,13 @@ function GuestEvent() {
   const [loading, setLoading] = useState(false);
   const [showAllChallengeItems, setShowAllChallengeItems] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState<GuestUploadSuccessSummary | null>(null);
-  const [awardResults, setAwardResults] = useState<AwardResultsSummary | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [photoSelectionMode, setPhotoSelectionMode] = useState(false);
   const [selectedAlbumPhotoIds, setSelectedAlbumPhotoIds] = useState<Set<string>>(() => new Set());
   const [photoSaveStatus, setPhotoSaveStatus] = useState<GuestAlbumSaveStatus | null>(null);
   const [photoSaveBusy, setPhotoSaveBusy] = useState(false);
   const [activeGuestTab, setActiveGuestTab] = useState<GuestAlbumTabKey>("photos");
+  const [recapStoryRequestId, setRecapStoryRequestId] = useState(0);
   const [guestHeaderHeight, setGuestHeaderHeight] = useState(0);
   const [uploadSheetOpen, setUploadSheetOpen] = useState(false);
   const [optionsOpen, setOptionsOpen] = useState(false);
@@ -5014,18 +5101,10 @@ function GuestEvent() {
     }
     trackAnalytics("guest_my_uploads_viewed", { eventId: eventData.event.id, eventSlug: eventData.event.slug, metadata: { surface: "guest_upload", photoCount: myUploadData.photos.length } });
     if (eventData.event.isRevealed) {
-      if (eventData.event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS) {
-        const recapData = await eventFilmApi.getRecapData(slug, session.clientId);
-        setPhotos(recapData.photos);
-        setAwardResults(recapData.awardResults || buildAwardResultsSummary({ challenge: eventData.event.challenge, photos: recapData.photos }));
-      } else {
-        const photoData = await eventFilmApi.getAlbumPhotos(slug, session.clientId);
-        setPhotos(photoData.photos);
-        setAwardResults(null);
-      }
+      const photoData = await eventFilmApi.getAlbumPhotos(slug, session.clientId);
+      setPhotos(photoData.photos);
     } else {
       setPhotos([]);
-      setAwardResults(null);
     }
   }
 
@@ -5373,10 +5452,28 @@ function GuestEvent() {
   }
 
   function openUploadSheet() {
+    setActiveGuestTab("photos");
     setUploadSheetOpen(true);
     setOptionsOpen(false);
     setPhotoSelectionMode(false);
     setSelectedAlbumPhotoIds(new Set());
+  }
+
+  function syncRecapPhotos(nextPhotos: Photo[]) {
+    const photosById = new Map(nextPhotos.map((photo) => [photo.id, photo]));
+    setPhotos(nextPhotos);
+    setMyUploads((current) => current.map((photo) => photosById.get(photo.id) || photo));
+    setSelectedPhoto((current) => current ? photosById.get(current.id) || current : current);
+  }
+
+  function openRecapTabFromUpload(action: string, storyPost = false) {
+    trackUploadSuccessAction(action);
+    setUploadSheetOpen(false);
+    setPhotoSelectionMode(false);
+    setSelectedAlbumPhotoIds(new Set());
+    setActiveGuestTab("recap");
+    if (storyPost) setRecapStoryRequestId((current) => current + 1);
+    setTimeout(() => albumRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
   }
 
   function goBackFromGuestAlbum() {
@@ -5391,14 +5488,6 @@ function GuestEvent() {
   const allVisibleAlbumPhotosSelected = visibleAlbumPhotos.length > 0 && selectedAlbumPhotoCount === visibleAlbumPhotos.length;
   const displayedPhotoCount = event?.photoCount ?? visibleAlbumPhotos.length;
   const guestSubtitle = isMemoryCapsuleLocked ? "Photos locked" : `${displayedPhotoCount} ${displayedPhotoCount === 1 ? "photo" : "photos"}`;
-  const guestAwardResults = useMemo(() => event?.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? buildAwardResultsSummary({ challenge: event.challenge, photos: visibleAlbumPhotos }) : awardResults, [awardResults, event, visibleAlbumPhotos]);
-  const highlightPhotos = useMemo(() => [...visibleAlbumPhotos].sort((first, second) => {
-    const featuredDelta = Number(Boolean(second.isFeatured)) - Number(Boolean(first.isFeatured));
-    if (featuredDelta) return featuredDelta;
-    const likeDelta = Number(second.likeCount || 0) - Number(first.likeCount || 0);
-    if (likeDelta) return likeDelta;
-    return new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime();
-  }).slice(0, 8), [visibleAlbumPhotos]);
   const contributorTiles = useMemo(() => contributorSummary.topContributors.map((contributor) => ({
     ...contributor,
     photos: visibleAlbumPhotos
@@ -5542,7 +5631,7 @@ function GuestEvent() {
   const guestTabs: GuestAlbumTab[] = [
     { key: "photos", label: "Photos" },
     { key: "people", label: "People" },
-    { key: "highlights", label: "Highlights" },
+    { key: "recap", label: "Recap" },
   ];
   const uploadSheetTop = uploadSheetOpen ? guestHeaderHeight : 0;
   const uploadQueueTotal = uploadQueue.length;
@@ -5584,7 +5673,6 @@ function GuestEvent() {
             activeTab={activeGuestTab}
             canSelectPhotos={Boolean(visibleAlbumPhotos.length)}
             eventName={event.name}
-            eventSlug={event.slug}
             headerRef={guestHeaderRef}
             isSnapshot={uploadSheetOpen}
             onAddPhotos={openUploadSheet}
@@ -5679,37 +5767,15 @@ function GuestEvent() {
               </div>
             ) : null}
 
-            {activeGuestTab === "highlights" ? (
-              <div className="px-2 pt-4">
-                {guestAwardResults ? <AwardResultsPanel awardResults={guestAwardResults} photos={visibleAlbumPhotos} onPhotoClick={(photo) => {
-                  setSelectedPhoto(photo);
-                  trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_awards", photoId: photo.id } });
-                }} onPhotoLike={handleGuestPhotoLike} /> : null}
-                {highlightPhotos.length ? (
-                  <div className="mt-4 columns-2 gap-1.5">
-                    {highlightPhotos.map((photo) => (
-                      <div className="relative mb-1.5 break-inside-avoid overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
-                        <PhotoHeartButton photo={photo} onToggle={handleGuestPhotoLike} variant="solid" className="absolute right-1.5 top-1.5 z-10" />
-                        <button
-                          type="button"
-                          className="block w-full text-left"
-                          onClick={() => {
-                            setSelectedPhoto(photo);
-                            trackAnalytics("photo_lightbox_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "guest_album_highlights", photoId: photo.id } });
-                          }}
-                        >
-                          <img className="w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="mt-8 rounded-lg border border-dashed border-stone-200 p-5 text-center">
-                    <h2 className="text-lg font-bold text-stone-950">Highlights will build here.</h2>
-                    <p className="mt-2 text-sm font-semibold leading-6 text-stone-500">Host picks, hearts, and recent photos appear as the album grows.</p>
-                  </div>
-                )}
-              </div>
+            {activeGuestTab === "recap" ? (
+              <EventRecapExperience
+                slug={slug}
+                clientId={session.clientId}
+                variant="embedded"
+                storyPostRequestId={recapStoryRequestId}
+                onAddPhotos={openUploadSheet}
+                onPhotosChange={syncRecapPhotos}
+              />
             ) : null}
           </section>
 
@@ -5734,7 +5800,7 @@ function GuestEvent() {
                 </button>
               </div>
             </div>
-          ) : (
+          ) : activeGuestTab !== "recap" ? (
             <div className="fixed inset-x-0 bottom-7 z-30 flex flex-col items-center gap-2 px-4 pointer-events-none">
               {photoSaveStatus ? <p className={cx("pointer-events-auto max-w-[390px] rounded-lg px-3 py-2 text-center text-sm font-semibold shadow-sm", photoSaveStatusClass)} role="status">{photoSaveStatus.text}</p> : null}
               <button type="button" className="pointer-events-auto inline-flex min-h-14 items-center justify-center gap-2 rounded-lg bg-[#e85d3f] px-7 py-3 text-base font-bold text-white shadow-[0_6px_16px_rgba(232,93,63,0.24)] transition hover:bg-[#d84d32]" onClick={openUploadSheet}>
@@ -5742,7 +5808,7 @@ function GuestEvent() {
                 Add photos
               </button>
             </div>
-          )}
+          ) : null}
 
           {uploadSheetOpen ? (
             <div className="fixed inset-x-0 bottom-0 z-40 flex items-end justify-center overflow-hidden overscroll-contain bg-black/25 px-0 sm:px-4" style={{ top: uploadSheetTop }} role="dialog" aria-modal="true" aria-label="Add photos">
@@ -5880,8 +5946,8 @@ function GuestEvent() {
                       {uploadSuccess?.revealNote ? <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">{uploadSuccess.revealNote}</p> : null}
                       {uploadedQueueCount ? (
                         <div className="mt-3 grid gap-2">
-                          {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}`}>Heart award favorites</Link> : null}
-                        {event.isRevealed ? <Link className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}?story=1`} onClick={() => trackUploadSuccessAction("create_story_post")}>Create story post</Link> : null}
+                          {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <button type="button" className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" onClick={() => openRecapTabFromUpload("heart_award_favorites")}>Heart award favorites</button> : null}
+                        {event.isRevealed ? <button type="button" className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" onClick={() => openRecapTabFromUpload("create_story_post", true)}>Create story post</button> : null}
                         <a className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" href="#my-uploads" onClick={() => {
                           trackUploadSuccessAction("view_my_uploads");
                           setTimeout(() => myUploadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
