@@ -22,6 +22,7 @@ import {
   buildChallengePayload,
   buildEventRecapMetadata,
   buildEventRecapStory,
+  buildPersonalStoryCard,
   createDefaultAwardCategories,
   createEmptyChallengeDraft,
   createStarterPrompts,
@@ -1017,6 +1018,90 @@ test("recap story handles old events, templates, and memory capsule locked copy"
   assert.equal(lockedStory.heroCopy, "Come back after dinner.");
   assert.equal(lockedStory.lockedCopy, "Come back after dinner.");
   assert.equal(oldStory.emptyCopy, "No photos yet. Share the guest link so people can add theirs.");
+});
+
+test("personal story card prioritizes guest uploads, hearts, then event highlights", () => {
+  const event = {
+    id: "event",
+    name: "Spring Formal",
+    slug: "spring-formal",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/spring-formal",
+    photoCount: 5,
+    challenge: null,
+  } satisfies EventSummary;
+  const uploaded = photo({ id: "uploaded", guestNickname: "Mia", likeCount: 1, createdAt: "2026-01-01T00:01:00.000Z" });
+  const hearted = photo({ id: "hearted", guestNickname: "Ava", likedByMe: true, likeCount: 2, createdAt: "2026-01-01T00:02:00.000Z" });
+  const hostPick = photo({ id: "host-pick", isFeatured: true, guestNickname: "Jay", createdAt: "2026-01-01T00:03:00.000Z" });
+  const topHearted = photo({ id: "top-hearted", guestNickname: "Noah", likeCount: 8, createdAt: "2026-01-01T00:04:00.000Z" });
+  const recent = photo({ id: "recent", guestNickname: "Lee", createdAt: "2026-01-01T00:05:00.000Z" });
+
+  const card = buildPersonalStoryCard({
+    event,
+    photos: [recent, topHearted, hostPick, hearted, uploaded],
+    myUploads: [photo({ id: "missing" }), uploaded],
+    recapLink: "https://example.com/recap/spring-formal",
+    maxPhotos: 4,
+  });
+
+  assert.equal(card.source, "guest_pov");
+  assert.deepEqual(card.photos.map((item) => item.id), ["uploaded", "hearted", "host-pick", "top-hearted"]);
+  assert.equal(card.stats.selectedPhotos, 4);
+  assert.equal(card.stats.totalPhotos, 5);
+  assert.equal(card.stats.myUploads, 1);
+  assert.equal(card.stats.heartedPhotos, 1);
+  assert.equal(card.stats.contributors, 5);
+  assert.match(card.title, /My POV from Spring Formal/);
+  assert.match(card.caption, /https:\/\/example.com\/recap\/spring-formal/);
+});
+
+test("personal story card falls back to event highlights without guest-specific photos", () => {
+  const event = {
+    id: "event",
+    name: "Campus Night",
+    slug: "campus-night",
+    eventDate: "2026-01-01T00:00:00.000Z",
+    revealAt: "2026-01-02T00:00:00.000Z",
+    photoLimitPerGuest: 5,
+    eventLink: "https://example.com/e/campus-night",
+    photoCount: 3,
+    challenge: null,
+  } satisfies EventSummary;
+
+  const card = buildPersonalStoryCard({
+    event,
+    photos: [
+      photo({ id: "recent", createdAt: "2026-01-01T00:03:00.000Z" }),
+      photo({ id: "liked", likeCount: 3, createdAt: "2026-01-01T00:02:00.000Z" }),
+      photo({ id: "featured", isFeatured: true, createdAt: "2026-01-01T00:01:00.000Z" }),
+    ],
+    myUploads: [],
+    recapLink: "",
+    maxPhotos: 2,
+  });
+
+  assert.equal(card.source, "event_highlights");
+  assert.deepEqual(card.photos.map((item) => item.id), ["featured", "liked"]);
+  assert.equal(card.stats.myUploads, 0);
+  assert.equal(card.stats.heartedPhotos, 0);
+  assert.match(card.title, /Highlights from Campus Night/);
+  assert.doesNotMatch(card.caption, /undefined|null/);
+});
+
+test("personal story card handles empty photo sets", () => {
+  const card = buildPersonalStoryCard({
+    event: { name: "Empty Event" },
+    photos: [],
+    myUploads: [],
+    recapLink: "https://example.com/recap/empty-event",
+  });
+
+  assert.equal(card.source, "event_highlights");
+  assert.deepEqual(card.photos, []);
+  assert.equal(card.stats.selectedPhotos, 0);
+  assert.equal(card.stats.totalPhotos, 0);
 });
 
 test("host launch kit separates guest and recap jobs", () => {

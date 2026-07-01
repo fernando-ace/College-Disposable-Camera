@@ -18,6 +18,7 @@ import {
   buildHostShareAssets,
   buildAwardResultsSummary,
   buildEventRecapStory,
+  buildPersonalStoryCard,
   buildChallengePayload,
   buildDuplicateEventInput,
   buildHostNextStep,
@@ -50,7 +51,7 @@ import {
   validateEventSettingsInput,
   validateHostFeedback,
 } from "@eventfilm/shared";
-import type { AnalyticsEventInput, AnalyticsEventName, AwardResultsSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, Photo, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
+import type { AnalyticsEventInput, AnalyticsEventName, AwardResultsSummary, ChallengeDraft, ChallengeParticipant, EventChallenge, EventLifecycle, EventRecapAlbumFilter, EventRecapStory, EventSettingsFieldErrors, EventSummary, FounderOverview, GuestUploadLocalMetadata, GuestUploadSuccessSummary, HostFeedbackInput, HostShareAssets, PersonalStoryCard, Photo, PromptPackSlug, PublicEvent, UpdateEventSettingsInput, User } from "@eventfilm/shared";
 import {
   AppShell,
   BrandMark,
@@ -378,6 +379,244 @@ function downloadPhotoFile(file: File) {
   }, 1000);
 }
 
+const PERSONAL_STORY_WIDTH = 1080;
+const PERSONAL_STORY_HEIGHT = 1920;
+
+type PersonalStoryImageAsset = {
+  photo: Photo;
+  image: HTMLImageElement;
+};
+
+type PersonalStoryRenderResult = {
+  file: File;
+  dataUrl: string;
+};
+
+function drawRoundedPath(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
+  const nextRadius = Math.min(radius, width / 2, height / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + nextRadius, y);
+  ctx.lineTo(x + width - nextRadius, y);
+  ctx.quadraticCurveTo(x + width, y, x + width, y + nextRadius);
+  ctx.lineTo(x + width, y + height - nextRadius);
+  ctx.quadraticCurveTo(x + width, y + height, x + width - nextRadius, y + height);
+  ctx.lineTo(x + nextRadius, y + height);
+  ctx.quadraticCurveTo(x, y + height, x, y + height - nextRadius);
+  ctx.lineTo(x, y + nextRadius);
+  ctx.quadraticCurveTo(x, y, x + nextRadius, y);
+  ctx.closePath();
+}
+
+function fillRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number, fillStyle: string) {
+  ctx.save();
+  drawRoundedPath(ctx, x, y, width, height, radius);
+  ctx.fillStyle = fillStyle;
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawCoverImage(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, width: number, height: number, radius: number) {
+  const scale = Math.max(width / image.naturalWidth, height / image.naturalHeight);
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+  const sourceX = Math.max(0, (image.naturalWidth - sourceWidth) / 2);
+  const sourceY = Math.max(0, (image.naturalHeight - sourceHeight) / 2);
+
+  ctx.save();
+  drawRoundedPath(ctx, x, y, width, height, radius);
+  ctx.clip();
+  ctx.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, x, y, width, height);
+  ctx.restore();
+}
+
+function wrapCanvasText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, maxWidth: number, lineHeight: number, maxLines: number) {
+  const words = text.split(/\s+/).filter(Boolean);
+  let line = "";
+  let currentY = y;
+  let lines = 0;
+
+  for (const word of words) {
+    const nextLine = line ? `${line} ${word}` : word;
+    if (ctx.measureText(nextLine).width <= maxWidth || !line) {
+      line = nextLine;
+      continue;
+    }
+
+    lines += 1;
+    if (lines >= maxLines) {
+      ctx.fillText(`${line.replace(/\s+\S*$/, "")}...`, x, currentY);
+      return;
+    }
+    ctx.fillText(line, x, currentY);
+    line = word;
+    currentY += lineHeight;
+  }
+
+  if (line && lines < maxLines) ctx.fillText(line, x, currentY);
+}
+
+function setFittedCanvasFont(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, startPx: number, minPx: number, weight = "700") {
+  let size = startPx;
+  while (size > minPx) {
+    ctx.font = `${weight} ${size}px Georgia, serif`;
+    if (ctx.measureText(text).width <= maxWidth) break;
+    size -= 2;
+  }
+}
+
+function storyImageSlots(count: number) {
+  const x = 84;
+  const y = 372;
+  const width = 912;
+  const height = 990;
+  const gap = 22;
+  if (count <= 1) return [{ x, y, width, height }];
+  if (count === 2) {
+    const itemHeight = (height - gap) / 2;
+    return [
+      { x, y, width, height: itemHeight },
+      { x, y: y + itemHeight + gap, width, height: itemHeight },
+    ];
+  }
+  if (count === 3) {
+    const topHeight = 560;
+    const bottomHeight = height - topHeight - gap;
+    const bottomWidth = (width - gap) / 2;
+    return [
+      { x, y, width, height: topHeight },
+      { x, y: y + topHeight + gap, width: bottomWidth, height: bottomHeight },
+      { x: x + bottomWidth + gap, y: y + topHeight + gap, width: bottomWidth, height: bottomHeight },
+    ];
+  }
+
+  const rows = Math.ceil(count / 2);
+  const itemWidth = (width - gap) / 2;
+  const itemHeight = (height - gap * (rows - 1)) / rows;
+  return Array.from({ length: count }, (_, index) => ({
+    x: x + (index % 2) * (itemWidth + gap),
+    y: y + Math.floor(index / 2) * (itemHeight + gap),
+    width: itemWidth,
+    height: itemHeight,
+  }));
+}
+
+function loadImageFromBlob(blob: Blob) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const image = new Image();
+    image.onload = () => {
+      URL.revokeObjectURL(url);
+      resolve(image);
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error("Could not load story image."));
+    };
+    image.src = url;
+  });
+}
+
+async function fetchPersonalStoryImage(photo: Photo): Promise<PersonalStoryImageAsset | null> {
+  const sources = [photo.url, photo.previewUrl].filter(Boolean) as string[];
+  for (const source of sources) {
+    try {
+      const response = await fetch(assetUrl(source));
+      if (!response.ok) continue;
+      const blob = await response.blob();
+      const image = await loadImageFromBlob(blob);
+      return { photo, image };
+    } catch {
+      // Try the generated preview when the original format is not browser-decodable.
+    }
+  }
+  return null;
+}
+
+function canvasToPngBlob(canvas: HTMLCanvasElement) {
+  return new Promise<Blob>((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("Could not create story image."));
+    }, "image/png");
+  });
+}
+
+async function renderPersonalStoryImage(card: PersonalStoryCard, eventName: string): Promise<PersonalStoryRenderResult> {
+  const canvas = document.createElement("canvas");
+  canvas.width = PERSONAL_STORY_WIDTH;
+  canvas.height = PERSONAL_STORY_HEIGHT;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Could not prepare story image.");
+
+  const images = (await Promise.all(card.photos.map((photo) => fetchPersonalStoryImage(photo).catch(() => null))))
+    .filter((item): item is PersonalStoryImageAsset => Boolean(item));
+
+  ctx.fillStyle = "#fff8ed";
+  ctx.fillRect(0, 0, PERSONAL_STORY_WIDTH, PERSONAL_STORY_HEIGHT);
+  fillRoundedRect(ctx, 46, 46, PERSONAL_STORY_WIDTH - 92, PERSONAL_STORY_HEIGHT - 92, 56, "#ffffff");
+
+  ctx.fillStyle = "#e85d3f";
+  ctx.font = "700 34px Arial, sans-serif";
+  ctx.fillText("EventFilm", 84, 132);
+  ctx.fillStyle = "#653e00";
+  ctx.font = "600 28px Arial, sans-serif";
+  ctx.fillText(card.source === "guest_pov" ? "Your POV" : "Event highlights", 84, 182);
+
+  ctx.fillStyle = "#1c1712";
+  setFittedCanvasFont(ctx, card.title, 912, 70, 42, "700");
+  wrapCanvasText(ctx, card.title, 84, 272, 912, 78, 2);
+
+  if (images.length) {
+    const slots = storyImageSlots(Math.min(images.length, card.photos.length));
+    images.slice(0, slots.length).forEach((asset, index) => {
+      const slot = slots[index];
+      fillRoundedRect(ctx, slot.x - 8, slot.y - 8, slot.width + 16, slot.height + 16, 40, "#f4eadf");
+      drawCoverImage(ctx, asset.image, slot.x, slot.y, slot.width, slot.height, 34);
+    });
+  } else {
+    fillRoundedRect(ctx, 84, 372, 912, 990, 40, "#f4eadf");
+    ctx.fillStyle = "#653e00";
+    ctx.font = "700 44px Arial, sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillText("Photos from the event", PERSONAL_STORY_WIDTH / 2, 864);
+    ctx.textAlign = "left";
+  }
+
+  const statsY = 1466;
+  const stats = [
+    [`${card.stats.totalPhotos}`, "photos"],
+    [`${card.stats.contributors}`, "people"],
+    [`${card.stats.heartedPhotos}`, "hearts"],
+  ];
+  stats.forEach(([value, label], index) => {
+    const x = 84 + index * 304;
+    fillRoundedRect(ctx, x, statsY, 270, 142, 28, "#fff8ed");
+    ctx.fillStyle = "#1c1712";
+    ctx.font = "700 48px Arial, sans-serif";
+    ctx.fillText(value, x + 28, statsY + 58);
+    ctx.fillStyle = "#6f6257";
+    ctx.font = "600 24px Arial, sans-serif";
+    ctx.fillText(label, x + 28, statsY + 98);
+  });
+
+  const captionUrl = card.caption.match(/https?:\/\/\S+$/i)?.[0] || "";
+  const captionWithoutUrl = captionUrl ? card.caption.replace(/\s+https?:\/\/\S+$/i, "") : card.caption;
+  const recapLabel = captionUrl ? captionUrl.replace(/^https?:\/\//i, "") : `Open the full recap: ${eventName}`;
+
+  ctx.fillStyle = "#1c1712";
+  ctx.font = "700 34px Arial, sans-serif";
+  wrapCanvasText(ctx, captionWithoutUrl, 84, 1718, 912, 46, 2);
+  ctx.fillStyle = "#6f6257";
+  ctx.font = "600 24px Arial, sans-serif";
+  wrapCanvasText(ctx, recapLabel, 84, 1840, 912, 32, 1);
+
+  const blob = await canvasToPngBlob(canvas);
+  return {
+    file: new File([blob], `${safeFilename(eventName)}-eventfilm-story.png`, { type: "image/png" }),
+    dataUrl: canvas.toDataURL("image/png"),
+  };
+}
+
 function useAuth() {
   const value = useContext(AuthContext);
   if (!value) throw new Error("Auth context is missing");
@@ -530,6 +769,17 @@ function downloadDataUrl(dataUrl: string, filename: string) {
 
 function safeFilename(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "eventfilm";
+}
+
+function withStoryPostQuery(value?: string | null) {
+  if (!value) return "";
+  try {
+    const url = new URL(value, window.location.origin);
+    url.searchParams.set("story", "1");
+    return url.toString();
+  } catch {
+    return `${value}${value.includes("?") ? "&" : "?"}story=1`;
+  }
 }
 
 function csvCell(value: unknown) {
@@ -4053,6 +4303,7 @@ function ManageEvent() {
               </div>
               <div className="mt-5 flex flex-wrap gap-2">
                 {event.recapLink ? <a className="inline-flex min-h-12 items-center justify-center rounded-[1.15rem] bg-[#e85d3f] px-5 py-3 text-sm font-bold text-white" href={event.recapLink} target="_blank" rel="noreferrer">Preview recap</a> : null}
+                {event.recapLink && visiblePhotos.length ? <a className="inline-flex min-h-12 items-center justify-center gap-2 rounded-[1.15rem] border border-line bg-white px-5 py-3 text-sm font-semibold text-ink hover:bg-stone-50" href={withStoryPostQuery(event.recapLink)} target="_blank" rel="noreferrer"><CleanIcon name="image" />Create story post</a> : null}
                 {event.recapLink ? <SecondaryButton type="button" onClick={() => copyDetailLink("Recap link", event.recapLink)}>Copy recap link</SecondaryButton> : null}
                 <SecondaryButton onClick={() => downloadZip()}>Download photos</SecondaryButton>
               </div>
@@ -4372,14 +4623,196 @@ function RecapAlbumFilterTabs({ filters, activeFilter, onChange }: { filters: Ev
   );
 }
 
+function PersonalStoryPostModal({
+  slug,
+  event,
+  photos,
+  recapLink,
+  clientId,
+  onClose,
+}: {
+  slug: string;
+  event: EventRecapResponse["event"];
+  photos: Photo[];
+  recapLink: string;
+  clientId: string;
+  onClose: () => void;
+}) {
+  const [myUploads, setMyUploads] = useState<Photo[]>([]);
+  const [loadingUploads, setLoadingUploads] = useState(true);
+  const [renderResult, setRenderResult] = useState<PersonalStoryRenderResult | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const card = useMemo(() => buildPersonalStoryCard({ event, photos, myUploads, recapLink }), [event, myUploads, photos, recapLink]);
+
+  useEffect(() => {
+    let canceled = false;
+    setLoadingUploads(true);
+    eventFilmApi.getGuestMyUploads(slug, clientId)
+      .then((response) => {
+        if (!canceled) setMyUploads(response.photos);
+      })
+      .catch(() => {
+        if (!canceled) setMyUploads([]);
+      })
+      .finally(() => {
+        if (!canceled) setLoadingUploads(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [clientId, slug]);
+
+  useEffect(() => {
+    trackAnalytics("personal_story_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "recap", photoCount: photos.length } });
+  }, [event.id, event.slug, photos.length]);
+
+  useEffect(() => {
+    if (loadingUploads || !card.photos.length) return;
+    let canceled = false;
+    setBusy(true);
+    setStatus("Preparing story image...");
+    setRenderResult(null);
+    renderPersonalStoryImage(card, event.name)
+      .then((result) => {
+        if (canceled) return;
+        setRenderResult(result);
+        setStatus("Story image ready.");
+        trackAnalytics("personal_story_generated", {
+          eventId: event.id,
+          eventSlug: event.slug,
+          metadata: { source: card.source, photoCount: card.photos.length, myUploads: card.stats.myUploads, heartedPhotos: card.stats.heartedPhotos },
+        });
+      })
+      .catch((err) => {
+        if (!canceled) setStatus(publicRouteErrorMessage(err, "Could not create the story image. Try again."));
+      })
+      .finally(() => {
+        if (!canceled) setBusy(false);
+      });
+    return () => {
+      canceled = true;
+    };
+  }, [card, event.id, event.name, event.slug, loadingUploads]);
+
+  async function shareStoryImage() {
+    if (!renderResult) return;
+    if (!canSharePhotoFiles([renderResult.file])) {
+      setStatus("Sharing files is not available here. Download the PNG or copy the caption.");
+      return;
+    }
+    try {
+      trackAnalytics("native_share_opened", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "personal_story", source: card.source } });
+      await navigator.share({ files: [renderResult.file], title: card.title, text: card.caption });
+      trackAnalytics("personal_story_shared", { eventId: event.id, eventSlug: event.slug, metadata: { source: card.source, method: "native_share" } });
+      setStatus("Story image shared.");
+    } catch (err) {
+      if ((err as DOMException).name === "AbortError") {
+        setStatus("Share canceled.");
+        return;
+      }
+      setStatus(publicRouteErrorMessage(err, "Could not open sharing. Download the PNG instead."));
+    }
+  }
+
+  function downloadStoryImage() {
+    if (!renderResult) return;
+    downloadPhotoFile(renderResult.file);
+    trackAnalytics("personal_story_downloaded", { eventId: event.id, eventSlug: event.slug, metadata: { source: card.source } });
+    setStatus("Story PNG downloaded.");
+  }
+
+  async function copyStoryCaption() {
+    try {
+      await copyText(card.caption);
+      trackAnalytics("personal_story_caption_copied", { eventId: event.id, eventSlug: event.slug, metadata: { source: card.source } });
+      setStatus("Caption copied.");
+    } catch (err) {
+      setStatus((err as Error).message);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-stone-950/55 px-4 py-6" role="dialog" aria-modal="true" aria-label="Create story post">
+      <div className="max-h-full w-full max-w-5xl overflow-y-auto rounded-xl bg-white shadow-sm">
+        <div className="grid gap-0 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1fr)]">
+          <div className="bg-[#fff8ed] p-4 sm:p-6">
+            <div className="mx-auto max-w-sm overflow-hidden rounded-xl border border-line bg-white">
+              {renderResult ? (
+                <img className="block aspect-[9/16] w-full object-cover" src={renderResult.dataUrl} alt={`${event.name} story post preview`} />
+              ) : (
+                <div className="grid aspect-[9/16] place-items-center bg-stone-100 p-8 text-center">
+                  <div>
+                    <CleanIcon name="image" className="mx-auto h-10 w-10 text-coral" />
+                    <p className="mt-3 text-sm font-bold text-ink">{busy || loadingUploads ? "Preparing preview" : "Preview unavailable"}</p>
+                    <p className="mt-1 text-xs font-semibold text-muted">{card.photos.length ? "Using recap photos from this event." : "No photos are ready for a story post."}</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex flex-col p-5 sm:p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-coral">{card.source === "guest_pov" ? "Your POV" : "Event highlights"}</p>
+                <h2 className="mt-2 font-serif-display text-3xl font-bold leading-tight text-ink">Create story post</h2>
+                <p className="mt-2 text-sm leading-6 text-muted">{card.title}</p>
+              </div>
+              <button className="grid h-10 w-10 shrink-0 place-items-center rounded-lg border border-line bg-white text-muted hover:bg-stone-50" type="button" aria-label="Close story post" onClick={onClose}>
+                <CleanIcon name="x" />
+              </button>
+            </div>
+
+            <div className="mt-6 grid grid-cols-3 gap-2">
+              {[
+                ["Photos", card.stats.totalPhotos],
+                ["Mine", card.stats.myUploads],
+                ["Hearted", card.stats.heartedPhotos],
+              ].map(([label, value]) => (
+                <div className="rounded-lg bg-stone-50 p-3" key={label}>
+                  <p className="text-lg font-bold text-ink">{value}</p>
+                  <p className="text-xs font-semibold text-muted">{label}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-5 rounded-lg border border-line bg-stone-50 p-4">
+              <p className="text-xs font-semibold text-muted">Caption</p>
+              <p className="mt-2 text-sm font-semibold leading-6 text-ink">{card.caption}</p>
+            </div>
+
+            <div className="mt-6 grid gap-3 sm:grid-cols-3">
+              <Button type="button" disabled={!renderResult || busy} onClick={() => void shareStoryImage()}>
+                <CleanIcon name="paperPlane" />
+                Share image
+              </Button>
+              <SecondaryButton type="button" disabled={!renderResult || busy} onClick={downloadStoryImage}>
+                <CleanIcon name="download" />
+                Download PNG
+              </SecondaryButton>
+              <SecondaryButton type="button" onClick={() => void copyStoryCaption()}>
+                <CleanIcon name="copy" />
+                Copy caption
+              </SecondaryButton>
+            </div>
+            {status ? <p className="mt-4 rounded-lg bg-[#fff8ed] p-3 text-sm font-bold text-[#653e00]" role="status">{status}</p> : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function EventRecap() {
   const { slug = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [{ session }] = useState(() => getGuestSession(slug));
   const [data, setData] = useState<EventRecapResponse | null>(null);
   const [error, setError] = useState("");
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [recapLinkStatus, setRecapLinkStatus] = useState("");
   const [activeAlbumFilter, setActiveAlbumFilter] = useState("all");
+  const [storyPostOpen, setStoryPostOpen] = useState(false);
   const trackedStoryRef = useRef("");
 
   async function loadRecap() {
@@ -4407,6 +4840,7 @@ function EventRecap() {
   const selectedFilter = useMemo(() => story?.albumFilters.find((filter) => filter.key === activeAlbumFilter) || story?.albumFilters[0] || null, [activeAlbumFilter, story?.albumFilters]);
   const albumPhotoIds = useMemo(() => new Set(selectedFilter?.photoIds || []), [selectedFilter]);
   const albumPhotos = useMemo(() => data?.photos.filter((photo) => !selectedFilter || albumPhotoIds.has(photo.id)) || [], [albumPhotoIds, data?.photos, selectedFilter]);
+  const canCreateStoryPost = Boolean(event && data && !data.isLocked && data.photos.length);
 
   useEffect(() => {
     if (!event || !story) return;
@@ -4420,6 +4854,11 @@ function EventRecap() {
       trackAnalytics("recap_contributors_viewed", { eventId: event.id, eventSlug: event.slug, metadata: { contributorCount: story.contributorCount } });
     }
   }, [data?.isLocked, event, story]);
+
+  useEffect(() => {
+    if (searchParams.get("story") !== "1" || !canCreateStoryPost) return;
+    setStoryPostOpen(true);
+  }, [canCreateStoryPost, searchParams]);
 
   async function handleRecapPhotoLike(photo: Photo, liked: boolean) {
     if (!event) return;
@@ -4462,6 +4901,20 @@ function EventRecap() {
     }
   }
 
+  function openStoryPost() {
+    setStoryPostOpen(true);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set("story", "1");
+    setSearchParams(nextParams);
+  }
+
+  function closeStoryPost() {
+    setStoryPostOpen(false);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete("story");
+    setSearchParams(nextParams);
+  }
+
   return (
     <main className="min-h-screen bg-app text-ink">
       <div className="mx-auto w-full max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
@@ -4492,6 +4945,12 @@ function EventRecap() {
                     <CleanIcon name="link" />
                     Copy recap link
                   </button>
+                  {canCreateStoryPost ? (
+                    <button className="inline-flex min-h-12 items-center justify-center gap-2 rounded-lg border border-line bg-white px-6 py-3 text-sm font-semibold text-ink shadow-none hover:bg-stone-50" type="button" onClick={openStoryPost}>
+                      <CleanIcon name="image" />
+                      Create story post
+                    </button>
+                  ) : null}
                 </div>
                 {recapLinkStatus ? <p className="mt-3 text-sm font-bold text-green-700">{recapLinkStatus}</p> : null}
               </div>
@@ -4590,6 +5049,16 @@ function EventRecap() {
             ) : null}
 
             {event.challenge && !data.isLocked && story.challengeMoments.some((moment) => moment.photos.length || moment.count) ? <RecapChallengeMoments story={story} awardResults={awardResults} photos={data.photos} onPhotoClick={openPublicPhoto} onPhotoLike={handleRecapPhotoLike} /> : null}
+            {storyPostOpen && data.recapLink && canCreateStoryPost ? (
+              <PersonalStoryPostModal
+                slug={slug}
+                event={event}
+                photos={data.photos}
+                recapLink={data.recapLink}
+                clientId={session.clientId}
+                onClose={closeStoryPost}
+              />
+            ) : null}
             <FullScreenPhotoViewer photo={selectedPhoto} photos={data.photos} mode="public" onClose={() => setSelectedPhoto(null)} onPhotoLike={handleRecapPhotoLike} />
           </>
         )}
@@ -5552,6 +6021,7 @@ function GuestEvent() {
                       {uploadedQueueCount ? (
                         <div className="mt-3 grid gap-2">
                           {event.challenge?.type === CHALLENGE_TYPES.EVENT_AWARDS ? <Link className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}`}>Heart award favorites</Link> : null}
+                        {event.isRevealed ? <Link className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" to={`/recap/${slug}?story=1`} onClick={() => trackUploadSuccessAction("create_story_post")}>Create story post</Link> : null}
                         <a className="inline-flex min-h-11 items-center justify-center rounded-lg border border-[#e1d4c5] bg-white px-4 py-3 text-sm font-bold text-stone-900" href="#my-uploads" onClick={() => {
                           trackUploadSuccessAction("view_my_uploads");
                           setTimeout(() => myUploadsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);

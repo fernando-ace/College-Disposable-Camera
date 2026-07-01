@@ -271,6 +271,22 @@ export type EventRecapStory = EventRecapMetadata & {
   createEventCtaCopy: string;
 };
 
+export type PersonalStorySource = "guest_pov" | "event_highlights";
+
+export type PersonalStoryCard = {
+  title: string;
+  caption: string;
+  photos: Photo[];
+  stats: {
+    selectedPhotos: number;
+    totalPhotos: number;
+    myUploads: number;
+    heartedPhotos: number;
+    contributors: number;
+  };
+  source: PersonalStorySource;
+};
+
 type EventRecapSourceEvent = Pick<EventSummary | PublicEvent, "challenge" | "eventTemplateSlug" | "revealAt"> & {
   isRevealed?: boolean;
 };
@@ -428,6 +444,11 @@ export const ANALYTICS_EVENT_NAMES = [
   "guest_recap_opened",
   "challenge_progress_viewed",
   "guest_share_clicked",
+  "personal_story_opened",
+  "personal_story_generated",
+  "personal_story_shared",
+  "personal_story_downloaded",
+  "personal_story_caption_copied",
   "guest_returned_to_event",
   "event_lifecycle_viewed",
   "post_event_summary_viewed",
@@ -2386,6 +2407,70 @@ function buildRecapAlbumFilters(challenge: EventChallenge | null | undefined, ph
     if (rowPhotos.length) filters.push({ key: `challenge-${row.id}`, label: row.label, count: rowPhotos.length, photoIds: photoIds(rowPhotos) });
   }
   return filters;
+}
+
+export function buildPersonalStoryCard({
+  event,
+  photos,
+  myUploads = [],
+  recapLink,
+  maxPhotos = 6,
+}: {
+  event: Pick<EventSummary | PublicEvent, "name">;
+  photos: Photo[];
+  myUploads?: Photo[];
+  recapLink: string;
+  maxPhotos?: number;
+}): PersonalStoryCard {
+  const limit = Math.max(1, Math.floor(maxPhotos || 6));
+  const sortedPhotos = sortPhotosForRecap(photos || []);
+  const photosById = new Map(sortedPhotos.map((photo) => [photo.id, photo]));
+  const selected: Photo[] = [];
+  const used = new Set<string>();
+  const eventName = event.name?.trim() || "this event";
+
+  const addPhoto = (photo: Photo | undefined) => {
+    if (!photo?.id || used.has(photo.id) || selected.length >= limit) return;
+    selected.push(photo);
+    used.add(photo.id);
+  };
+
+  for (const upload of myUploads || []) {
+    addPhoto(photosById.get(upload.id));
+    if (selected.length >= limit) break;
+  }
+
+  const heartedPhotos = sortedPhotos.filter((photo) => Boolean(photo.likedByMe));
+  for (const photo of heartedPhotos) {
+    addPhoto(photo);
+    if (selected.length >= limit) break;
+  }
+
+  for (const photo of sortedPhotos) {
+    addPhoto(photo);
+    if (selected.length >= limit) break;
+  }
+
+  const visibleUploadIds = new Set((myUploads || []).map((photo) => photo.id).filter((id) => photosById.has(id)));
+  const source: PersonalStorySource = visibleUploadIds.size || heartedPhotos.length ? "guest_pov" : "event_highlights";
+  const contributorCount = buildContributorSummary(sortedPhotos).contributorCount;
+  const caption = source === "guest_pov"
+    ? `My POV from ${eventName}, made with EventFilm.${recapLink ? ` ${recapLink}` : ""}`
+    : `Favorite moments from ${eventName}, made with EventFilm.${recapLink ? ` ${recapLink}` : ""}`;
+
+  return {
+    title: source === "guest_pov" ? `My POV from ${eventName}` : `Highlights from ${eventName}`,
+    caption,
+    photos: selected,
+    stats: {
+      selectedPhotos: selected.length,
+      totalPhotos: sortedPhotos.length,
+      myUploads: visibleUploadIds.size,
+      heartedPhotos: heartedPhotos.length,
+      contributors: contributorCount,
+    },
+    source,
+  };
 }
 
 export function buildEventRecapStory(

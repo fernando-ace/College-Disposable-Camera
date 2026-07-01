@@ -892,6 +892,176 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("button", { name: "Add photos" }).first()).toBeVisible();
   });
 
+  test("personal story post opens from recap deep link and shares a generated PNG", async ({ page }) => {
+    const slug = "personal-story-party";
+    const event = {
+      id: "personal-story-event",
+      name: "Personal Story Party",
+      description: null,
+      slug,
+      eventDate: "2026-07-01T20:00:00.000Z",
+      revealAt: "2026-07-01T20:00:00.000Z",
+      photoLimitPerGuest: null,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      isRevealed: true,
+      photoCount: 3,
+      eventLink: `${baseUrl}/e/${slug}`,
+      recapLink: `${baseUrl}/recap/${slug}`,
+      challenge: null,
+    };
+    const photos = [
+      {
+        id: "personal-story-upload",
+        url: `${apiUrl}/api/photos/personal-story-upload/file`,
+        previewUrl: `${apiUrl}/api/photos/personal-story-upload/preview`,
+        originalFilename: "upload.png",
+        mimeType: "image/png",
+        sizeBytes: 128,
+        createdAt: "2026-07-01T20:01:00.000Z",
+        guestNickname: "Mia",
+        isFeatured: false,
+        likeCount: 1,
+        likedByMe: false,
+      },
+      {
+        id: "personal-story-hearted",
+        url: `${apiUrl}/api/photos/personal-story-hearted/file`,
+        previewUrl: `${apiUrl}/api/photos/personal-story-hearted/preview`,
+        originalFilename: "hearted.png",
+        mimeType: "image/png",
+        sizeBytes: 128,
+        createdAt: "2026-07-01T20:02:00.000Z",
+        guestNickname: "Ava",
+        isFeatured: false,
+        likeCount: 2,
+        likedByMe: true,
+      },
+      {
+        id: "personal-story-featured",
+        url: `${apiUrl}/api/photos/personal-story-featured/file`,
+        previewUrl: `${apiUrl}/api/photos/personal-story-featured/preview`,
+        originalFilename: "featured.png",
+        mimeType: "image/png",
+        sizeBytes: 128,
+        createdAt: "2026-07-01T20:03:00.000Z",
+        guestNickname: "Noah",
+        isFeatured: true,
+        likeCount: 0,
+        likedByMe: false,
+      },
+    ];
+    const imageBody = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
+    const corsHeaders = { "access-control-allow-origin": parsedUrl(baseUrl).origin };
+    const json = (body: unknown) => ({
+      status: 200,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, "canShare", {
+        configurable: true,
+        value: (data: { files?: File[] }) => Boolean(data.files?.length),
+      });
+      Object.defineProperty(navigator, "share", {
+        configurable: true,
+        value: async (data: { files?: File[]; text?: string }) => {
+          const shareWindow = window as Window & { __eventfilmStoryShare?: { count: number; names: string[]; types: string[]; text?: string } };
+          shareWindow.__eventfilmStoryShare = {
+            count: data.files?.length || 0,
+            names: (data.files || []).map((file) => file.name),
+            types: (data.files || []).map((file) => file.type),
+            text: data.text,
+          };
+        },
+      });
+    });
+
+    await page.route(`**/api/events/${slug}/recap**`, (route) => route.fulfill(json({
+      event,
+      eventLink: event.eventLink,
+      recapLink: event.recapLink,
+      isLocked: false,
+      photos,
+    })));
+    await page.route(`**/api/events/${slug}/my-uploads**`, (route) => route.fulfill(json({ uploadedCount: 1, remainingUploads: null, photos: [photos[0]] })));
+    await page.route("**/api/photos/personal-story-*/file", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/photos/personal-story-*/preview", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/analytics**", (route) => route.fulfill(json({ ok: true })));
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/recap/${slug}?story=1`);
+    const dialog = page.getByRole("dialog", { name: "Create story post" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByText("Your POV")).toBeVisible();
+    await expect(dialog.getByText("My POV from Personal Story Party", { exact: true })).toBeVisible();
+    await expect(dialog.getByRole("img", { name: "Personal Story Party story post preview" })).toBeVisible();
+    await expect(dialog.getByRole("status")).toContainText("Story image ready.");
+
+    await dialog.getByRole("button", { name: "Share image" }).click();
+    await expect.poll(() => page.evaluate(() => (window as Window & { __eventfilmStoryShare?: { count: number } }).__eventfilmStoryShare?.count || 0)).toBe(1);
+    const sharePayload = await page.evaluate(() => (window as Window & { __eventfilmStoryShare?: { names: string[]; types: string[]; text?: string } }).__eventfilmStoryShare);
+    expect(sharePayload?.names[0]).toBe("personal-story-party-eventfilm-story.png");
+    expect(sharePayload?.types[0]).toBe("image/png");
+    expect(sharePayload?.text).toContain("My POV from Personal Story Party");
+
+    const downloadPromise = page.waitForEvent("download");
+    await dialog.getByRole("button", { name: "Download PNG" }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toBe("personal-story-party-eventfilm-story.png");
+
+    await dialog.getByRole("button", { name: "Copy caption" }).click();
+    await expect(dialog.getByRole("status")).toContainText("Caption copied.");
+  });
+
+  test("locked recap does not show personal story post entry points", async ({ page }) => {
+    const slug = "locked-story-party";
+    const event = {
+      id: "locked-story-event",
+      name: "Locked Story Party",
+      description: null,
+      slug,
+      eventDate: "2026-07-01T20:00:00.000Z",
+      revealAt: "2026-07-02T20:00:00.000Z",
+      photoLimitPerGuest: null,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      isRevealed: false,
+      photoCount: null,
+      eventLink: `${baseUrl}/e/${slug}`,
+      recapLink: `${baseUrl}/recap/${slug}`,
+      challenge: {
+        id: "memory-capsule",
+        type: "MEMORY_CAPSULE",
+        title: "Memory Capsule",
+        instructions: "Upload now.",
+        participants: [],
+        config: { revealTitle: "Photos are saved for the reveal", revealNote: "Come back after reveal." },
+      },
+    };
+    const corsHeaders = { "access-control-allow-origin": parsedUrl(baseUrl).origin };
+    const json = (body: unknown) => ({
+      status: 200,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    await page.route(`**/api/events/${slug}/recap**`, (route) => route.fulfill(json({
+      event,
+      eventLink: event.eventLink,
+      recapLink: event.recapLink,
+      isLocked: true,
+      photos: [],
+    })));
+    await page.route("**/api/analytics**", (route) => route.fulfill(json({ ok: true })));
+
+    await page.goto(`/recap/${slug}?story=1`);
+    await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create story post" })).toHaveCount(0);
+    await expect(page.getByRole("dialog", { name: "Create story post" })).toHaveCount(0);
+  });
+
   test("host photo viewer heart toggles without closing viewer", async ({ page }) => {
     const eventId = "host-heart-event";
     const slug = "host-heart-party";
