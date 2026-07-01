@@ -833,6 +833,7 @@ function eventPayload(event, { includePhotos = false } = {}) {
     ...event,
     eventLink: publicEventUrl(event.slug),
     recapLink: recapUrl(event.slug),
+    isRevealed: publicEventIsRevealed(event),
     lastActivityAt: event.lastActivityAt || getEventLastActivityAt(event),
     photoCount: event._count?.photos ?? event.photoCount ?? 0,
     challenge: challengePayload(challenge),
@@ -855,11 +856,12 @@ function hostEventDetailInclude() {
   };
 }
 
-async function hostEventDetailResponse(event) {
+async function hostEventDetailResponse(event, { clientId = "" } = {}) {
   const eventLink = publicEventUrl(event.slug);
   const qrCodeDataUrl = await QRCode.toDataURL(eventLink, { margin: 1, width: 320 });
+  const photos = clientId ? await markPhotosLikedByClient(prisma, event.id, event.photos || [], clientId) : event.photos;
   return {
-    ...eventPayload(event, { includePhotos: true }),
+    ...eventPayload({ ...event, photos }, { includePhotos: true }),
     qrCodeDataUrl,
   };
 }
@@ -1220,8 +1222,9 @@ app.get("/api/host/events/:eventId", requireAuth, async (req, res) => {
   });
   if (!event) return res.status(404).json({ error: "Event not found" });
 
+  const clientId = typeof req.query.clientId === "string" ? req.query.clientId.trim() : "";
   res.json({
-    event: await hostEventDetailResponse(event),
+    event: await hostEventDetailResponse(event, { clientId }),
   });
 });
 

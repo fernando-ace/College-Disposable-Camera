@@ -611,6 +611,23 @@ function getGuestSession(slug: string) {
   }
 }
 
+function createClientId() {
+  return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+}
+
+function getHostPhotoLikeClientId(eventId: string) {
+  const key = `eventfilm_host_photo_like_client:v1:${eventId || "unknown"}`;
+  try {
+    const saved = localStorage.getItem(key)?.trim();
+    if (saved) return saved;
+    const clientId = createClientId();
+    localStorage.setItem(key, clientId);
+    return clientId;
+  } catch {
+    return createClientId();
+  }
+}
+
 function getGuestUploadMetadataKey(slug: string) {
   return `eventfilm_guest_uploads_${slug}`;
 }
@@ -1109,7 +1126,7 @@ function FullScreenPhotoViewer({
           </button>
           {galleryPhotos.length > 1 ? <p className="pointer-events-none absolute left-1/2 -translate-x-1/2 text-base font-bold tabular-nums text-stone-950">{visibleIndex + 1} of {galleryPhotos.length}</p> : null}
           <div className="flex min-h-11 min-w-11 justify-end">
-            {mode === "public" && onPhotoLike ? (
+            {onPhotoLike ? (
               <PhotoHeartButton photo={currentPhoto} onToggle={onPhotoLike} variant="solid" />
             ) : (
               <span className="inline-flex min-h-11 items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-bold text-stone-800 shadow-sm ring-1 ring-[#eadfce]" aria-label={photoHeartLabel(Math.max(0, Number(currentPhoto.likeCount || 0)))}>
@@ -3626,20 +3643,27 @@ function ManageEvent() {
   const [settingsFieldErrors, setSettingsFieldErrors] = useState<EventSettingsFieldErrors>({});
   const [settingsStatus, setSettingsStatus] = useState("");
   const [settingsSaving, setSettingsSaving] = useState(false);
+  const [hostPhotoLikeClientId, setHostPhotoLikeClientId] = useState(() => getHostPhotoLikeClientId(eventId || ""));
 
   async function load() {
+    const query = hostPhotoLikeClientId ? `?clientId=${encodeURIComponent(hostPhotoLikeClientId)}` : "";
     const [data, analytics] = await Promise.all([
-      api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${eventId}`, { token: auth.token }),
+      api<{ event: EventSummary & { photos: Photo[] } }>(`/api/host/events/${eventId}${query}`, { token: auth.token }),
       eventId ? eventFilmApi.getEventAnalyticsSummary(eventId, auth.token).catch(() => null) : Promise.resolve(null),
     ]);
     setEvent(data.event);
     setEventAnalytics(analytics?.summary || null);
     setChallengeDraft(draftFromChallenge(data.event.challenge));
+    return data.event;
   }
 
   useEffect(() => {
-    load().catch((err) => setError((err as Error).message));
+    setHostPhotoLikeClientId(getHostPhotoLikeClientId(eventId || ""));
   }, [eventId]);
+
+  useEffect(() => {
+    load().catch((err) => setError((err as Error).message));
+  }, [eventId, hostPhotoLikeClientId]);
 
   useEffect(() => {
     if (!event) return;
@@ -3662,8 +3686,8 @@ function ManageEvent() {
   }, [event?.challenge, galleryFilter]);
 
   async function refreshAfterPhotoAction(nextPhoto?: Photo) {
-    await load();
-    if (nextPhoto) setSelectedPhoto(nextPhoto);
+    const refreshedEvent = await load();
+    if (nextPhoto) setSelectedPhoto(refreshedEvent.photos.find((photo) => photo.id === nextPhoto.id) || nextPhoto);
   }
 
   async function updatePhotoFeatured(photo: Photo, isFeatured: boolean) {
@@ -3804,6 +3828,7 @@ function ManageEvent() {
   ];
   const requestedDetailTab = searchParams.get("tab");
   const activeTab = tabItems.some(([key]) => key === requestedDetailTab) ? requestedDetailTab || defaultDetailTab : defaultDetailTab;
+  const hostPhotoLikesEnabled = event?.challenge?.type !== CHALLENGE_TYPES.MEMORY_CAPSULE || Boolean(event.isRevealed);
 
   useEffect(() => {
     if (!event || !lifecycle) return;
@@ -3818,6 +3843,26 @@ function ManageEvent() {
     if (action === "feature") return updatePhotoFeatured(photo, true);
     if (action === "unfeature") return updatePhotoFeatured(photo, false);
     return deletePhoto(photo.id);
+  }
+
+  async function handleHostPhotoLike(photo: Photo, liked: boolean) {
+    if (!event) return;
+    const previousPhoto = photo;
+    const optimisticPhoto = applyPhotoLikeState(photo, liked);
+    setEvent((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, () => optimisticPhoto) } : current);
+    setSelectedPhoto((current) => current?.id === photo.id ? optimisticPhoto : current);
+    setError("");
+    try {
+      const response = await eventFilmApi.setPhotoLike(event.slug, photo.id, { clientId: hostPhotoLikeClientId, liked });
+      const applyResponse = (item: Photo) => applyPhotoLikeState(item, response.liked, response.likeCount);
+      setEvent((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, applyResponse) } : current);
+      setSelectedPhoto((current) => current?.id === photo.id ? applyResponse(current) : current);
+      trackAnalytics(response.liked ? "photo_like_added" : "photo_like_removed", { eventId: event.id, eventSlug: event.slug, metadata: { surface: "host", photoId: photo.id } });
+    } catch (err) {
+      setEvent((current) => current ? { ...current, photos: updatePhotoInList(current.photos, photo.id, () => previousPhoto) } : current);
+      setSelectedPhoto((current) => current?.id === photo.id ? previousPhoto : current);
+      setError(publicRouteErrorMessage(err, "Could not update that heart. Try again."));
+    }
   }
 
   async function copyDetailLink(label: string, url?: string | null) {
@@ -4058,7 +4103,7 @@ function ManageEvent() {
           )}
 
           {activeTab === "recap" && lifecycle?.phase === "after" ? (
-            <HostFeedbackPanel event={event} analytics={eventAnalytics} onSubmitted={load} />
+            <HostFeedbackPanel event={event} analytics={eventAnalytics} onSubmitted={async () => { await load(); }} />
           ) : null}
 
           {activeTab === "settings" ? (
@@ -4220,7 +4265,7 @@ function ManageEvent() {
             {!filteredPhotos.length && <Card className="text-center"><h3 className="font-display text-2xl font-bold text-stone-950">No photos yet</h3><p className="mt-2 font-semibold text-stone-600">Share the QR code or guest link to start collecting photos.</p></Card>}
           </section>
           ) : null}
-          <FullScreenPhotoViewer photo={selectedPhoto} photos={filteredPhotos} mode="host" onClose={() => setSelectedPhoto(null)} onHostAction={handleHostPhotoAction} />
+          <FullScreenPhotoViewer photo={selectedPhoto} photos={filteredPhotos} mode="host" onClose={() => setSelectedPhoto(null)} onHostAction={handleHostPhotoAction} onPhotoLike={hostPhotoLikesEnabled ? handleHostPhotoLike : undefined} />
         </>
       )}
     </AppShell>

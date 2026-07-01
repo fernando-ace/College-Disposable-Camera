@@ -892,6 +892,93 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("button", { name: "Add photos" }).first()).toBeVisible();
   });
 
+  test("host photo viewer heart toggles without closing viewer", async ({ page }) => {
+    const eventId = "host-heart-event";
+    const slug = "host-heart-party";
+    const token = "host-heart-token";
+    const user = { id: "host-heart-user", email: "host@example.com", isFounder: false };
+    const corsHeaders = { "access-control-allow-origin": parsedUrl(baseUrl).origin };
+    const event = {
+      id: eventId,
+      name: "Host Heart Party",
+      description: null,
+      slug,
+      eventDate: "2026-07-01T20:00:00.000Z",
+      revealAt: "2026-07-01T20:00:00.000Z",
+      photoLimitPerGuest: null,
+      eventLink: `${baseUrl}/e/${slug}`,
+      recapLink: `${baseUrl}/recap/${slug}`,
+      lastActivityAt: "2026-07-01T20:00:00.000Z",
+      photoCount: 1,
+      isRevealed: true,
+      challenge: null,
+      qrCodeDataUrl: null,
+      photos: [
+        {
+          id: "host-heart-photo",
+          url: `${apiUrl}/api/photos/host-heart-photo/file`,
+          previewUrl: `${apiUrl}/api/photos/host-heart-photo/preview`,
+          originalFilename: "host-heart.png",
+          mimeType: "image/png",
+          sizeBytes: 128,
+          createdAt: "2026-07-01T20:01:00.000Z",
+          guestNickname: "Mia",
+          isFeatured: false,
+          likeCount: 0,
+          likedByMe: false,
+        },
+      ],
+    };
+    const imageBody = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=", "base64");
+    const json = (body: unknown, status = 200) => ({
+      status,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    let liked = false;
+    let likeCount = 0;
+
+    await page.addInitScript(({ authToken, authUser }) => {
+      window.localStorage.setItem("eventfilm_token", authToken);
+      window.localStorage.setItem("eventfilm_user", JSON.stringify(authUser));
+    }, { authToken: token, authUser: user });
+    await page.route((url) => url.pathname === `/api/host/events/${eventId}`, (route) => route.fulfill(json({ event: { ...event, photos: event.photos.map((photo) => ({ ...photo, likedByMe: liked, likeCount })) } })));
+    await page.route(`**/api/host/events/${eventId}/analytics/summary`, (route) => route.fulfill(json({ summary: { photoCount: 1, visiblePhotos: 1, featuredPhotos: 0, photoLikes: likeCount, guestJoins: 0, uploads: 0, recapOpens: 0, activeGuests: 0 } })));
+    await page.route(`**/api/events/${slug}/photos/host-heart-photo/likes`, async (route) => {
+      const body = route.request().postDataJSON() as { liked: boolean };
+      liked = body.liked;
+      likeCount = liked ? 1 : 0;
+      await route.fulfill(json({ ok: true, photoId: "host-heart-photo", liked, likeCount }, liked ? 201 : 200));
+    });
+    await page.route("**/api/photos/host-heart-photo/file", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/photos/host-heart-photo/preview", (route) => route.fulfill({ status: 200, headers: { ...corsHeaders, "content-type": "image/png" }, body: imageBody }));
+    await page.route("**/api/analytics**", (route) => route.fulfill(json({ ok: true })));
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(`/dashboard/events/${eventId}?tab=uploads`);
+    await expect(page.getByRole("heading", { name: "Review photos", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "More" }).click();
+    const viewer = page.getByRole("dialog", { name: "Photo viewer" });
+    await expect(viewer).toBeVisible();
+    await expect(viewer.getByRole("button", { name: /^Like photo, 0 hearts?$/i })).toBeVisible();
+
+    const likeSaved = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/likes") && response.ok());
+    await viewer.getByRole("button", { name: /^Like photo, 0 hearts?$/i }).click();
+    const likeResponse = await likeSaved;
+    expect((await likeResponse.json()).liked).toBe(true);
+    await expect(viewer).toBeVisible();
+    await expect(viewer.getByRole("button", { name: /^Unlike photo, 1 heart$/i })).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Make host pick" })).toBeVisible();
+    await expect(viewer.getByRole("button", { name: "Delete" })).toBeVisible();
+
+    const unlikeSaved = page.waitForResponse((response) => response.request().method() === "POST" && response.url().includes("/likes") && response.ok());
+    await viewer.getByRole("button", { name: /^Unlike photo, 1 heart$/i }).click();
+    const unlikeResponse = await unlikeSaved;
+    expect((await unlikeResponse.json()).liked).toBe(false);
+    await expect(viewer).toBeVisible();
+    await expect(viewer.getByRole("button", { name: /^Like photo, 0 hearts?$/i })).toBeVisible();
+  });
+
   test("seeded host event shows event library, share kit, and ordinary host help", async ({ page, request }) => {
     const health = await request.get(`${apiUrl}/api/health`);
     test.skip(!health.ok(), `API health check failed at ${apiUrl}`);

@@ -668,6 +668,7 @@ export type EventSummary = {
   eventLink: string;
   recapLink?: string;
   qrCodeDataUrl?: string;
+  isRevealed?: boolean;
   photoCount: number;
   previewPhotos?: Photo[];
   photos?: Photo[];
