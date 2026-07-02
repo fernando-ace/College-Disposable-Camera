@@ -13,6 +13,7 @@ const prisma = require("./prisma");
 const { signToken, requireAuth, requireFounderAuth } = require("./auth");
 const { port, clientUrl, clientOrigins, serverUrl, maxFileSizeBytes, maxFileSizeMb, jwtSecret, analyticsSalt, isProduction, founderEmails, isFounderEmail } = require("./config");
 const { EventSettingsError, updateHostEventSettings, validateEventSettingsInput } = require("./event-settings");
+const { EventAccessError, loadDashboardEventEntries, saveEventAccess } = require("./event-access");
 const { getEventLastActivityAt, sortEventsByRecentActivity } = require("./event-activity");
 const { buildFounderOverview } = require("./founder");
 const { deletePhotoWithStorage } = require("./photo-delete");
@@ -849,6 +850,36 @@ function eventPayload(event, { includePhotos = false } = {}) {
   };
 }
 
+function eventListInclude() {
+  return {
+    photos: {
+      where: activePhotoWhere(),
+      orderBy: { createdAt: "desc" },
+      take: 6,
+      include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
+    },
+    challenges: activeChallengeInclude(),
+    _count: { select: { photos: { where: activePhotoWhere() } } },
+  };
+}
+
+function dashboardEventPayload(event, role) {
+  const payload = {
+    ...eventPayload(event),
+    dashboardRole: role,
+  };
+
+  if (role === "viewer" && publicAlbumIsLocked(event)) {
+    return {
+      ...payload,
+      photoCount: 0,
+      previewPhotos: [],
+    };
+  }
+
+  return payload;
+}
+
 function hostEventDetailInclude() {
   return {
     photos: {
@@ -1159,20 +1190,22 @@ app.get("/api/me", requireAuth, async (req, res) => {
   res.json({ user: userPayload(user) });
 });
 
+app.get("/api/dashboard/events", requireAuth, async (req, res) => {
+  const entries = await loadDashboardEventEntries(prisma, {
+    userId: req.user.userId,
+    include: eventListInclude(),
+  });
+
+  res.json({
+    events: entries.map(({ event, role }) => dashboardEventPayload(event, role)),
+  });
+});
+
 app.get("/api/host/events", requireAuth, async (req, res) => {
   const events = await prisma.event.findMany({
     where: { hostId: req.user.userId },
     orderBy: { createdAt: "desc" },
-    include: {
-      photos: {
-        where: activePhotoWhere(),
-        orderBy: { createdAt: "desc" },
-        take: 6,
-        include: { guest: true, challengeParticipant: true, _count: { select: { likes: true } } },
-      },
-      challenges: activeChallengeInclude(),
-      _count: { select: { photos: { where: activePhotoWhere() } } },
-    },
+    include: eventListInclude(),
   });
   res.json({
     events: sortEventsByRecentActivity(events).map((event) => eventPayload(event)),
@@ -1573,6 +1606,21 @@ app.get("/api/events/:slug", async (req, res) => {
       photoCount: isRevealed ? event._count.photos : null,
     },
   });
+});
+
+app.post("/api/events/:slug/access", requireAuth, async (req, res) => {
+  try {
+    const result = await saveEventAccess(prisma, {
+      slug: req.params.slug,
+      userId: req.user.userId,
+    });
+    res.json({ role: result.role });
+  } catch (error) {
+    if (error instanceof EventAccessError) {
+      return res.status(error.status).json({ error: error.message });
+    }
+    throw error;
+  }
 });
 
 app.get("/api/events/:slug/recap", async (req, res) => {

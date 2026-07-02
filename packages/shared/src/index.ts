@@ -673,6 +673,8 @@ export type FounderOverview = {
   metricDefinitions: Record<string, string>;
 };
 
+export type EventDashboardRole = "host" | "viewer";
+
 export type EventSummary = {
   id: string;
   name: string;
@@ -694,6 +696,7 @@ export type EventSummary = {
   previewPhotos?: Photo[];
   photos?: Photo[];
   challenge?: EventChallenge | null;
+  dashboardRole?: EventDashboardRole;
 };
 
 export type PublicEvent = {

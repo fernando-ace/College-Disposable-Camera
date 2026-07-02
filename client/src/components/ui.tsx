@@ -176,7 +176,7 @@ export function AppShell({
         <div className="flex items-center justify-between gap-3">
           <BrandMark />
           <div className="flex shrink-0 items-center gap-2">
-            <Link className="inline-flex min-h-12 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to="/dashboard/events/new">Create</Link>
+            <Link className="inline-flex min-h-12 items-center justify-center rounded-lg bg-[#ff5a4f] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#ec443a]" to="/dashboard/events/new">Create</Link>
             {onSignOut ? (
               <button
                 type="button"

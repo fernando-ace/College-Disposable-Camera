@@ -3,6 +3,7 @@ import type {
   CreateEventInput,
   EventChallenge,
   EventChallengeInput,
+  EventDashboardRole,
   EventSummary,
   FounderOverview,
   HostFeedbackInput,
@@ -124,6 +125,10 @@ export type PhotoLikeResponse = {
 
 export type FounderOverviewResponse = {
   overview: FounderOverview;
+};
+
+export type EventAccessResponse = {
+  role: EventDashboardRole;
 };
 
 export type HostEventFeedback = {
@@ -311,6 +316,16 @@ export function createEventFilmApiClient(options: EventFilmApiClientOptions) {
     },
     getHostEvents(token?: string | null) {
       return request<{ events: EventSummary[] }>("/api/host/events", { auth: !token, token });
+    },
+    getDashboardEvents(token?: string | null) {
+      return request<{ events: EventSummary[] }>("/api/dashboard/events", { auth: !token, token });
+    },
+    saveEventAccess(slug: string, token?: string | null) {
+      return request<EventAccessResponse>(`/api/events/${encodeURIComponent(slug)}/access`, {
+        method: "POST",
+        auth: !token,
+        token,
+      });
     },
     createEvent(input: CreateEventInput, token?: string | null) {
       return request<{ event: EventSummary }>("/api/host/events", {

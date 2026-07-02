@@ -123,6 +123,52 @@ test("host event helper can include photo like client id", async () => {
   assert.equal(calls[0], "https://api.eventfilm.test/api/host/events/event%201?clientId=host%20client");
 });
 
+test("dashboard event helper reads dashboard endpoint with auth", async () => {
+  const calls: string[] = [];
+  let authHeader = "";
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      authHeader = String(new Headers(init?.headers).get("Authorization") || "");
+      return new Response(JSON.stringify({ events: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  await client.getDashboardEvents("token");
+
+  assert.equal(calls[0], "https://api.eventfilm.test/api/dashboard/events");
+  assert.equal(authHeader, "Bearer token");
+});
+
+test("save event access posts to encoded invite access endpoint", async () => {
+  const calls: string[] = [];
+  let method = "";
+  let authHeader = "";
+  const client = createEventFilmApiClient({
+    baseUrl: "https://api.eventfilm.test/",
+    fetchImpl: (async (url, init) => {
+      calls.push(String(url));
+      method = init?.method || "";
+      authHeader = String(new Headers(init?.headers).get("Authorization") || "");
+      return new Response(JSON.stringify({ role: "viewer" }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch,
+  });
+
+  const response = await client.saveEventAccess("event slug", "token");
+
+  assert.equal(calls[0], "https://api.eventfilm.test/api/events/event%20slug/access");
+  assert.equal(method, "POST");
+  assert.equal(authHeader, "Bearer token");
+  assert.deepEqual(response, { role: "viewer" });
+});
+
 test("founder overview helper uses founder endpoint with auth", async () => {
   const calls: string[] = [];
   let authHeader = "";

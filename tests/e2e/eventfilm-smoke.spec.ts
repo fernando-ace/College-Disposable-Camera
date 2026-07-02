@@ -280,22 +280,294 @@ test.describe("EventFilm browser smoke", () => {
     await expect(addPhotos).toHaveAttribute("href", /\/signup$/);
     await addPhotos.click();
     await expect(page).toHaveURL(/\/signup$/);
-    await expect(page.getByRole("heading", { name: /Create host account/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Create account$/i })).toBeVisible();
     expect(consoleProblems).toEqual([]);
   });
 
   test("host auth routes handle unauthenticated dashboard access cleanly", async ({ page }) => {
     await page.goto("/dashboard");
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Log in$/i })).toBeVisible();
 
     await page.goto("/dashboard/events/new");
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Log in$/i })).toBeVisible();
 
     await page.goto("/dashboard/founder");
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Log in$/i })).toBeVisible();
+  });
+
+  test("signed-out event back button opens signup with the invite preserved", async ({ page }) => {
+    const slug = "invite-back-party";
+    const event = {
+      id: "invite-back-event",
+      name: "Invite Back Party",
+      description: null,
+      slug,
+      eventDate: "2026-07-01T20:00:00.000Z",
+      revealAt: "2026-07-01T20:00:00.000Z",
+      photoLimitPerGuest: null,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      isRevealed: true,
+      photoCount: 0,
+      eventLink: `${baseUrl}/e/${slug}`,
+      recapLink: `${baseUrl}/recap/${slug}`,
+      challenge: null,
+    };
+    const corsHeaders = {
+      "access-control-allow-origin": parsedUrl(baseUrl).origin,
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+    };
+    const json = (body: unknown, status = 200) => ({
+      status,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    await page.route((url) => url.pathname === `/api/events/${slug}`, (route) => route.fulfill(json({ event })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/guest-status`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, nickname: null })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/my-uploads`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/photos`, (route) => route.fulfill(json({ photos: [] })));
+    await page.route("**/api/analytics**", (route) => route.fulfill(json({ ok: true })));
+
+    await page.goto(`/e/${slug}`);
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
+    await page.getByRole("button", { name: "Go back" }).click();
+    await expect(page).toHaveURL(new RegExp(`/signup\\?invite=${slug}$`));
+    await expect(page.getByRole("heading", { name: /^Create account$/i })).toBeVisible();
+  });
+
+  test("signup with an invite saves access and shows the event on the dashboard", async ({ page }) => {
+    const slug = "signup-invite-party";
+    const token = "signup-invite-token";
+    const user = { id: "signup-invite-user", email: "guest@example.com", isFounder: false };
+    const dashboardEvent = {
+      id: "signup-invite-event",
+      name: "Signup Invite Party",
+      description: null,
+      slug,
+      eventDate: "2026-07-01T20:00:00.000Z",
+      revealAt: "2026-07-01T20:00:00.000Z",
+      createdAt: "2026-07-01T20:00:00.000Z",
+      updatedAt: "2026-07-01T20:00:00.000Z",
+      lastActivityAt: "2026-07-01T20:00:00.000Z",
+      photoLimitPerGuest: null,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      eventLink: `${baseUrl}/e/${slug}`,
+      recapLink: `${baseUrl}/recap/${slug}`,
+      isRevealed: true,
+      photoCount: 0,
+      previewPhotos: [],
+      challenge: null,
+      dashboardRole: "viewer",
+    };
+    const corsHeaders = {
+      "access-control-allow-origin": parsedUrl(baseUrl).origin,
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+    };
+    const json = (body: unknown, status = 200) => ({
+      status,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    let accessRequests = 0;
+
+    await page.route((url) => url.pathname === "/api/auth/signup", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ token, user }, 201));
+    });
+    await page.route((url) => url.pathname === `/api/events/${slug}/access`, (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      accessRequests += 1;
+      return route.fulfill(json({ role: "viewer" }));
+    });
+    await page.route((url) => url.pathname === "/api/dashboard/events", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ events: [dashboardEvent] }));
+    });
+    await page.route("**/api/analytics**", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ ok: true }));
+    });
+
+    await page.goto(`/signup?invite=${slug}`);
+    await page.getByLabel("Email").fill(user.email);
+    await page.getByLabel("Password").fill("password123");
+    await page.getByRole("button", { name: "Sign up" }).click();
+
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect.poll(() => accessRequests).toBe(1);
+    await expect(page.getByRole("heading", { name: "Event library" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Signup Invite Party" })).toBeVisible();
+    const inviteCard = page.getByRole("article").filter({ has: page.getByRole("link", { name: "Signup Invite Party" }) });
+    await expect(inviteCard.getByText("Invited")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open album" })).toBeVisible();
+  });
+
+  test("signed-in invited viewers save access, return to dashboard, and do not see host controls", async ({ page }) => {
+    const slug = "viewer-invite-party";
+    const eventId = "viewer-invite-event";
+    const token = "viewer-invite-token";
+    const user = { id: "viewer-user", email: "viewer@example.com", isFounder: false };
+    const event = {
+      id: eventId,
+      name: "Viewer Invite Party",
+      description: null,
+      slug,
+      eventDate: "2026-07-01T20:00:00.000Z",
+      revealAt: "2026-07-01T20:00:00.000Z",
+      photoLimitPerGuest: null,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      isRevealed: true,
+      photoCount: 0,
+      eventLink: `${baseUrl}/e/${slug}`,
+      recapLink: `${baseUrl}/recap/${slug}`,
+      challenge: null,
+    };
+    const dashboardEvent = {
+      ...event,
+      createdAt: "2026-07-01T20:00:00.000Z",
+      updatedAt: "2026-07-01T20:00:00.000Z",
+      lastActivityAt: "2026-07-01T20:00:00.000Z",
+      previewPhotos: [],
+      dashboardRole: "viewer",
+    };
+    const corsHeaders = {
+      "access-control-allow-origin": parsedUrl(baseUrl).origin,
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+    };
+    const json = (body: unknown, status = 200) => ({
+      status,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    let accessRequests = 0;
+
+    await page.addInitScript(({ authToken, authUser }) => {
+      window.localStorage.setItem("eventfilm_token", authToken);
+      window.localStorage.setItem("eventfilm_user", JSON.stringify(authUser));
+    }, { authToken: token, authUser: user });
+    await page.route((url) => url.pathname === `/api/events/${slug}`, (route) => route.fulfill(json({ event })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/access`, (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      accessRequests += 1;
+      return route.fulfill(json({ role: "viewer" }));
+    });
+    await page.route((url) => url.pathname === `/api/events/${slug}/guest-status`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, nickname: null })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/my-uploads`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/photos`, (route) => route.fulfill(json({ photos: [] })));
+    await page.route((url) => url.pathname === `/api/host/events/${eventId}`, (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ error: "Event not found" }, 404));
+    });
+    await page.route((url) => url.pathname === "/api/dashboard/events", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ events: [dashboardEvent] }));
+    });
+    await page.route("**/api/analytics**", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ ok: true }));
+    });
+
+    await page.goto(`/e/${slug}`);
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
+    await expect.poll(() => accessRequests).toBe(1);
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await expect(page.getByRole("button", { name: "Invite" })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Settings" })).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Go back" }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByText("Viewer Invite Party")).toBeVisible();
+    await expect(page.getByText("Invited")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open album" })).toBeVisible();
+  });
+
+  test("signed-in hosts keep host controls on event links and return to dashboard", async ({ page }) => {
+    const slug = "host-invite-party";
+    const eventId = "host-invite-event";
+    const token = "host-invite-token";
+    const user = { id: "host-user", email: "host@example.com", isFounder: false };
+    const event = {
+      id: eventId,
+      name: "Host Invite Party",
+      description: null,
+      slug,
+      eventDate: "2026-07-01T20:00:00.000Z",
+      revealAt: "2026-07-01T20:00:00.000Z",
+      photoLimitPerGuest: null,
+      eventTemplateSlug: null,
+      promptPackSlug: null,
+      eventLink: `${baseUrl}/e/${slug}`,
+      recapLink: `${baseUrl}/recap/${slug}`,
+      lastActivityAt: "2026-07-01T20:00:00.000Z",
+      photoCount: 0,
+      isRevealed: true,
+      challenge: null,
+      qrCodeDataUrl: null,
+      photos: [],
+    };
+    const dashboardEvent = {
+      ...event,
+      photos: undefined,
+      previewPhotos: [],
+      createdAt: "2026-07-01T20:00:00.000Z",
+      updatedAt: "2026-07-01T20:00:00.000Z",
+      dashboardRole: "host",
+    };
+    const corsHeaders = {
+      "access-control-allow-origin": parsedUrl(baseUrl).origin,
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "GET,POST,OPTIONS",
+    };
+    const json = (body: unknown, status = 200) => ({
+      status,
+      headers: { ...corsHeaders, "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    await page.addInitScript(({ authToken, authUser }) => {
+      window.localStorage.setItem("eventfilm_token", authToken);
+      window.localStorage.setItem("eventfilm_user", JSON.stringify(authUser));
+    }, { authToken: token, authUser: user });
+    await page.route((url) => url.pathname === `/api/events/${slug}`, (route) => route.fulfill(json({ event: { ...event, photos: undefined } })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/access`, (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ role: "host" }));
+    });
+    await page.route((url) => url.pathname === `/api/events/${slug}/guest-status`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, nickname: null })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/my-uploads`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
+    await page.route((url) => url.pathname === `/api/host/events/${eventId}`, (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ event }));
+    });
+    await page.route(`**/api/host/events/${eventId}/analytics/summary`, (route) => route.fulfill(json({ summary: { photoCount: 0, visiblePhotos: 0, featuredPhotos: 0, photoLikes: 0, guestJoins: 0, uploads: 0, recapOpens: 0, activeGuests: 0 } })));
+    await page.route((url) => url.pathname === "/api/dashboard/events", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ events: [dashboardEvent] }));
+    });
+    await page.route("**/api/analytics**", (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ ok: true }));
+    });
+
+    await page.goto(`/e/${slug}`);
+    await expect(page.getByTestId("guest-album-header")).toBeVisible();
+    await page.getByRole("button", { name: "Open event options" }).click();
+    await expect(page.getByRole("button", { name: "Invite" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Settings" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Go back" }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    await expect(page.getByRole("link", { name: "Host Invite Party" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Manage event" })).toBeVisible();
   });
 
   test("host can sign in and create an event with clear next steps", async ({ page, request }) => {
@@ -404,18 +676,24 @@ test.describe("EventFilm browser smoke", () => {
 
       const eventName = `Browser Smoke ${Date.now()}`;
       await page.getByLabel("Event name").fill(eventName);
+      const createdResponsePromise = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return response.request().method() === "POST" && url.pathname === "/api/host/events" && response.ok();
+      });
       await page.getByRole("button", { name: "Create event" }).click();
 
-      await expect(page.getByRole("heading", { name: "Your event is ready." })).toBeVisible();
-      const createdUrl = page.url();
-      createdEventId = createdUrl.match(/\/dashboard\/events\/([^/?#]+)/)?.[1] || "";
+      const createdPayload = await (await createdResponsePromise).json();
+      createdEventId = createdPayload.event?.id || "";
+      const createdSlug = createdPayload.event?.slug || "";
       expect(createdEventId).toBeTruthy();
+      expect(createdSlug).toBeTruthy();
 
-      const createdHandoff = page.locator("[aria-label='Event creation success']");
-      await expect(createdHandoff).toContainText("Guests can add photos without an account.");
-      await expect(createdHandoff.getByRole("button", { name: "Copy guest link" })).toBeVisible();
-      await expect(createdHandoff.getByRole("link", { name: "Download QR poster" })).toBeVisible();
-      await expect(createdHandoff.getByRole("link", { name: "Preview guest page" })).toBeVisible();
+      await expect(page).toHaveURL(new RegExp(`/e/${escapeRegExp(createdSlug)}`));
+      const inviteDialog = page.getByRole("dialog", { name: "Invite guests" });
+      await expect(inviteDialog).toBeVisible();
+      await expect(inviteDialog).toContainText("No account needed");
+      await expect(inviteDialog.getByRole("button", { name: "Share" })).toBeVisible();
+      await expect(inviteDialog.getByRole("button", { name: "Copy link" })).toBeVisible();
     } finally {
       if (createdEventId) cleanupCreatedSmokeEvent(createdEventId);
     }
@@ -457,7 +735,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(headerSnapshot.locator("p")).toHaveText(guestSubtitle);
     await expect(headerSnapshot.locator("nav")).toContainText("Photos");
     await expect(headerSnapshot.locator("nav")).toContainText("People");
-    await expect(headerSnapshot.locator("nav")).toContainText("Recap");
+    await expect(headerSnapshot.locator("nav")).toContainText("Highlights");
     const sheetPanel = page.getByTestId("upload-sheet-panel");
     const sheetLayout = await page.evaluate(() => {
       function rectFor(selector: string) {
@@ -543,14 +821,14 @@ test.describe("EventFilm browser smoke", () => {
     expect(restoredScrollDelta).toBeLessThanOrEqual(1);
     const guestPageUrl = page.url();
     const guestHeader = page.getByTestId("guest-album-header");
+    await expect(page.getByRole("button", { name: "Add photos" }).first()).toBeVisible();
     await guestHeader.getByRole("button", { name: "Open event options" }).click();
     await expect(guestHeader).not.toContainText("Shared Recap");
-    await expect(guestHeader.getByRole("button", { name: "Select Photos" })).toBeVisible();
-    await expect(guestHeader.getByRole("button", { name: "Add photos" })).toBeVisible();
+    await expect(guestHeader.getByRole("button", { name: "Select photos" })).toBeVisible();
     await guestHeader.getByRole("button", { name: "Open event options" }).click();
-    await guestHeader.getByRole("button", { name: "Recap" }).click();
+    await guestHeader.getByRole("button", { name: "Highlights" }).click();
     await expect(page).toHaveURL(guestPageUrl);
-    await expect(page.getByRole("heading", { name: "Shared Recap" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /Shared Recap|Photos are saved for the reveal/i })).toBeVisible();
     await expect(page.locator("#event-album")).toContainText(/Shared Recap|Photos are saved for the reveal|Photos from the event, all in one place|No photos yet/i);
     await expect(page.locator("#event-album")).not.toContainText("Highlights will build here");
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -1080,7 +1358,11 @@ test.describe("EventFilm browser smoke", () => {
     const slug = "host-heart-party";
     const token = "host-heart-token";
     const user = { id: "host-heart-user", email: "host@example.com", isFounder: false };
-    const corsHeaders = { "access-control-allow-origin": parsedUrl(baseUrl).origin };
+    const corsHeaders = {
+      "access-control-allow-origin": parsedUrl(baseUrl).origin,
+      "access-control-allow-headers": "authorization, content-type",
+      "access-control-allow-methods": "GET,POST,PATCH,DELETE,OPTIONS",
+    };
     const event = {
       id: eventId,
       name: "Host Heart Party",
@@ -1137,6 +1419,10 @@ test.describe("EventFilm browser smoke", () => {
     let hostDetailRequests = 0;
 
     await page.route((url) => url.pathname === `/api/events/${slug}`, (route) => route.fulfill(json({ event: { ...event, photos: undefined } })));
+    await page.route((url) => url.pathname === `/api/events/${slug}/access`, (route) => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: corsHeaders });
+      return route.fulfill(json({ role: "host" }));
+    });
     await page.route((url) => url.pathname === `/api/events/${slug}/guest-status`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, nickname: null })));
     await page.route((url) => url.pathname === `/api/events/${slug}/my-uploads`, (route) => route.fulfill(json({ uploadedCount: 0, remainingUploads: null, photos: [] })));
     await page.route((url) => url.pathname === `/api/events/${slug}/photos`, (route) => route.fulfill(json({ photos: photos.map((photo) => ({ ...photo, likedByMe: photo.id === "host-heart-photo" ? liked : false, likeCount: photo.id === "host-heart-photo" ? likeCount : photo.likeCount })) })));
@@ -1380,7 +1666,7 @@ test.describe("EventFilm browser smoke", () => {
     await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible();
     await page.getByRole("button", { name: "Sign out" }).click();
     await expect(page).toHaveURL(/\/login$/);
-    await expect(page.getByRole("heading", { name: /Host login/i })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Log in$/i })).toBeVisible();
     const signedOutStorage = await page.evaluate(() => ({
       token: window.localStorage.getItem("eventfilm_token"),
       user: window.localStorage.getItem("eventfilm_user"),

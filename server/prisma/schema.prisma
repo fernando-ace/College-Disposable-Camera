@@ -20,6 +20,7 @@ model User {
   passwordHash String
   createdAt    DateTime @default(now())
   events       Event[]
+  eventAccesses EventAccess[]
   hostEventFeedback HostEventFeedback[]
 }
 
@@ -38,6 +39,7 @@ model Event {
   updatedAt          DateTime @updatedAt
 
   host   User    @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  eventAccesses EventAccess[]
   guests Guest[]
   photos Photo[]
   challenges EventChallenge[]
@@ -46,6 +48,21 @@ model Event {
   hostFeedback       HostEventFeedback[]
 
   @@index([hostId])
+}
+
+model EventAccess {
+  id        String   @id @default(cuid())
+  eventId   String
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, eventId])
+  @@index([eventId])
+  @@index([userId])
 }
 
 model EventChallenge {

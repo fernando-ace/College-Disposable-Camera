@@ -1906,7 +1906,7 @@ function Shell({ children, wide = false }: { children: React.ReactNode; wide?: b
               </>
             ) : (
               <>
-                <Link className="hidden rounded-lg px-3 py-2 font-semibold text-muted hover:bg-stone-100 hover:text-ink sm:inline-flex" to="/login">Host login</Link>
+                <Link className="hidden rounded-lg px-3 py-2 font-semibold text-muted hover:bg-stone-100 hover:text-ink sm:inline-flex" to="/login">Log in</Link>
                 <Link className="inline-flex min-h-10 items-center justify-center rounded-lg bg-coral px-4 py-2 font-bold text-white shadow-sm hover:bg-coral-strong" to="/signup">Create event</Link>
               </>
             )}
@@ -2810,8 +2810,13 @@ function AuthForm({ mode }: { mode: "signup" | "login" }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [searchParams] = useSearchParams();
   const auth = useAuth();
   const navigate = useNavigate();
+  const inviteSlug = searchParams.get("invite")?.trim() || "";
+  const switchPath = `${mode === "signup" ? "/login" : "/signup"}${inviteSlug ? `?invite=${encodeURIComponent(inviteSlug)}` : ""}`;
+  const emailInputId = `${mode}-email`;
+  const passwordInputId = `${mode}-password`;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -2823,6 +2828,9 @@ function AuthForm({ mode }: { mode: "signup" | "login" }) {
         body: JSON.stringify({ email, password }),
       });
       auth.login(data.token, data.user);
+      if (inviteSlug) {
+        await eventFilmApi.saveEventAccess(inviteSlug, data.token).catch(() => undefined);
+      }
       navigate("/dashboard");
     } catch (err) {
       setError((err as Error).message);
@@ -2834,16 +2842,16 @@ function AuthForm({ mode }: { mode: "signup" | "login" }) {
   return (
     <Shell>
       <form className="mx-auto max-w-md rounded-3xl border border-stone-200 bg-white p-6 shadow-[0_24px_70px_rgba(28,25,23,0.07)]" onSubmit={submit}>
-        <h1 className="font-display text-3xl font-bold">{mode === "signup" ? "Create host account" : "Host login"}</h1>
-        <p className="mt-2 text-sm text-stone-600">Manage your private albums, QR links, and downloads.</p>
-        <label className="mt-6 block text-sm font-bold text-stone-700">Email</label>
-        <TextInput autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-        <label className="mt-4 block text-sm font-bold text-stone-700">Password</label>
-        <TextInput autoComplete={mode === "signup" ? "new-password" : "current-password"} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} />
+        <h1 className="font-display text-3xl font-bold">{mode === "signup" ? "Create account" : "Log in"}</h1>
+        <p className="mt-2 text-sm text-stone-600">Keep invited albums and manage any events you host.</p>
+        <label className="mt-6 block text-sm font-bold text-stone-700" htmlFor={emailInputId}>Email</label>
+        <TextInput id={emailInputId} autoComplete="email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+        <label className="mt-4 block text-sm font-bold text-stone-700" htmlFor={passwordInputId}>Password</label>
+        <TextInput id={passwordInputId} autoComplete={mode === "signup" ? "new-password" : "current-password"} type="password" value={password} onChange={(event) => setPassword(event.target.value)} required minLength={8} />
         {error && <p className="mt-4 rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
         <Button className="mt-5 w-full" disabled={loading}>{loading ? "Working..." : mode === "signup" ? "Sign up" : "Log in"}</Button>
-        <Link className="mt-4 block text-center text-sm font-bold text-stone-700 underline decoration-amber-500 underline-offset-4 transition hover:text-stone-950" to={mode === "signup" ? "/login" : "/signup"}>
-          {mode === "signup" ? "Already have an account? Sign in \u2192" : "Don't have an account? Sign up \u2192"}
+        <Link className="mt-4 block text-center text-sm font-bold text-stone-700 underline decoration-amber-500 underline-offset-4 transition hover:text-stone-950" to={switchPath}>
+          {mode === "signup" ? "Already have an account? Log in" : "Need an account? Sign up"}
         </Link>
       </form>
     </Shell>
@@ -2865,7 +2873,7 @@ function Dashboard() {
 
   useEffect(() => {
     trackAnalytics("host_dashboard_opened");
-    api<{ events: EventSummary[] }>("/api/host/events", { token: auth.token })
+    eventFilmApi.getDashboardEvents(auth.token)
       .then((data) => setEvents(data.events))
       .catch((err) => setError((err as Error).message));
     setCanViewFounder(Boolean(auth.user?.isFounder));
@@ -2879,6 +2887,7 @@ function Dashboard() {
       event.description || "",
       plainModeLabel(event.challenge?.type || "NONE"),
       challengeLabel(event.challenge),
+      event.dashboardRole === "viewer" ? "invited guest access" : "host event",
     ].join(" ").toLowerCase().includes(normalizedQuery));
   }, [events, normalizedQuery]);
   const totalPhotos = events.reduce((sum, event) => sum + event.photoCount, 0);
@@ -2889,11 +2898,11 @@ function Dashboard() {
         <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <h1 className="font-serif-display text-4xl font-bold text-ink">Event library</h1>
-            <p className="mt-3 max-w-2xl text-muted">Open an event to manage guest links, QR posters, photo review, recap, downloads, and settings.</p>
+            <p className="mt-3 max-w-2xl text-muted">Manage events you host, or open invited albums to add photos and revisit the event.</p>
             <p className="mt-2 text-sm font-semibold text-stone-500">{auth.user?.email}</p>
           </div>
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to="/dashboard/events/new">Create event</Link>
+            <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-[#ff5a4f] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#ec443a]" to="/dashboard/events/new">Create event</Link>
           </div>
         </div>
         {canViewFounder ? (
@@ -2927,6 +2936,9 @@ function Dashboard() {
             const coverPhoto = previewPhotos[0];
             const eventDateLabel = formatEventCardDate(event.eventDate);
             const setupLabel = plainModeLabel(event.challenge?.type || "NONE");
+            const isViewerEvent = event.dashboardRole === "viewer";
+            const roleLabel = isViewerEvent ? "Invited" : "Host";
+            const emptyPreviewText = isViewerEvent && !event.isRevealed ? "Photos locked" : "No photos yet";
             return (
               <React.Fragment key={event.id}>
                 <Link
@@ -2944,7 +2956,7 @@ function Dashboard() {
                     <div className="absolute inset-0 z-[1] grid place-items-center bg-stone-900 text-white/75">
                       <div className="text-center">
                         <CleanIcon name="image" className="mx-auto h-9 w-9" />
-                        <p className="mt-2 text-sm font-semibold">No photos yet</p>
+                        <p className="mt-2 text-sm font-semibold">{emptyPreviewText}</p>
                       </div>
                     </div>
                   )}
@@ -2952,7 +2964,7 @@ function Dashboard() {
                   <div className="relative z-[1] flex h-full flex-col justify-between p-4 text-white">
                     <div className="flex justify-end">
                       <span className="max-w-[72%] truncate rounded-lg bg-black/45 px-2.5 py-1 text-xs font-semibold text-white backdrop-blur">
-                        {setupLabel}
+                        {isViewerEvent ? roleLabel : setupLabel}
                       </span>
                     </div>
                     <div className="flex items-end justify-between gap-4">
@@ -2984,7 +2996,7 @@ function Dashboard() {
                         <div className="col-span-2 grid min-h-36 place-items-center rounded-lg bg-[#fffaf6] text-muted">
                           <div className="text-center">
                             <CleanIcon name="image" className="mx-auto h-8 w-8" />
-                            <p className="mt-2 text-sm font-semibold">No photos yet</p>
+                            <p className="mt-2 text-sm font-semibold">{emptyPreviewText}</p>
                           </div>
                         </div>
                       )}
@@ -2992,7 +3004,10 @@ function Dashboard() {
                     <div className="flex min-w-0 flex-col p-5">
                       <div className="flex items-start justify-between gap-4">
                         <div className="min-w-0">
-                          <Link to={`/e/${event.slug}`}><h3 className="truncate text-xl font-bold text-ink">{event.name}</h3></Link>
+                          <div className="flex min-w-0 items-center gap-2">
+                            <Link className="min-w-0" to={`/e/${event.slug}`}><h3 className="truncate text-xl font-bold text-ink">{event.name}</h3></Link>
+                            {isViewerEvent ? <span className="shrink-0 rounded-lg bg-stone-100 px-2.5 py-1 text-xs font-bold text-stone-700">{roleLabel}</span> : null}
+                          </div>
                           <p className="mt-1 text-sm font-semibold text-stone-600">Photo setup: {setupLabel}</p>
                         </div>
                         <div className="shrink-0 rounded-lg bg-coral-soft px-3 py-2 text-center">
@@ -3000,10 +3015,10 @@ function Dashboard() {
                           <p className="text-xs font-semibold text-muted">{event.photoCount === 1 ? "photo" : "photos"}</p>
                         </div>
                       </div>
-                      {event.description ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted">{event.description}</p> : <p className="mt-3 text-sm leading-6 text-muted">Open this event to manage links, photos, recap, and settings.</p>}
+                      {event.description ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-muted">{event.description}</p> : <p className="mt-3 text-sm leading-6 text-muted">{isViewerEvent ? "Open this album to add photos and revisit the event." : "Open this event to manage links, photos, recap, and settings."}</p>}
                       <div className="mt-auto pt-5">
                         <Link className="inline-flex min-h-11 items-center justify-center rounded-lg bg-coral px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-coral-strong" to={`/e/${event.slug}`}>
-                          Open event
+                          {isViewerEvent ? "Open album" : "Manage event"}
                         </Link>
                       </div>
                     </div>
@@ -4966,27 +4981,6 @@ function EventRecapExperience({
               <Card>
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <h2 className="text-lg font-bold text-ink">Photos</h2>
-                    <p className="mt-1 text-sm text-muted">All photos in one place</p>
-                  </div>
-                  <CleanIcon name="image" className="text-muted" />
-                </div>
-                <div className="mt-5 grid grid-cols-3 gap-2">
-                  {albumPhotos.slice(0, 9).map((photo) => (
-                    <div className="relative overflow-hidden rounded-lg bg-stone-100" key={photo.id}>
-                      <PhotoHeartButton photo={photo} onToggle={handleRecapPhotoLike} variant="solid" className="absolute right-1 top-1 z-10 scale-90" />
-                      <button className="block w-full" type="button" onClick={() => openPublicPhoto(photo)}>
-                        <img className="aspect-square w-full object-cover" src={photoImageSrc(photo)} alt={photo.originalFilename} loading="lazy" decoding="async" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                {!albumPhotos.length ? <p className="mt-5 rounded-lg bg-stone-50 p-4 text-sm text-muted">No photos yet. Share the guest link so people can add theirs.</p> : null}
-              </Card>
-
-              <Card>
-                <div className="flex items-start justify-between gap-3">
-                  <div>
                     <h2 className="text-lg font-bold text-ink">People who added photos</h2>
                     <p className="mt-1 text-sm text-muted">Thanks to the group</p>
                   </div>
@@ -5144,6 +5138,9 @@ function GuestEvent() {
         eventSlug: eventData.event.slug,
         metadata: { mode: eventData.event.challenge?.type || "NONE", hasChallenge: Boolean(eventData.event.challenge) },
       });
+    }
+    if (auth.token) {
+      await eventFilmApi.saveEventAccess(eventData.event.slug, auth.token).catch(() => undefined);
     }
     const status = await eventFilmApi.getGuestStatus(slug, session.clientId);
     if (eventData.event.challenge?.type !== CHALLENGE_TYPES.COLOR_HUNT) {
@@ -5778,8 +5775,11 @@ function GuestEvent() {
   }
 
   function goBackFromGuestAlbum() {
-    if (window.history.length > 1) navigate(-1);
-    else navigate("/");
+    if (auth.token) {
+      navigate("/dashboard");
+      return;
+    }
+    navigate(`/signup?invite=${encodeURIComponent(slug)}`);
   }
 
   const isHostView = Boolean(hostEvent);
