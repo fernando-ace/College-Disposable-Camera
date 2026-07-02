@@ -4945,9 +4945,19 @@ function EventRecapExperience({
                 </div>
               ) : null}
             </section>
-          ) : recapLinkStatus ? (
-            <p className="mb-3 rounded-lg bg-stone-100 px-3 py-2 text-sm font-bold text-stone-700">{recapLinkStatus}</p>
-          ) : null}
+          ) : (
+            <>
+              {canCreateStoryPost ? (
+                <div className="mb-3 flex px-2 pt-2">
+                  <button className="inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-stone-200 bg-white px-4 py-3 text-sm font-bold text-stone-950 shadow-none hover:bg-stone-50" type="button" onClick={openStoryPost}>
+                    <CleanIcon name="image" />
+                    Create story post
+                  </button>
+                </div>
+              ) : null}
+              {recapLinkStatus ? <p className="mb-3 rounded-lg bg-stone-100 px-3 py-2 text-sm font-bold text-stone-700">{recapLinkStatus}</p> : null}
+            </>
+          )}
 
           {data.isLocked ? (
             <Card className="text-center">
